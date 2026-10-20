@@ -31,6 +31,7 @@ import (
 	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
@@ -401,6 +402,52 @@ func TestRegisterProxyRoutesALB(t *testing.T) {
 
 	if len(proxyClients) == 0 {
 		t.Errorf("expected %d got %d", 1, 0)
+	}
+}
+
+const albCacheRoutingConfig = `
+backends:
+  lb:
+    provider: alb
+    alb:
+      mechanism: MECHANISM
+      output_format: prometheus
+      tsm: {evaluation: EVALUATION}
+`
+
+func TestRegisterProxyRoutesALBCache(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	const albName = "lb"
+	for name, test := range map[string]struct {
+		mechanism string
+		wantCache bool
+	}{
+		"global tsm":                  {names.MechanismTSM, true},
+		"residual global block on rr": {names.MechanismRR, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "trickster.yaml")
+			doc := strings.NewReplacer("MECHANISM", test.mechanism, "EVALUATION", tsmoptions.EvaluationGlobal).
+				Replace(albCacheRoutingConfig)
+			if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			conf, err := config.Load([]string{"-config", path})
+			if err != nil {
+				t.Fatalf("Could not load configuration: %s", err.Error())
+			}
+			caches := registry.LoadCachesFromConfig(conf)
+			defer registry.CloseCaches(caches)
+			albClient, _ := alb.NewClient(albName, nil, lm.NewRouter(), nil, nil, nil)
+			err = RegisterProxyRoutes(conf, backends.Backends{albName: albClient}, lm.NewRouter(), lm.NewRouter(),
+				caches, nil, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := albClient.Cache() != nil; got != test.wantCache {
+				t.Fatalf("alb given a cache = %v, want %v", got, test.wantCache)
+			}
+		})
 	}
 }
 

@@ -28,6 +28,7 @@ import (
 	"strconv"
 	"strings"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -157,19 +158,17 @@ func (b *keyBuilder) sum(preamble ...string) string {
 	})
 	h := sha256.New()
 	var buf []byte
-	writeStr := func(s string) {
-		buf = binary.AppendUvarint(buf[:0], uint64(len(s)))
-		buf = append(buf, s...)
-		h.Write(buf)
-	}
 	for _, s := range preamble {
-		writeStr(s)
+		buf = tbytes.AppendLengthPrefixed(buf[:0], s)
+		h.Write(buf)
 	}
 	for _, c := range b.comps {
 		buf = append(buf[:0], c.class)
 		h.Write(buf)
-		writeStr(c.name)
-		writeStr(c.value)
+		buf = tbytes.AppendLengthPrefixed(buf[:0], c.name)
+		h.Write(buf)
+		buf = tbytes.AppendLengthPrefixed(buf[:0], c.value)
+		h.Write(buf)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

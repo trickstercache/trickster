@@ -315,3 +315,67 @@ func TestRegexCapturesAreUnavailableWithoutMatchingCase(t *testing.T) {
 		t.Fatalf("X-Egress-Captures = %q, want %q", got, want)
 	}
 }
+
+// TestHostnameRuleReadsHostHeader evaluates a hostname rule against server requests, whose
+// URLs name no host, so the hostname comes from the Host header
+func TestHostnameRuleReadsHostHeader(t *testing.T) {
+	const redirectURL = "https://www.example.com/"
+	rwi, err := rewriter.ProcessConfigs(rwo.Lookup{
+		"to-origin": {Instructions: rwo.RewriteList{
+			{"hostname", "set", "${site}.origins.example.com"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := NewClient("origins", nil, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, r.URL.Hostname())
+		}), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backendClient, err := NewClient("router", bo.New(), nil, nil,
+		backends.Backends{"origins": destination}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := backendClient.(*Client)
+	err = c.parseOptions(&ro.Options{
+		Name:         "site-router",
+		InputType:    "string",
+		InputSource:  "hostname",
+		Operation:    "rmatch",
+		OperationArg: `^(?P<site>[a-z0-9-]{1,63})\.example\.com$`,
+		RedirectURL:  redirectURL,
+		CaseOptions: ro.CaseOptionsList{{
+			Matches:         []string{ro.ValueTrue},
+			ReqRewriterName: "to-origin",
+			NextRoute:       "origins",
+		}},
+	}, rwi)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for host, want := range map[string]string{
+		"alpha.example.com":             "alpha.origins.example.com",
+		"bravo-legacy.example.com:8480": "bravo-legacy.origins.example.com",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/path", nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		c.Handler(w, req)
+		if got := w.Body.String(); got != want {
+			t.Errorf("host %s routed with hostname %q, want %q", host, got, want)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/path", nil)
+	req.Host = "www.example.org"
+	w := httptest.NewRecorder()
+	c.Handler(w, req)
+	if w.Code != http.StatusFound || w.Header().Get("Location") != redirectURL {
+		t.Errorf("unmatched host: status %d, location %q", w.Code, w.Header().Get("Location"))
+	}
+}

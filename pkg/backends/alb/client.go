@@ -99,6 +99,8 @@ type Client struct {
 	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
 	flows     atomic.Pointer[sticky.Flows]
 	flowsOnce sync.Once
+	// retiring holds the discovered members the pool kept once their manager stopped, which retire with the ALB
+	retiring retiringMembers
 
 	// routerOverride is a user router's step alignment, which it has no pool to carry
 	routerOverride atomic.Pointer[tctx.StepAlignmentOverride]
@@ -210,6 +212,19 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		}
 	}
 	return c, nil
+}
+
+// cacheReceiver is a mechanism that keeps results in its ALB's cache
+type cacheReceiver interface {
+	SetCache(cache.Cache, *bo.Options)
+}
+
+// SetCache gives the client its cache, and the mechanism too when it keeps results.
+func (c *Client) SetCache(cc cache.Cache) {
+	c.Backend.SetCache(cc)
+	if cr, ok := c.handler.(cacheReceiver); ok {
+		cr.SetCache(cc, c.Configuration())
+	}
 }
 
 // StartALBPools ensures that ALB's are fully loaded, which can't be done
@@ -334,6 +349,11 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if o.MechanismName == names.MechanismTSM {
 			if err := validateTSMPoolMemberProvider(m.Name, clients, sets.NewStringSet()); err != nil {
 				return err
+			}
+			if o.TSMOptions.IsGlobal() {
+				if err := validateGlobalEvaluationMember(c.Name(), tc); err != nil {
+					return err
+				}
 			}
 		}
 		hc, ok := hcs[m.Name]
@@ -587,6 +607,15 @@ func validateTSMPoolMemberProvider(name string, clients backends.Backends,
 		if err := validateTSMPoolMemberProvider(child.Name, clients, nextVisited); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateGlobalEvaluationMember requires a member to serve its own raw series. Global evaluation reads
+// the raw series of terminal backends, so a nested ALB cannot be a member.
+func validateGlobalEvaluationMember(albName string, member backends.Backend) error {
+	if err := member.Configuration().ValidateSeriesSource(); err != nil {
+		return bo.NewErrGlobalEvaluationMember(albName, "", member.Name(), err)
 	}
 	return nil
 }

@@ -133,7 +133,8 @@ func TestPolicyOverlayFillsEveryStringField(t *testing.T) {
 	over := &Policy{
 		Handler: "h", CacheName: "c", RoutingMode: "r", NegativeCacheName: "n", CORSMode: "m",
 		CollapsedForwarding: "cf", RewriteTarget: "/t", TracingName: "tr",
-		ReqRewriterName: "rw", AuthenticatorName: "a", IPACLName: "acl", HealthMode: "probe",
+		ReqRewriterName: "rw", AuthenticatorName: "a", IPACLName: "acl", RateLimiterName: "rl",
+		HealthMode:    "probe",
 		LoadBalancing: "hrw", LoadBalancingKey: "client_ip",
 		Sticky: "table", StickyKey: "host", StickySecret: "a2V5",
 		Provider: "graphite", ResultHeader: ResultHeaderHide,

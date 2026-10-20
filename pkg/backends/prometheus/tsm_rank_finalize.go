@@ -37,7 +37,7 @@ const (
 
 type rankBucketKey struct {
 	epoch int64
-	group string
+	group int
 }
 
 type rankCandidate struct {
@@ -160,6 +160,10 @@ func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql
 		finalizeVarianceAggregation(ds, spec)
 		return
 	}
+	if spec, found := promql.ParsePresenceAggregation(expr); found {
+		finalizePresenceAggregation(ds, spec)
+		return
+	}
 	if spec, found := promql.ParseRankAggregation(expr); found {
 		finalizeRankAggregation(ds, spec)
 		return
@@ -173,15 +177,18 @@ func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql
 }
 
 func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
-	isRangeQuery := ds.Step() > 0
-
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	sortFinalSeries(ds, descending)
+}
 
+// sortFinalSeries applies sort or sort_desc to finalized series, which ignore native-histogram samples
+// and only order instant vectors; the caller holds the dataset's UpdateLock
+func sortFinalSeries(ds *dataset.DataSet, descending bool) {
+	isRangeQuery := ds.Step() > 0
 	if isRangeQuery {
 		appendWarningOnce(ds, sortInRangeQueryWarning)
 	}
-
 	for _, result := range ds.Results {
 		if result == nil {
 			continue
@@ -209,6 +216,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 		appendWarningOnce(ds, sortInRangeQueryWarning)
 	}
 
+	groups := aggregationGroups{grouping: spec.Grouping}
 	for _, result := range ds.Results {
 		if result == nil || len(result.SeriesList) == 0 {
 			continue
@@ -219,7 +227,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			if series == nil {
 				continue
 			}
-			group := rankGroupKey(series.Header.Tags, spec.Grouping)
+			group := groups.id(series.Header.Tags)
 			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
 				value, ok := sampleFloat(c.seg(), c.i)
 				if !ok {
@@ -284,29 +292,6 @@ func rankValueLess(a, b float64, operator string) bool {
 		return a < b
 	}
 	return a > b
-}
-
-func rankGroupKey(tags dataset.Tags, grouping promql.AggregationGrouping) string {
-	if len(grouping.Labels) == 0 {
-		if grouping.Without {
-			return tags.JSON()
-		}
-		return ""
-	}
-	if grouping.Without {
-		kept := tags.Clone()
-		for _, label := range grouping.Labels {
-			delete(kept, label)
-		}
-		return kept.JSON()
-	}
-	kept := make(dataset.Tags, len(grouping.Labels))
-	for _, label := range grouping.Labels {
-		if value := tags[label]; value != "" {
-			kept[label] = value
-		}
-	}
-	return kept.JSON()
 }
 
 func keepSelectedRankPoints(

@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
+	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -116,7 +118,7 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 		rwopts.Lookup{"rw": nil},
 		autho.Lookup{"auth": autho.New()},
 		tro.Lookup{"trace": tro.New()},
-		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings: %v", err)
@@ -154,14 +156,14 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 
 	l := Lookup{keys.Member: member, "edge": edge}
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings for ALB pool: %v", err)
 	}
 
 	edge.ALBOptions.Pool = ao.Members("edge")
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected cycle validation error")
 	}
@@ -178,7 +180,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	l := Lookup{"backend": o}
 
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid authenticator error")
 	}
@@ -186,7 +188,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.AuthenticatorName = ""
 	o.Paths = po.List{{Path: "/x", AuthenticatorName: "missing"}}
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid path authenticator error")
 	}
@@ -195,7 +197,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.Provider = providers.ALB
 	o.ALBOptions = nil
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid ALB options error")
 	}
@@ -223,7 +225,7 @@ func TestIPACLMappings(t *testing.T) {
 	}
 	mappings := func(l Lookup) error {
 		return l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-			ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, acls)
+			ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, acls, nil)
 	}
 
 	o := backend()
@@ -300,5 +302,107 @@ func TestOptionsValidateHealthCheckError(t *testing.T) {
 	_, err := o.Validate()
 	if err == nil {
 		t.Fatal("expected healthcheck validation error")
+	}
+}
+
+const tsmLongName = "tsmerge"
+
+func newCacheTestALB(mechanism, evaluation string) *Options {
+	o := New()
+	o.Provider = providers.ALB
+	o.CacheName = ""
+	o.TracingConfigName = ""
+	o.NegativeCacheName = ""
+	o.ALBOptions = ao.New()
+	o.ALBOptions.MechanismName = mechanism
+	o.ALBOptions.TSMOptions.Evaluation = evaluation
+	return o
+}
+
+func TestUsesCache(t *testing.T) {
+	t.Parallel()
+	origin := New()
+	origin.Provider = providers.ReverseProxyCacheShort
+	// a backend keeps whatever alb block it was loaded with, but only an alb provider acts on it
+	residualOn := func(provider string) *Options {
+		o := newCacheTestALB(names.MechanismTSM, tsmoptions.EvaluationGlobal)
+		o.Provider = provider
+		return o
+	}
+	for name, tc := range map[string]struct {
+		o    *Options
+		want bool
+	}{
+		"global tsm":                     {newCacheTestALB(names.MechanismTSM, tsmoptions.EvaluationGlobal), true},
+		"global tsm under its long name": {newCacheTestALB(tsmLongName, tsmoptions.EvaluationGlobal), true},
+		"merging tsm":                    {newCacheTestALB(names.MechanismTSM, ""), false},
+		"residual global block on rr":    {newCacheTestALB(names.MechanismRR, tsmoptions.EvaluationGlobal), false},
+		"residual global block on ur":    {newCacheTestALB(names.MechanismUR, tsmoptions.EvaluationGlobal), false},
+		"residual global alb on rp":      {residualOn(providers.ReverseProxyShort), false},
+		"residual global alb on proxy":   {residualOn(providers.Proxy), false},
+		"residual global alb on rule":    {residualOn(providers.Rule), false},
+		"residual global alb on origin":  {residualOn(providers.ReverseProxyCacheShort), true},
+		"alb without options":            {&Options{Provider: providers.ALB}, false},
+		"caching origin":                 {origin, true},
+		"default backend":                {New(), true},
+	} {
+		if got := tc.o.UsesCache(); got != tc.want {
+			t.Fatalf("%s: UsesCache = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+func TestALBCacheRequirement(t *testing.T) {
+	t.Parallel()
+	const (
+		albName      = "lb"
+		missingCache = "missing"
+		typo         = "gl0bal"
+	)
+	for name, tc := range map[string]struct {
+		mechanism, evaluation string
+		wantCache             bool
+		wantErr               error
+	}{
+		"residual global block on rr":    {names.MechanismRR, tsmoptions.EvaluationGlobal, false, nil},
+		"global tsm":                     {names.MechanismTSM, tsmoptions.EvaluationGlobal, true, nil},
+		"global tsm under its long name": {tsmLongName, tsmoptions.EvaluationGlobal, true, nil},
+		"merging tsm":                    {names.MechanismTSM, tsmoptions.EvaluationMerge, false, nil},
+		"typo in an active tsm block":    {names.MechanismTSM, typo, false, tsmoptions.ErrInvalidEvaluation},
+		"typo in an inactive tsm block":  {names.MechanismRR, typo, false, nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			member := New()
+			member.Provider = providers.Prometheus
+			member.OriginURL = "http://example.com"
+			member.TracingConfigName = ""
+			member.NegativeCacheName = ""
+			lb := newCacheTestALB(tc.mechanism, tc.evaluation)
+			lb.ALBOptions.Pool = ao.Members(keys.Member)
+			l := Lookup{keys.Member: member, albName: lb}
+			if err := l.Initialize(); err != nil {
+				t.Fatalf("Lookup.Initialize: %v", err)
+			}
+			if got := lb.CacheName != ""; got != tc.wantCache {
+				t.Fatalf("cache_name defaulted = %v (%q), want %v", got, lb.CacheName, tc.wantCache)
+			}
+			// a cache_name that names no cache fails only an alb that keeps results
+			lb.CacheName = missingCache
+			err := l.ValidateConfigMappings(co.Lookup{DefaultBackendCacheName: nil}, negative.Lookups{},
+				ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
+			switch {
+			case tc.wantErr != nil:
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("ValidateConfigMappings = %v, want %v", err, tc.wantErr)
+				}
+			case tc.wantCache:
+				if _, ok := errors.AsType[*ErrInvalidCacheName](err); !ok {
+					t.Fatalf("ValidateConfigMappings = %v, want an invalid cache_name error", err)
+				}
+			case err != nil:
+				t.Fatalf("ValidateConfigMappings: %v", err)
+			}
+		})
 	}
 }

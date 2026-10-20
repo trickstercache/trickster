@@ -141,6 +141,29 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
+func TestInitializeShortensLongNames(t *testing.T) {
+	// a long name is a time series merge before it is shortened, so what's decided before Initialize agrees
+	o := New()
+	o.MechanismName = names.MechanismTimeSeriesMerge
+	require.True(t, o.IsTSM())
+	require.NoError(t, o.Initialize(""))
+	require.Equal(t, names.MechanismTSM, o.MechanismName)
+	require.Equal(t, "prometheus", o.OutputFormat)
+
+	o = New()
+	o.MechanismName = names.MechanismFirstGoodResponse
+	require.False(t, o.IsTSM())
+	require.NoError(t, o.Initialize(""))
+	require.Equal(t, names.MechanismFGR, o.MechanismName)
+	require.True(t, o.FGRGoodCodes.Contains(200), "a long-named fgr's status codes are compiled")
+
+	o = New()
+	o.MechanismName = names.MechanismUserRouter
+	require.NoError(t, o.Initialize(""))
+	_, err := o.Validate()
+	require.ErrorIs(t, err, ErrUserRouterRequired, "a long-named user router is validated")
+}
+
 func TestErrInvalidALBOptions(t *testing.T) {
 	err := NewErrInvalidALBOptions("test")
 	var e *InvalidALBOptionsError

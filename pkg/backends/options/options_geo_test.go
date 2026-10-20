@@ -62,10 +62,11 @@ func TestValidateGeoACLNames(t *testing.T) {
 
 func TestClearACLNames(t *testing.T) {
 	o := New()
-	o.GeoACLName, o.IPACLName = "north-america", "office"
-	o.Paths = po.List{{Path: "/eu/", GeoACLName: "europe", IPACLName: "none"}, nil}
+	o.GeoACLName, o.IPACLName, o.RateLimiterName = "north-america", "office", "per-client"
+	o.Paths = po.List{{Path: "/eu/", GeoACLName: "europe", IPACLName: "none", RateLimiterName: "login"}, nil}
 	o.ClearACLNames()
-	if o.GeoACLName != "" || o.IPACLName != "" || o.Paths[0].GeoACLName != "" || o.Paths[0].IPACLName != "" {
+	if o.GeoACLName != "" || o.IPACLName != "" || o.RateLimiterName != "" ||
+		o.Paths[0].GeoACLName != "" || o.Paths[0].IPACLName != "" || o.Paths[0].RateLimiterName != "" {
 		t.Fatal("ACL names were not cleared")
 	}
 }

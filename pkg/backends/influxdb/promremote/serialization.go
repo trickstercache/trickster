@@ -23,29 +23,43 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"slices"
 	"time"
+	"unicode/utf8"
+	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
 	"github.com/klauspost/compress/snappy"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
 
 var (
 	errDuplicateLabel     = errors.New("prometheus remote-read series contains duplicate labels")
 	errInvalidDataSet     = errors.New("invalid Prometheus remote-read dataset")
+	errInvalidLabel       = errors.New("prometheus remote-read label is not valid UTF-8")
+	errInvalidResponse    = errors.New("invalid Prometheus remote-read response")
 	errInvalidSample      = errors.New("invalid Prometheus remote-read sample")
 	errInvalidTimestamp   = errors.New("prometheus remote-read timestamp exceeds nanosecond range")
 	errUnexpectedResults  = errors.New("prometheus remote-read response must contain exactly one result")
 	errUnexpectedTimeStep = errors.New("prometheus remote-read sample timestamp is not millisecond-aligned")
 )
 
-const nanosPerMillisecond = int64(time.Millisecond)
+const (
+	nanosPerMillisecond = int64(time.Millisecond)
+	// seriesBytes, labelBytes and sampleBytes are the memory a decoded series takes besides its labels' strings, each
+	// label takes besides them, as a tag and its field, and each sample takes in its series' columns
+	seriesBytes = int64(unsafe.Sizeof(dataset.Series{})) + int64(unsafe.Sizeof((*dataset.Series)(nil)))
+	labelBytes  = int64(unsafe.Sizeof(timeseries.FieldDefinition{})) + mapEntryBytes
+	sampleBytes = int64(unsafe.Sizeof(epoch.Epoch(0))+unsafe.Sizeof(float64(0))) + 1
+	// mapEntryBytes is what an entry of a series' tags may take, its table as little as 7/16 full once grown
+	mapEntryBytes = 48
+)
 
 // UnmarshalTimeseries converts a snappy-compressed remote-read response into a DataSet.
 func UnmarshalTimeseries(data []byte,
@@ -61,54 +75,114 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	if reader == nil || trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	decoded, err := readSnappyBlock(reader, responseDecodeLimit(trq.ParsedQuery))
+	limit := responseDecodeLimit(trq.ParsedQuery)
+	decoded, err := readSnappyBlock(reader, limit)
 	if err != nil {
 		return nil, fmt.Errorf("decode Prometheus remote-read response: %w", err)
 	}
-	response := &prompb.ReadResponse{}
-	if err := proto.Unmarshal(decoded, response); err != nil {
+	d := &responseDecoder{
+		Kind:      errInvalidResponse,
+		b:         dataset.NewBuilder(trq, dataset.BuilderOptions{}),
+		statement: trq.Statement,
+		allowance: remoteread.DecodeAllowance(int64(limit)),
+	}
+	d.b.SetResult(0, "")
+	results, err := d.Series(decoded, d.series)
+	if err == nil && results != 1 {
+		err = errUnexpectedResults
+	}
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal Prometheus remote-read response: %w", err)
 	}
-	if len(response.Results) != 1 || response.Results[0] == nil {
-		return nil, errUnexpectedResults
-	}
-
-	result := &dataset.Result{StatementID: 0}
-	if response.Results[0].Timeseries != nil {
-		result.SeriesList = make(dataset.SeriesList, len(response.Results[0].Timeseries))
-	}
-	for i, wireSeries := range response.Results[0].Timeseries {
-		series, err := fromWireSeries(wireSeries, trq.Statement)
-		if err != nil {
-			return nil, err
-		}
-		result.SeriesList[i] = series
-	}
-
-	return &dataset.DataSet{
-		Results:        dataset.Results{result},
-		TimeRangeQuery: trq,
-		ExtentList:     timeseries.ExtentList{trq.Extent},
-	}, nil
+	return d.b.Finish()
 }
 
-func fromWireSeries(wireSeries *prompb.TimeSeries,
-	statement string,
-) (*dataset.Series, error) {
-	if wireSeries == nil {
-		return nil, errInvalidDataSet
-	}
-	tags := make(dataset.Tags, len(wireSeries.Labels))
-	for _, label := range wireSeries.Labels {
-		if label == nil {
-			return nil, errInvalidDataSet
-		}
-		if _, ok := tags[label.Name]; ok {
-			return nil, errDuplicateLabel
-		}
-		tags[label.Name] = label.Value
-	}
+type responseDecoder struct {
+	remoteread.Reader
+	b         *dataset.Builder
+	statement string
+	allowance int64
+}
 
+func (d *responseDecoder) series(result int, msg []byte) error {
+	if result > 0 {
+		return errUnexpectedResults
+	}
+	// a first pass reads the labels and checks the samples, so the series' memory is charged before any is allocated
+	var labels, samples int
+	cost := seriesBytes
+	for rest := msg; len(rest) > 0; {
+		f, next, err := d.Field(rest)
+		if err != nil {
+			return err
+		}
+		rest = next
+		switch f.Num {
+		case remoteread.TimeSeriesLabels:
+			if err = d.Expect(f, protowire.BytesType); err != nil {
+				return err
+			}
+			name, value, err := d.Label(f.B)
+			if err != nil {
+				return err
+			}
+			if !utf8.Valid(name) || !utf8.Valid(value) {
+				return errInvalidLabel
+			}
+			labels++
+			cost += labelBytes + int64(len(name)+len(value))
+		case remoteread.TimeSeriesSamples:
+			if err = d.Expect(f, protowire.BytesType); err != nil {
+				return err
+			}
+			t, _, err := d.Sample(f.B)
+			if err != nil {
+				return err
+			}
+			if t > math.MaxInt64/nanosPerMillisecond || t < math.MinInt64/nanosPerMillisecond {
+				return errInvalidTimestamp
+			}
+			samples++
+		}
+	}
+	if d.allowance -= cost + int64(samples)*sampleBytes; d.allowance < 0 {
+		return fmt.Errorf("%w: the series decoded from a response would take too much memory", errBodyTooLarge)
+	}
+	// the first pass read every field, so none fails to read here
+	tags := make(dataset.Tags, labels)
+	for rest := msg; len(rest) > 0; {
+		f, next, _ := d.Field(rest)
+		rest = next
+		if f.Num != remoteread.TimeSeriesLabels {
+			continue
+		}
+		name, value, _ := d.Label(f.B)
+		if _, ok := tags[string(name)]; ok {
+			return errDuplicateLabel
+		}
+		tags[string(name)] = string(value)
+	}
+	d.b.StartNewSeries(seriesHeader(tags, d.statement))
+	d.b.Grow(samples, samples, 0)
+	for rest := msg; len(rest) > 0; {
+		f, next, _ := d.Field(rest)
+		rest = next
+		if f.Num != remoteread.TimeSeriesSamples {
+			continue
+		}
+		t, v, _ := d.Sample(f.B)
+		row := d.b.Row()
+		row.SetEpoch(epoch.Epoch(t * nanosPerMillisecond))
+		row.AddFloat64(v)
+		if err := row.Commit(); err != nil {
+			return err
+		}
+	}
+	d.b.EndSeries()
+	return nil
+}
+
+func seriesHeader(tags dataset.Tags, statement string) dataset.SeriesHeader {
 	tagNames := tags.Keys()
 	tagFields := make(timeseries.FieldDefinitions, len(tagNames))
 	for i, name := range tagNames {
@@ -118,7 +192,7 @@ func fromWireSeries(wireSeries *prompb.TimeSeries,
 			Role:     timeseries.RoleTag,
 		}
 	}
-	header := dataset.SeriesHeader{
+	return dataset.SeriesHeader{
 		Name:            tags["__name__"],
 		Tags:            tags,
 		TagFieldsList:   tagFields,
@@ -126,37 +200,6 @@ func fromWireSeries(wireSeries *prompb.TimeSeries,
 		TimestampField:  timeseries.FieldDefinition{Name: "timestamp", DataType: timeseries.DateTimeUnixMilli, Role: timeseries.RoleTimestamp},
 		ValueFieldsList: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.Float64, Role: timeseries.RoleValue}},
 	}
-	header.CalculateSize()
-
-	points := make(dataset.Points, len(wireSeries.Samples))
-	for i, sample := range wireSeries.Samples {
-		if sample == nil {
-			return nil, errInvalidSample
-		}
-		if sample.Timestamp > math.MaxInt64/nanosPerMillisecond ||
-			sample.Timestamp < math.MinInt64/nanosPerMillisecond {
-			return nil, errInvalidTimestamp
-		}
-		points[i] = dataset.Point{
-			Epoch:  epoch.Epoch(sample.Timestamp * nanosPerMillisecond),
-			Values: []any{sample.Value},
-		}
-	}
-	slices.SortFunc(points, func(a, b dataset.Point) int {
-		return cmpEpoch(a.Epoch, b.Epoch)
-	})
-
-	return dataset.NewSeries(header, points), nil
-}
-
-func cmpEpoch(a, b epoch.Epoch) int {
-	if a < b {
-		return -1
-	}
-	if a > b {
-		return 1
-	}
-	return 0
 }
 
 // MarshalTimeseries converts a DataSet into a snappy-compressed remote-read response.

@@ -38,7 +38,7 @@ var sourceExtractionFuncs = map[inputType]extractionFunc{
 	ro.SourceScheme:      func(r *http.Request, _ string) string { return parts.Scheme(r) },
 	ro.SourceHost:        func(r *http.Request, _ string) string { return parts.Host(r) },
 	ro.SourceHostname:    func(r *http.Request, _ string) string { return parts.Hostname(r) },
-	ro.SourcePort:        func(r *http.Request, _ string) string { return parts.Port(r) },
+	ro.SourcePort:        extractPortFromSource,
 	ro.SourcePath:        func(r *http.Request, _ string) string { return parts.Path(r) },
 	ro.SourceParams:      func(r *http.Request, _ string) string { return parts.RawQuery(r) },
 	ro.SourceParam:       extractParamFromSource,
@@ -54,6 +54,27 @@ func isValidSourceName(source string) (extractionFunc, bool) {
 
 func isHeaderSource(source string) bool {
 	return source == ro.SourceHeader || source == ro.SourceHasHeader
+}
+
+const (
+	schemeHTTP       = "http"
+	schemeHTTPS      = "https"
+	defaultHTTPPort  = "80"
+	defaultHTTPSPort = "443"
+)
+
+// extractPortFromSource infers the scheme's default port when the request names none
+func extractPortFromSource(r *http.Request, _ string) string {
+	if port := parts.Port(r); port != "" {
+		return port
+	}
+	switch parts.Scheme(r) {
+	case schemeHTTPS:
+		return defaultHTTPSPort
+	case schemeHTTP:
+		return defaultHTTPPort
+	}
+	return ""
 }
 
 func extractParamFromSource(r *http.Request, paramName string) string {

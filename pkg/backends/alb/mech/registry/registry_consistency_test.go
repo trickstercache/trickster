@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 )
@@ -62,6 +63,19 @@ func TestCompileSupportedByNamePanicsOnNameShortNameCollision(t *testing.T) {
 		}
 	}()
 	_ = compileSupportedByName(entries)
+}
+
+// options compare a mechanism's short name, so every registered long name must shorten to it
+func TestEveryLongNameShortens(t *testing.T) {
+	t.Parallel()
+	for _, entry := range registry {
+		if got := names.Short(entry.Name); got != entry.ShortName {
+			t.Errorf("%s shortens to %q, not %q", entry.Name, got, entry.ShortName)
+		}
+		if got := names.Short(entry.ShortName); got != entry.ShortName {
+			t.Errorf("short name %s changed to %q", entry.ShortName, got)
+		}
+	}
 }
 
 // a session is kept only where one member serves each request or flow, which is exactly the

@@ -185,6 +185,7 @@ func (o *Options) Clone() *Options {
 	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
 	c.Stream = o.Stream.Clone()
 	c.Sticky = o.Sticky.Clone()
+	c.TSMOptions = o.TSMOptions.Clone()
 	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
 	if o.LT.GoodCodes != nil {
 		table := *o.LT.GoodCodes
@@ -195,6 +196,17 @@ func (o *Options) Clone() *Options {
 		c.FGRGoodCodes = &table
 	}
 	return c
+}
+
+// IsTSM reports whether the ALB's mechanism is time series merge, under any name Initialize shortens to tsm.
+func (o *Options) IsTSM() bool {
+	return o != nil && strings.HasPrefix(names.Short(o.MechanismName), names.MechanismTSM)
+}
+
+// IsTSMGlobal reports whether the ALB evaluates queries over its members' raw series: a time series merge
+// whose tsm block sets evaluation: global. Every other mechanism ignores the tsm block.
+func (o *Options) IsTSMGlobal() bool {
+	return o.IsTSM() && o.TSMOptions.IsGlobal()
 }
 
 func (o *Options) Initialize(name string) error {
@@ -208,8 +220,9 @@ func (o *Options) Initialize(name string) error {
 	if len(repeats) > 0 {
 		o.Pool, o.PoolRepeats = pool, repeats
 	}
-	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
-		// shorten from tsmerge to tsm
+	// every check of the mechanism compares its short name, so a long one, or tsmerge, is shortened
+	o.MechanismName = names.Short(o.MechanismName)
+	if o.IsTSM() {
 		o.MechanismName = names.MechanismTSM
 	}
 	switch o.MechanismName {
@@ -281,6 +294,9 @@ func (o *Options) Validate() (bool, error) {
 	case names.MechanismTSM:
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return false, ErrInvalidOutputFormat
+		}
+		if err := o.TSMOptions.Validate(); err != nil {
+			return false, err
 		}
 	default:
 		if o.OutputFormat != "" {

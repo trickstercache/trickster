@@ -505,7 +505,6 @@ services:
     image: trickster-questdb-seed:dev
     build:
       context: ./docker-compose-data/questdb-config/seeding
-      network: host
     env_file:
       - ./docker-compose-data/credentials.env
     environment:
@@ -575,6 +574,123 @@ services:
         condition: service_healthy
       seed_data_generate:
         condition: service_completed_successfully
+
+  # Two Mimir regions for TSM global evaluation (ALB tsm.evaluation: global): each
+  # holds its own pods, a pod both share, and a backup copy of one of the other's
+  # pods labeled isBackup. Local only; not in the integration profile.
+  mimir_east:
+    profiles: [mimir]
+    image: grafana/mimir:3.2.1@sha256:92838f113ba54230014e79bc812e57ca90bb9ebc06e665f59e4f700098c2dd04
+    command: ['-config.file=/etc/mimir/mimir.yaml']
+    ports:
+      - 11080:8080
+    volumes:
+      - ./docker-compose-data/mimir-config:/etc/mimir:ro
+      - mimir-east-data:/data
+    restart: always
+
+  mimir_west:
+    profiles: [mimir]
+    image: grafana/mimir:3.2.1@sha256:92838f113ba54230014e79bc812e57ca90bb9ebc06e665f59e4f700098c2dd04
+    command: ['-config.file=/etc/mimir/mimir.yaml']
+    ports:
+      - 11081:8080
+    volumes:
+      - ./docker-compose-data/mimir-config:/etc/mimir:ro
+      - mimir-west-data:/data
+    restart: always
+
+  # hack/mimirseed backfills three hours of each region's pod counters, then keeps
+  # writing new samples every 15s.
+  mimir_seed:
+    profiles: [mimir]
+    image: golang:1.27-alpine
+    working_dir: /repo/hack/mimirseed
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      MIMIR_URLS: east=http://mimir_east:8080,west=http://mimir_west:8080
+    volumes:
+      - ../../..:/repo:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", "."]
+    restart: always
+    depends_on:
+      - mimir_east
+      - mimir_west
+
+  # A Prometheus HA pair with Thanos sidecars serving StoreAPI, and a Thanos
+  # querier deduplicating on the replica label, for comparing Thanos with TSM
+  # global evaluation over the sidecars. Local only; not in the integration profile.
+  prometheus_ha_a:
+    profiles: [thanos]
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.min-block-duration=2h
+      - --storage.tsdb.max-block-duration=2h
+    ports:
+      - 11090:9090
+    volumes:
+      - ./docker-compose-data/thanos-config/prometheus-a.yml:/etc/prometheus/prometheus.yml:ro
+    restart: always
+
+  prometheus_ha_b:
+    profiles: [thanos]
+    image: prom/prometheus:v3.13.2
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.min-block-duration=2h
+      - --storage.tsdb.max-block-duration=2h
+    ports:
+      - 11091:9090
+    volumes:
+      - ./docker-compose-data/thanos-config/prometheus-b.yml:/etc/prometheus/prometheus.yml:ro
+    restart: always
+
+  thanos_sidecar_a:
+    profiles: [thanos]
+    image: quay.io/thanos/thanos:v0.39.2@sha256:1d022ef4b8eff056a0e3b7822f953d931c5704d068413f2d7ce5266aa96c9e80
+    command: [sidecar, --prometheus.url=http://prometheus_ha_a:9090, --grpc-address=0.0.0.0:10901,
+      --http-address=0.0.0.0:10902]
+    ports:
+      - 11901:10901
+    restart: always
+    depends_on:
+      - prometheus_ha_a
+
+  thanos_sidecar_b:
+    profiles: [thanos]
+    image: quay.io/thanos/thanos:v0.39.2@sha256:1d022ef4b8eff056a0e3b7822f953d931c5704d068413f2d7ce5266aa96c9e80
+    command: [sidecar, --prometheus.url=http://prometheus_ha_b:9090, --grpc-address=0.0.0.0:10901,
+      --http-address=0.0.0.0:10902]
+    ports:
+      - 11902:10901
+    restart: always
+    depends_on:
+      - prometheus_ha_b
+
+  thanos_query:
+    profiles: [thanos]
+    image: quay.io/thanos/thanos:v0.39.2@sha256:1d022ef4b8eff056a0e3b7822f953d931c5704d068413f2d7ce5266aa96c9e80
+    command: [query, --http-address=0.0.0.0:10902, --grpc-address=0.0.0.0:10901,
+      --endpoint=thanos_sidecar_a:10901, --endpoint=thanos_sidecar_b:10901, --query.replica-label=replica]
+    ports:
+      - 11903:10902
+      - 11904:10901
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "2", "-O", "/dev/null", "http://127.0.0.1:10902/-/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      - thanos_sidecar_a
+      - thanos_sidecar_b
 
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
@@ -777,4 +893,6 @@ volumes:
   greptimedb-data:
   questdb-data:
   victoriametrics-data:
+  mimir-east-data:
+  mimir-west-data:
   redis-data:

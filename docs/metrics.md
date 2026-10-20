@@ -65,6 +65,17 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured backend whose request was signed
     * `event` - `sign_failure` when a request could not be signed and was not sent, or `credentials_retry` when the origin rejected expiring credentials and the request was resent with refreshed ones
 
+* `trickster_proxy_origin_srv_lookups_total` (Counter) - The number of SRV lookups made by backends using [SRV origin resolution](./origin-resolution.md).
+  * labels:
+    * `backend_name` - the name of the configured backend that dialed its origin
+    * `result` - `hit`, `miss`, `stale` (a failed refresh served the last good answer), `negative` (a cached NXDOMAIN, empty answer or failure) or `error`
+
+* `trickster_proxy_origin_srv_dial_attempts_total` (Counter) - The number of dial attempts to SRV targets by backends using [SRV origin resolution](./origin-resolution.md).
+  * labels:
+    * `backend_name` - the name of the configured backend that dialed its origin
+    * `tier` - the target's priority tier, where `0` is the preferred tier
+    * `result` - `success` or `failure`
+
 * `trickster_proxy_truncated_responses_total` (Counter) - The number of time series fetches the origin truncated at its series limit, which Trickster proxies rather than caches. Only backends whose [flavor](./aws.md#amazon-cloudwatch-promql) declares a series limit report it.
   * labels:
     * `backend_name` - the name of the configured backend whose fetch was truncated
@@ -79,6 +90,16 @@ The following metrics are available for polling with any Trickster configuration
     * `ip_acl` - the name of the access list
     * `scope` - `listener`, `backend`, or `path`
     * `verdict` - `allow` or `deny`. `reject` and `drop` are both `deny`
+
+* `trickster_ratelimit_decisions_total` (Counter) - Decisions made by an attached rate limiter. See [rate-limiting.md](./rate-limiting.md).
+  * labels:
+    * `limiter` - the name of the rate limiter
+    * `plane` - `http` or `stream`
+    * `result` - `allowed`, `limited`, `counted`, `exempt`, or `full`
+
+* `trickster_ratelimit_keys` (Gauge) - Buckets a rate limiter holds at scrape time.
+  * labels:
+    * `limiter` - the name of the rate limiter
 
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
@@ -297,6 +318,39 @@ The following metrics are available for polling with any Trickster configuration
     * `result` - `hit` (sent to the member its session is pinned to), `miss` (no token or table entry), `expired` (a token past its `ttl` or `idle`; an expired table entry is a `miss`), `invalid` (a token that is altered, signed with another key or issued by another ALB), `repick` (its member was unavailable and the session moved) or `rejected` (its member was unavailable and `on_unavailable: reject` refused it)
 
 * `trickster_alb_sticky_entries` (Gauge) - The number of entries in the table of an ALB that keeps sticky sessions in a table, on any listener, expired entries not yet removed included; read when the metrics endpoint is scraped.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+The following metrics are available for ALBs that use [TSM global evaluation](./alb.md#global-evaluation). Queries answered from the ALB's cache aren't evaluated, so they aren't counted.
+
+* `trickster_alb_global_evaluations_total` (Counter) - The number of TSM global evaluations
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `status` - `success`, `partial` (evaluated without an unavailable member), or the Prometheus API error type that answered the query: `bad_data`, `execution`, `timeout`, `canceled`, `unavailable` or `internal`
+
+* `trickster_alb_global_evaluation_duration_seconds` (Histogram) - The time TSM global evaluations take, from arrival to response, including raw series retrieval and any wait for an evaluation slot
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_fetched_series_total` (Counter) - The number of raw series TSM global evaluations read from pool members or the raw series cache, before deduplication
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_fetched_samples_total` (Counter) - The number of raw samples TSM global evaluations read from pool members or the raw series cache, before deduplication
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_member_failures_total` (Counter) - The number of raw series reads from a pool member that failed during TSM global evaluation
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
+* `trickster_alb_global_raw_reads_total` (Counter) - The number of raw series reads TSM global evaluations made of pool members, by how the raw series cache answered them
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `status` - `hit` when only samples within the volatile window were read from the member, `phit` when older samples the cache lacked were read too, `kmiss` when the cache held none, and `proxy-only` when every sample was within the volatile window, or the read couldn't be cached
+
+* `trickster_alb_global_raw_subsumed_total` (Counter) - The number of raw series reads TSM global evaluations answered in part from the cached raw series of a broader selector on the same metric
   * labels:
     * `alb_name` - the name of the configured ALB backend
 

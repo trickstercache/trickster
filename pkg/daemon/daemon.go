@@ -261,6 +261,7 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 	}
 
 	if err := validate.Validate(newConf); err != nil {
+		newClients.Retire(0)
 		return handleReloadFailure("reload failed: new configuration is invalid", err)
 	}
 
@@ -312,8 +313,13 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
 			drainTimeout = time.Duration(newConf.MgmtConfig.ReloadDrainTimeout)
 		}
+		newCaches := si.Caches
 		safego.Go(reloadGoroutinePanic("oldClients.CloseIdleConnections", source), func() {
 			time.Sleep(drainTimeout)
+			// what the old clients hold besides their transports, as a raw series source's connection, is released once their requests
+			// have drained, before the replaced caches their global evaluations stored in and the connections their requests used close
+			oldClients.Retire(drainTimeout)
+			setup.CloseReplacedCaches(oldConfig, oldCaches, newCaches, drainTimeout)
 			oldClients.CloseIdleConnections()
 		})
 	}

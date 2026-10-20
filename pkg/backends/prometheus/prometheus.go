@@ -184,6 +184,8 @@ type Client struct {
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
+	// globalSource is the raw series source TSM global evaluation reads, built on first use and closed as the client retires
+	globalSource globalSourceHolder
 }
 
 // captureLimit returns the per-response capture buffer cap for c. Reads
@@ -268,13 +270,18 @@ func parseTime(s string) (time.Time, error) {
 func parseDuration(input string) (time.Duration, error) {
 	v, err := strconv.ParseFloat(input, 64)
 	if err != nil {
-		return tt.ParseDuration(input)
+		// a duration such as 0s or -5m is refused, as its number form is
+		d, err := tt.ParseDuration(input)
+		if err == nil && d <= 0 {
+			return 0, fmt.Errorf("cannot parse %q to a positive duration", input)
+		}
+		return d, err
 	}
 	// v is in seconds and keeps its fraction, as Prometheus does; a step Prometheus would
 	// reject is refused here too
 	d := math.Round(v * float64(time.Second))
 	if math.IsNaN(d) || d <= 0 || d > math.MaxInt64 {
-		return 0, fmt.Errorf("cannot parse %q to a valid step", input)
+		return 0, fmt.Errorf("cannot parse %q to a positive duration", input)
 	}
 	return time.Duration(d), nil
 }

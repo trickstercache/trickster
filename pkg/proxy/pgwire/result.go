@@ -22,6 +22,7 @@ import (
 	"slices"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -132,8 +133,8 @@ func (resultCodec) AppendMarshal(out []byte, r *Result) ([]byte, error) {
 	}
 	out = slices.Grow(out, len(r.RowDescription)+len(r.Tag)+len(r.data)+3*len(r.ends)+32)
 	out = append(out, resultCodecVersion, 0)
-	out = appendBytes(out, r.RowDescription)
-	out = append(binary.AppendUvarint(out, uint64(len(r.Tag))), r.Tag...)
+	out = tbytes.AppendLengthPrefixed(out, r.RowDescription)
+	out = tbytes.AppendLengthPrefixed(out, r.Tag)
 	out = binary.AppendUvarint(out, uint64(len(r.ends)))
 	previousEnd := uint32(0)
 	for _, end := range r.ends {
@@ -188,10 +189,6 @@ func (resultCodec) Unmarshal(data []byte) (*Result, error) {
 	// the data is the codec's own, so the result refers to it, capped so an append can't reach past it
 	r.data = slices.Clip(data)
 	return r, nil
-}
-
-func appendBytes(out, value []byte) []byte {
-	return append(binary.AppendUvarint(out, uint64(len(value))), value...)
 }
 
 func readBytes(data []byte) (value, rest []byte, ok bool) {

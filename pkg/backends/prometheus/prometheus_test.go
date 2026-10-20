@@ -142,6 +142,9 @@ func TestParseDuration(t *testing.T) {
 		{"invalid", "x", 0, true},
 		{"zero", "0", 0, true},
 		{"negative", "-1", 0, true},
+		{"zero duration", "0s", 0, true},
+		{"zero minutes", "0m", 0, true},
+		{"negative duration", "-5m", 0, true},
 		{"not a number", "NaN", 0, true},
 		{"overflow", "1e20", 0, true},
 	}

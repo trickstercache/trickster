@@ -20,6 +20,8 @@ import "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options
 
 // Config contains the resolved inputs needed to construct a time-series merge mechanism.
 type Config struct {
+	// Name is the ALB's backend name
+	Name                  string
 	Options               options.Options
 	MaxCaptureBytes       int
 	MaxFanoutCaptureBytes int

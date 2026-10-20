@@ -40,9 +40,7 @@ func flows(t *testing.T, doc string) *Flows {
 	require.NoError(t, yaml.Unmarshal([]byte(doc), o))
 	require.NoError(t, o.Initialize())
 	require.NoError(t, o.Validate())
-	name := t.Name()
-	t.Cleanup(func() { ForgetTablesExcept(func(n string, _ *Table) bool { return n != name }) })
-	p := NewFlows(name, o)
+	p := NewFlows(testALB(t), o)
 	require.NotNil(t, p)
 	return p
 }

@@ -155,7 +155,8 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 			}
 		} else {
 			for _, backend := range c.Backends {
-				if backend.CacheName != "" {
+				// a backend that keeps no responses is never given its cache, so its cache_name opens none
+				if backend.CacheName != "" && backend.UsesCache() {
 					activeCaches.Set(backend.CacheName)
 				}
 			}

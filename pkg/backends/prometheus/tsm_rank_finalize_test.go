@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
@@ -153,6 +154,139 @@ func TestFinalizeTSMMergeRankAggregation(t *testing.T) {
 			t.Fatalf("unexpected sort warning: %v", ds.Warnings)
 		}
 	})
+}
+
+func TestFinalizeTSMMergeRankGroupingIgnoresMetricName(t *testing.T) {
+	const selector = `{__name__=~"a|b"}`
+	makeDataSet := func() *dataset.DataSet {
+		return rankDataSet(
+			rankSeriesWithTags("a-i1", dataset.Tags{"__name__": "a", "instance": "i1", "job": "x"}, "1", 100),
+			rankSeriesWithTags("a-i2", dataset.Tags{"__name__": "a", "instance": "i2", "job": "x"}, "4", 100),
+			rankSeriesWithTags("b-i1", dataset.Tags{"__name__": "b", "instance": "i1", "job": "x"}, "3", 100),
+			rankSeriesWithTags("b-i2", dataset.Tags{"__name__": "b", "instance": "i2", "job": "x"}, "2", 100),
+		)
+	}
+	// each instance is one group, so K=1 keeps one series of the two metrics per instance
+	for _, grouping := range []string{"without (job)", "without ()", "without (__name__)", "by (instance)"} {
+		for operator, want := range map[string][]string{
+			aggregation.TopK:    {"a-i2", "b-i1"},
+			aggregation.BottomK: {"a-i1", "b-i2"},
+		} {
+			query := operator + " " + grouping + " (1, " + selector + ")"
+			t.Run(query, func(t *testing.T) {
+				ds := makeDataSet()
+				(&Client{}).FinalizeTSMMerge(query, ds)
+				if got := seriesNames(ds); !equalStrings(got, want) {
+					t.Fatalf("series got %v want %v", got, want)
+				}
+				for _, series := range ds.Results[0].SeriesList {
+					if len(series.Header.Tags) != 3 || series.Header.Tags["__name__"] == "" ||
+						series.Header.Tags["job"] != "x" {
+						t.Fatalf("selected labels were changed: %v", series.Header.Tags)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestAggregationGroups(t *testing.T) {
+	tags := dataset.Tags{"__name__": "up", "instance": "a", "job": "api"}
+	t.Run("ungrouped", func(t *testing.T) {
+		var groups aggregationGroups
+		if id := groups.id(tags); id != 0 || groups.ids != nil || groups.keyBuf != nil {
+			t.Fatalf("id %d keys %v buffer %q", id, groups.ids, groups.keyBuf)
+		}
+	})
+	for _, tt := range []struct {
+		grouping promql.AggregationGrouping
+		want     string
+	}{
+		{grouping: promql.AggregationGrouping{Without: true}, want: `{"instance":"a","job":"api"}`},
+		{grouping: promql.AggregationGrouping{Labels: []string{"job"}, Without: true}, want: `{"instance":"a"}`},
+		{
+			grouping: promql.AggregationGrouping{Labels: []string{"__name__"}, Without: true},
+			want:     `{"instance":"a","job":"api"}`,
+		},
+		{grouping: promql.AggregationGrouping{Labels: []string{"__name__", "job"}}, want: `{"__name__":"up","job":"api"}`},
+	} {
+		t.Run(tt.want, func(t *testing.T) {
+			groups := aggregationGroups{grouping: tt.grouping}
+			id := groups.id(tags)
+			if _, ok := groups.ids[tt.want]; !ok || len(groups.ids) != 1 || id != 0 {
+				t.Fatalf("id %d keys %v want key %s", id, groups.ids, tt.want)
+			}
+			// a group seen before is found without allocating, as its key is built in reused scratch space
+			if n := testing.AllocsPerRun(100, func() {
+				id = groups.id(tags)
+			}); n != 0 || id != 0 || len(groups.ids) != 1 {
+				t.Fatalf("%v allocations, id %d, keys %v", n, id, groups.ids)
+			}
+		})
+	}
+	t.Run("distinct groups", func(t *testing.T) {
+		groups := aggregationGroups{grouping: promql.AggregationGrouping{Labels: []string{"instance"}, Without: true}}
+		got := []int{
+			groups.id(dataset.Tags{"__name__": "a", "instance": "i1", "job": "x"}),
+			groups.id(dataset.Tags{"__name__": "b", "instance": "i1", "job": "y"}),
+			groups.id(dataset.Tags{"__name__": "b", "instance": "i2", "job": "x"}),
+			groups.id(dataset.Tags{"job": "y"}),
+		}
+		if want := []int{0, 1, 0, 1}; !slices.Equal(got, want) {
+			t.Fatalf("ids got %v want %v", got, want)
+		}
+	})
+}
+
+func TestRankGroupingAllocations(t *testing.T) {
+	const (
+		runs        = 10
+		fewerSeries = 200
+		moreSeries  = 2 * fewerSeries
+		margin      = 0.5
+		groupCount  = 4
+		inner       = "up"
+		limit       = " (5, " + inner + ")"
+	)
+	makeDataSet := func(seriesCount int) *dataset.DataSet {
+		list := make(dataset.SeriesList, seriesCount)
+		for i := range list {
+			id := strconv.Itoa(i)
+			tags := dataset.Tags{
+				"__name__": inner, "instance": "instance-" + id, "pod": "pod-" + id,
+				"job": "job-" + strconv.Itoa(i%groupCount), "region": "us-east-1", "zone": "us-east-1a",
+			}
+			// distinct values leave no ties, whose label comparisons would add allocations unrelated to grouping
+			list[i] = rankSeriesWithTags(id, tags, strconv.Itoa(2*i), 100, strconv.Itoa(2*i+1), 160)
+		}
+		return varianceFinalizeDataSet(inner, list...)
+	}
+	allocsPerSeries := func(query string) float64 {
+		measure := func(seriesCount int) float64 {
+			// AllocsPerRun calls the function runs+1 times, and each call needs a dataset not yet finalized
+			sets := make([]*dataset.DataSet, runs+1)
+			for i := range sets {
+				sets[i] = makeDataSet(seriesCount)
+			}
+			var next int
+			return testing.AllocsPerRun(runs, func() {
+				(&Client{}).FinalizeTSMMerge(query, sets[next])
+				next++
+			})
+		}
+		// the difference between two series counts leaves out allocations that do not grow with the series
+		return (measure(moreSeries) - measure(fewerSeries)) / (moreSeries - fewerSeries)
+	}
+	for _, operator := range []string{aggregation.TopK, aggregation.LimitK} {
+		t.Run(operator, func(t *testing.T) {
+			// the series share a few groups, so after the first series of a group, its key costs nothing
+			ungrouped := allocsPerSeries(operator + limit)
+			grouped := allocsPerSeries(operator + " without (instance, pod)" + limit)
+			if grouped > ungrouped+margin {
+				t.Fatalf("%.2f allocations per series grouped, %.2f ungrouped", grouped, ungrouped)
+			}
+		})
+	}
 }
 
 func TestFinalizeTSMMergeSortWrapper(t *testing.T) {

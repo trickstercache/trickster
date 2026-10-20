@@ -971,9 +971,9 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 ) string {
 	t.Helper()
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", listenPort)
-	fmt.Fprintf(&sb, "  metrics:\n    port: %d\n", metricsPort)
-	fmt.Fprintf(&sb, "  mgmt:\n    port: %d\n", mgmtPort)
+	fmt.Fprintf(&sb, "listeners:\n  default:\n    address: 127.0.0.1\n    port: %d\n", listenPort)
+	fmt.Fprintf(&sb, "  metrics:\n    address: 127.0.0.1\n    port: %d\n", metricsPort)
+	fmt.Fprintf(&sb, "  mgmt:\n    address: 127.0.0.1\n    port: %d\n", mgmtPort)
 	sb.WriteString("logging:\n  log_level: info\n")
 	sb.WriteString("caches:\n  mem:\n    provider: memory\n")
 	sb.WriteString("backends:\n")
@@ -1037,9 +1037,9 @@ func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort in
 ) string {
 	t.Helper()
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", listenPort)
-	fmt.Fprintf(&sb, "  metrics:\n    port: %d\n", metricsPort)
-	fmt.Fprintf(&sb, "  mgmt:\n    port: %d\n", mgmtPort)
+	fmt.Fprintf(&sb, "listeners:\n  default:\n    address: 127.0.0.1\n    port: %d\n", listenPort)
+	fmt.Fprintf(&sb, "  metrics:\n    address: 127.0.0.1\n    port: %d\n", metricsPort)
+	fmt.Fprintf(&sb, "  mgmt:\n    address: 127.0.0.1\n    port: %d\n", mgmtPort)
 	sb.WriteString("logging:\n  log_level: info\n")
 	sb.WriteString("caches:\n  mem:\n    provider: memory\n")
 	sb.WriteString("backends:\n")

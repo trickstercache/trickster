@@ -1,0 +1,48 @@
+# A single-process Mimir for the mimir compose profile: every component in one
+# process and blocks on the local filesystem. Every request is the anonymous tenant.
+target: all
+multitenancy_enabled: false
+
+server:
+  http_listen_port: 8080
+  grpc_listen_port: 9095
+  log_level: warn
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data/storage
+
+blocks_storage:
+  storage_prefix: blocks
+  tsdb:
+    dir: /data/tsdb
+
+compactor:
+  data_dir: /data/compactor
+
+ruler_storage:
+  storage_prefix: rules
+
+ingester:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+    replication_factor: 1
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: inmemory
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+
+limits:
+  # the seeder backfills hours of history in one pass
+  out_of_order_time_window: 4h
+  native_histograms_ingestion_enabled: true

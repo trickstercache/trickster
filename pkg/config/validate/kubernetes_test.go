@@ -30,6 +30,7 @@ import (
 	headeropts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/header/options"
 	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
 	"github.com/stretchr/testify/require"
@@ -226,4 +227,26 @@ func TestValidateKubernetesIPACLReference(t *testing.T) {
 		require.ErrorContains(t, err, `ineligible ip acl "wall"`)
 		require.NotContains(t, err.Error(), "undefined")
 	})
+}
+
+func TestValidateKubernetesRateLimiterReference(t *testing.T) {
+	with := func(t *testing.T, name string, o *rlopts.Options) *config.Config {
+		t.Helper()
+		c := baseConfig(t)
+		c.Kubernetes = kubecfg.New()
+		c.Kubernetes.Defaults.RoutingMode = kubecfg.RoutingModeService
+		c.Kubernetes.Defaults.RateLimiterName = name
+		if o != nil {
+			c.RateLimiters = rlopts.Lookup{name: o}
+		}
+		return c
+	}
+	require.NoError(t, Validate(with(t, "edge", &rlopts.Options{Limit: 1})))
+	require.ErrorContains(t, Validate(with(t, "missing", nil)),
+		`kubernetes 'defaults' references undefined rate limiter "missing"`)
+	err := Validate(with(t, "shut", &rlopts.Options{Limit: 1, Action: rlopts.ActionClose}))
+	require.ErrorContains(t, err, `ineligible rate limiter "shut"`)
+	require.NotContains(t, err.Error(), "undefined")
+	err = Validate(with(t, "wire", &rlopts.Options{Limit: 1, Unit: rlopts.UnitConnections, Keys: []string{"sni"}}))
+	require.ErrorContains(t, err, "ineligible")
 }

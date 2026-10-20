@@ -259,6 +259,8 @@ linters:
           disabled: true # disable 'meaningless package names' (e.g., types, util, etc.) checks
         - name: package-naming
           disabled: true # disable 'bad package name' (e.g., types, util, etc.) checks
+        - name: multiline-if-init
+          disabled: true # stylistic choice, ok with if-init statements that wrap
   exclusions:
     generated: lax
     presets:

@@ -42,11 +42,13 @@ Optional Rule Parts
 | hostname      | example.com                                          |
 | port          | 8480 (inferred from scheme when no port is provided) |
 | path          | /path1/path2                                         |
-| params        | ?param1=value                                        |
+| params        | param1=value                                         |
 | param         | (must be used with input_key as described below)     |
 | header        | (must be used with input_key as described below)     |
 | has_param     | true or false: whether the query parameter named by input_key is present, even if empty |
 | has_header    | true or false: whether the header named by input_key is present, even if empty |
+
+For a client request, `url`, `scheme`, `host`, `hostname` and `port` describe the URL the client requested: the `Host` header supplies the host and port, and the scheme is `https` when the request arrived over TLS.
 
 ### input_type permitted values and operations
 
@@ -185,3 +187,5 @@ backends:
 ```
 
 For `input_source: path`, matching uses Go's decoded `URL.Path`. For example, `%7Bmylabel%3D%22abc%22%7D` is matched as `{mylabel="abc"}` and `${tenant}` expands to `abc`. `${0}` represents the complete regex match, while `${1}` represents the first capture group. See [Request Rewriters](./request_rewriters.md#regex-capture-tokens) for token lifetime and safety details.
+
+When the destination hostname is a DNS SRV owner name, the destination backend can resolve it with [`origin_resolution.mode: srv`](./origin-resolution.md), which takes the port from the SRV answer, so one backend can reach many origins.

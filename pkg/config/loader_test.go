@@ -18,6 +18,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -620,5 +621,69 @@ func TestLoadEmptyArgs(t *testing.T) {
 	_, err := Load(a)
 	if err != errors.ErrNoValidBackends {
 		t.Error("expected error:", errors.ErrNoValidBackends)
+	}
+}
+
+const cacheUseConfig = `
+backends:
+  prom:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: origin
+  global:
+    provider: alb
+    cache_name: evaluations
+    alb:
+      mechanism: tsm
+      pool: [{name: prom}]
+      tsm: {evaluation: global}
+  merged:
+    provider: alb
+    cache_name: merges
+    alb:
+      mechanism: tsm
+      pool: [{name: prom}]
+  residual:
+    provider: alb
+    cache_name: leftover
+    alb:
+      mechanism: rr
+      pool: [{name: prom}]
+      tsm: {evaluation: global}
+  web:
+    provider: rp
+    origin_url: http://127.0.0.1:9091
+    cache_name: proxied
+caches:
+  origin: {provider: memory}
+  evaluations: {provider: memory}
+  merges: {provider: memory}
+  leftover: {provider: memory}
+  proxied: {provider: memory}
+`
+
+func TestLoadOpensOnlyCachesInUse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "trickster.yaml")
+	if err := os.WriteFile(path, []byte(cacheUseConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	conf, err := Load([]string{"-config", path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a backend that keeps no responses is never given the cache it names, so loading opens none for it
+	for name, want := range map[string]bool{
+		"origin": true, "evaluations": true, "merges": false, "leftover": false, "proxied": false,
+	} {
+		if _, ok := conf.Caches[name]; ok != want {
+			t.Errorf("cache %q kept = %v, want %v", name, ok, want)
+		}
+	}
+	conf, err = Load([]string{"-origin-url", "http://127.0.0.1:9091", "-provider", providers.ReverseProxyShort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conf.Caches) != 0 {
+		t.Errorf("a reverse proxy alone kept %d caches, want none", len(conf.Caches))
 	}
 }

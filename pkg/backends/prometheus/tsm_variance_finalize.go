@@ -36,7 +36,6 @@ type varianceFinalizeGroup struct {
 }
 
 func finalizeVarianceAggregation(ds *dataset.DataSet, spec promql.VarianceAggregation) {
-	isRangeQuery := ds.Step() > 0
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -49,21 +48,8 @@ func finalizeVarianceAggregation(ds *dataset.DataSet, spec promql.VarianceAggreg
 		// Unsupported variance shapes retain the established per-shard fallback.
 		// A sort wrapper still needs its normal global output handling.
 	}
-
-	if !spec.SortSet {
-		return
-	}
-	if isRangeQuery {
-		appendWarningOnce(ds, sortInRangeQueryWarning)
-	}
-	for _, result := range ds.Results {
-		if result == nil {
-			continue
-		}
-		result.SeriesList = filterHistogramSeries(result.SeriesList)
-		if !isRangeQuery {
-			sortInstantSeries(result.SeriesList, spec.SortDescending)
-		}
+	if spec.SortSet {
+		sortFinalSeries(ds, spec.SortDescending)
 	}
 }
 
@@ -174,30 +160,20 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		if result == nil {
 			continue
 		}
-		groups := make(map[string]*varianceFinalizeGroup)
-		groupOrder := make([]string, 0)
+		groups := aggregationGroups{grouping: spec.Grouping}
+		var groupOrder []*varianceFinalizeGroup
 		for _, series := range result.SeriesList {
 			if series == nil || isHistogramSeries(series) {
 				continue
 			}
-			tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
-			key := tags.JSON()
-			group := groups[key]
-			if group == nil {
-				header := series.Header.Clone()
-				header.Tags = tags
-				header.Name = tags[promql.MetricNameLabel]
-				header.TagFieldsList = nil
-				header.QueryStatement = spec.AggregationQuery
-				header.CalculateHash(true)
-				header.CalculateSize()
-				group = &varianceFinalizeGroup{
-					header: header,
+			id := groups.id(series.Header.Tags)
+			if id == len(groupOrder) {
+				groupOrder = append(groupOrder, &varianceFinalizeGroup{
+					header: aggregationHeader(series, spec.Grouping, spec.AggregationQuery),
 					states: make(map[epoch.Epoch]dataset.PooledVarianceState),
-				}
-				groups[key] = group
-				groupOrder = append(groupOrder, key)
+				})
 			}
+			group := groupOrder[id]
 			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
 				value, ok := sampleNumber(c.seg(), c.i)
 				if !ok {
@@ -211,8 +187,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		out := newTextSeriesLog()
 		ids := make([]int, len(groupOrder))
 		var epochs []epoch.Epoch
-		for g, key := range groupOrder {
-			group := groups[key]
+		for g, group := range groupOrder {
 			ids[g] = out.addSeries()
 			epochs = epochs[:0]
 			for pointEpoch := range group.states {
@@ -225,31 +200,13 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		}
 		rows := out.finish()
 		output := make(dataset.SeriesList, 0, len(groupOrder))
-		for g, key := range groupOrder {
+		for g, group := range groupOrder {
 			if rows[ids[g]] != nil {
-				output = append(output, dataset.NewSeriesOf(groups[key].header, rows[ids[g]]))
+				output = append(output, dataset.NewSeriesOf(group.header, rows[ids[g]]))
 			}
 		}
 		result.SeriesList = output
 	}
-}
-
-func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGrouping) dataset.Tags {
-	if grouping.Without {
-		output := tags.Clone()
-		delete(output, promql.MetricNameLabel)
-		for _, label := range grouping.Labels {
-			delete(output, label)
-		}
-		return output
-	}
-	output := make(dataset.Tags, len(grouping.Labels))
-	for _, label := range grouping.Labels {
-		if value, found := tags[label]; found && value != "" {
-			output[label] = value
-		}
-	}
-	return output
 }
 
 func varianceFinalValue(state dataset.PooledVarianceState, operator string) float64 {

@@ -80,6 +80,9 @@ type Msg struct {
 	RecursionAvailable bool
 	Questions          []Question
 	Answers            []Record
+	// Additional holds the additional section, such as the addresses of SRV targets; any EDNS0 OPT
+	// record a server returns appears here as an *Unknown
+	Additional []Record
 	// UDPSize, when non-zero, packs an EDNS0 OPT record advertising the
 	// sender's UDP reassembly buffer, raising the 512-byte response ceiling
 	UDPSize uint16
@@ -89,19 +92,19 @@ type Msg struct {
 func (m *Msg) Pack() ([]byte, error) {
 	qdCount := len(m.Questions)
 	anCount := len(m.Answers)
-	if qdCount > maxSectionLen || anCount > maxSectionLen {
-		return nil, ErrLongMessage
-	}
-	var arCount uint16
+	arCount := len(m.Additional)
 	if m.UDPSize > 0 {
-		arCount = 1
+		arCount++
+	}
+	if qdCount > maxSectionLen || anCount > maxSectionLen || arCount > maxSectionLen {
+		return nil, ErrLongMessage
 	}
 	b := make([]byte, headerLen, packBufSize)
 	binary.BigEndian.PutUint16(b[0:2], m.ID)
 	binary.BigEndian.PutUint16(b[2:4], m.flags())
 	binary.BigEndian.PutUint16(b[4:6], uint16(qdCount))
 	binary.BigEndian.PutUint16(b[6:8], uint16(anCount))
-	binary.BigEndian.PutUint16(b[10:12], arCount)
+	binary.BigEndian.PutUint16(b[10:12], uint16(arCount))
 	var err error
 	for i := range m.Questions {
 		if b, err = m.Questions[i].pack(b); err != nil {
@@ -113,7 +116,12 @@ func (m *Msg) Pack() ([]byte, error) {
 			return nil, err
 		}
 	}
-	if arCount > 0 {
+	for _, rr := range m.Additional {
+		if b, err = packRecord(b, rr); err != nil {
+			return nil, err
+		}
+	}
+	if m.UDPSize > 0 {
 		b = packOPT(b, m.UDPSize)
 	}
 	return b, nil
@@ -129,6 +137,8 @@ func (m *Msg) Unpack(b []byte) error {
 	m.setFlags(binary.BigEndian.Uint16(b[2:4]))
 	qdCount := int(binary.BigEndian.Uint16(b[4:6]))
 	anCount := int(binary.BigEndian.Uint16(b[6:8]))
+	nsCount := int(binary.BigEndian.Uint16(b[8:10]))
+	arCount := int(binary.BigEndian.Uint16(b[10:12]))
 	off := headerLen
 	m.Questions = make([]Question, 0, sectionCap(qdCount, len(b)))
 	for range qdCount {
@@ -151,7 +161,33 @@ func (m *Msg) Unpack(b []byte) error {
 		m.Answers = append(m.Answers, rr)
 		off = next
 	}
+	m.unpackAdditionals(b, off, nsCount, arCount)
 	return nil
+}
+
+// unpackAdditionals skips the authority section and collects the additional section. Both are
+// optional hints, so a malformed record ends the scan rather than failing the answer.
+func (m *Msg) unpackAdditionals(b []byte, off, nsCount, arCount int) {
+	m.Additional = nil
+	for range nsCount {
+		_, next, err := unpackRecord(b, off)
+		if err != nil {
+			return
+		}
+		off = next
+	}
+	if arCount == 0 {
+		return
+	}
+	m.Additional = make([]Record, 0, sectionCap(arCount, len(b)))
+	for range arCount {
+		rr, next, err := unpackRecord(b, off)
+		if err != nil {
+			return
+		}
+		m.Additional = append(m.Additional, rr)
+		off = next
+	}
 }
 
 // sectionCap bounds a section's preallocation by what the message could

@@ -33,6 +33,7 @@ func newFromOptions(o *options.Options, factories rt.Lookup) (types.Mechanism, e
 		return nil, errors.ErrInvalidOptions
 	}
 	return New(Config{
+		Name:                  o.Name,
 		Options:               o.TSMOptions,
 		MaxCaptureBytes:       o.MaxCaptureBytes,
 		MaxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,

@@ -54,9 +54,11 @@ scrapes your local Trickster for the
 | `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
 | `victoriametrics` | `victoriametrics` and its seeder | `make developer-start-victoriametrics` |
 | `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
+| `mimir` | `mimir_east`, `mimir_west`, and their seeder, for TSM global evaluation | `make developer-start-mimir` |
+| `thanos` | an HA Prometheus pair with Thanos sidecars, and a Thanos querier | `make developer-start-thanos` |
+| `all-providers` | every TSDB backend above, except `mimir` and `thanos` | `make developer-start` |
+| `integration` | every TSDB backend except `mimir` and `thanos`, plus the integration-only `coredns` | `make integration-start` |
 | `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer; `diagstreamer`, a live diagnostic HLS and DASH stream on port 8496 ([hack/diagstreamer](../../../hack/diagstreamer/README.md)) | `make developer-start-moq` |
-| `all-providers` | every backend above | `make developer-start` |
-| `integration` | every backend above, plus the integration-only `coredns` | `make integration-start` |
 
 `make developer-start` reads the `COMPOSE_PROFILES` variable, which defaults to
 `all-providers` and takes a comma-separated list, so you can combine backends:
@@ -1155,3 +1157,87 @@ These were measured on v1.153.0 directly. Trickster must reproduce them when it 
   datasources send form bodies. The Graphite plugin POSTs `/render` forms
   (`target`, `from`, `until`, `format=json`, `maxDataPoints`) with `Storage-Step`
   on every request, and checks health with `constantLine(100)`.
+
+## Mimir and Thanos Details
+
+The `mimir` and `thanos` profiles are the test bed for
+[TSM global evaluation](../../alb.md#global-evaluation). Neither is part of
+`all-providers` or `integration`, and CI doesn't run them, so start them by name:
+
+```bash
+make developer-start-mimir developer-start-thanos
+```
+
+### Mimir
+
+`mimir_east` and `mimir_west` are two single-process Grafana Mimir 3.2.1
+instances, pinned to their multi-architecture image digest, that stand in for
+two regions. Each serves HTTP on port 8080 in the Compose network, published on
+the host as 11080 and 11081, and keeps its blocks in its own named volume
+(`mimir-east-data`, `mimir-west-data`). Multitenancy is off, so every request
+reads and writes the `anonymous` tenant. Their config,
+`docker-compose-data/mimir-config/mimir.yaml`, accepts samples up to 4 hours
+old, for the seeder's backfill.
+
+`mimir_seed` runs [`hack/mimirseed`](../../../hack/mimirseed/README.md), which
+backfills 3 hours of a `tsm_pod_cpu_seconds_total` counter for each pod through
+remote write, then writes a new sample every 15 seconds. A counter's value is
+its timestamp in seconds, so every pod's `rate()` is exactly 1.
+
+| Region | Pods (`namespace`) | Backup copy |
+|---|---|---|
+| east | `a1`, `a2` (`alpha`), `s1` (`shared`) | `w1` (`west`), labeled `isBackup="true"` |
+| west | `w1`, `w2` (`west`), `s1` (`shared`) | `a1` (`alpha`), labeled `isBackup="true"` |
+
+The regions hold 5 distinct pods between them: `s1` is in both with identical
+labels, and each backup differs from the other region's copy only by `isBackup`.
+Trickster's `mimir-east` and `mimir-west` backends (`flavor: mimir`) front them,
+`mimir-global` evaluates queries globally over both with
+`replica_labels: [isBackup]`, and `mimir-merge` merges their answers:
+
+```bash
+# 5 pods either way
+curl -s http://127.0.0.1:8480/mimir-global/api/v1/query --data-urlencode 'query=count(count by (pod) (tsm_pod_cpu_seconds_total))'
+# 5 globally, and 8 merged, since summing each region's sum counts s1 and both backups twice
+curl -s http://127.0.0.1:8480/mimir-global/api/v1/query --data-urlencode 'query=sum(rate(tsm_pod_cpu_seconds_total[5m]))'
+curl -s http://127.0.0.1:8480/mimir-merge/api/v1/query --data-urlencode 'query=sum(rate(tsm_pod_cpu_seconds_total[5m]))'
+```
+
+### Thanos
+
+`prometheus_ha_a` and `prometheus_ha_b` are an HA pair of Prometheus v3.13.2
+servers. Both scrape `devorigin` and themselves every 15 seconds, with the
+external labels `cluster="dev"` and `replica="a"` or `replica="b"`
+(`docker-compose-data/thanos-config/prometheus-{a,b}.yml`). They have no named
+volume, so their history starts over when their containers are recreated.
+`thanos_sidecar_a` and `thanos_sidecar_b` (Thanos v0.39.2) serve each replica's
+StoreAPI, and `thanos_query` deduplicates across the sidecars on the `replica`
+label, as the reference that global evaluation is compared with.
+
+| Service | Host port |
+|---|---|
+| `prometheus_ha_a` | 11090 |
+| `prometheus_ha_b` | 11091 |
+| `thanos_sidecar_a` | 11901 (StoreAPI gRPC) |
+| `thanos_sidecar_b` | 11902 (StoreAPI gRPC) |
+| `thanos_query` | 11903 (HTTP), 11904 (StoreAPI gRPC) |
+
+Trickster's `thanos-a` and `thanos-b` backends (`flavor: thanos`) read each
+replica through its sidecar, `thanos-global` evaluates queries globally over
+both with `replica_labels: [replica]`, and `thanos-query` proxies the querier,
+so the two answers can be compared:
+
+```bash
+q='sum by (job) (rate(prometheus_http_requests_total[5m]))'
+curl -s http://127.0.0.1:8480/thanos-global/api/v1/query --data-urlencode "query=$q"
+curl -s http://127.0.0.1:8480/thanos-query/api/v1/query --data-urlencode "query=$q"
+```
+
+Stopping one replica for a minute or two, with
+`docker compose stop prometheus_ha_a` from this directory and a `start` later,
+leaves a gap that both deduplicate across. While it is down, both answer from
+the other replica: `thanos-global` with a partial-response warning naming
+`thanos-a`, and the querier without one.
+
+`TestALBTSMGlobalEvaluation` in the `integration` module checks these answers;
+see the [integration README](../../../integration/README.md#prerequisites).

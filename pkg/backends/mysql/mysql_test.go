@@ -1039,6 +1039,10 @@ func TestShutdownTimeoutBranches(t *testing.T) {
 		t.Fatalf("shutdown() error = %v", err)
 	}
 	h.ConnectionClosed(c)
+	// with every session ended, an ended context does not turn a finished drain into a timeout
+	if err := h.shutdown(ctx); err != nil {
+		t.Fatalf("shutdown() with no sessions = %v", err)
+	}
 
 	first := newProtocolHandler(ProtocolConfig{BackendName: "first"}, nil)
 	second := newProtocolHandler(ProtocolConfig{BackendName: "second"}, nil)

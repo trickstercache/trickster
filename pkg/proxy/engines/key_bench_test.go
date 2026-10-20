@@ -18,6 +18,7 @@ package engines
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -107,4 +108,16 @@ func BenchmarkObjectCacheHitStaticIdentity4(b *testing.B) {
 	benchmarkObjectCacheHit(b,
 		map[string]string{headers.NameAuthorization: "Bearer pinned-tenant", "X-Tenant": "shared"},
 		map[string]string{"local": "1", "-trace": ""})
+}
+
+func BenchmarkVarySecondaryKey(b *testing.B) {
+	h := http.Header{
+		"Accept-Encoding": {"gzip, br"},
+		"Accept-Language": {"en-US"},
+	}
+	names := []string{"Accept", "Accept-Encoding", "Accept-Language"}
+	b.ReportAllocs()
+	for b.Loop() {
+		varySecondaryKey("primary", "generation", names, h)
+	}
 }

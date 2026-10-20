@@ -17,27 +17,26 @@ import (
 	"testing"
 )
 
-// Reserve binds n ephemeral TCP ports and returns the port numbers plus a
-// release function. The listeners stay open until the caller invokes release,
-// so the caller can write the ports into a config template and only release
-// immediately before whatever consumer (e.g. trickster) needs to bind them.
-// This minimizes the close-to-bind window where another process may grab the
-// freed port out from under the consumer.
-//
-// The caller MUST call release() exactly once, just before passing the ports
-// to the consumer. The returned function is idempotent and safe to call from
-// t.Cleanup as a backstop.
+// Reserve holds n ephemeral loopback TCP ports until release is called.
+// Release immediately before the consumer binds the ports.
 func Reserve(t testing.TB, n int) (ports []int, release func()) {
 	t.Helper()
-	ls := make([]*net.TCPListener, n)
+	return ReserveOn(t, n, "127.0.0.1")
+}
+
+// ReserveOn holds n ephemeral TCP ports on address until release is called.
+// Use the consumer's bind address so its interface and address family are reserved.
+func ReserveOn(t testing.TB, n int, address string) (ports []int, release func()) {
+	t.Helper()
+	ls := make([]net.Listener, n)
 	ports = make([]int, n)
 	for i := range n {
-		l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+		l, err := net.Listen("tcp", net.JoinHostPort(address, "0"))
 		if err != nil {
 			for _, x := range ls[:i] {
 				x.Close()
 			}
-			t.Fatalf("listen :0: %v", err)
+			t.Fatalf("listen %s:0: %v", address, err)
 		}
 		ls[i] = l
 		ports[i] = l.Addr().(*net.TCPAddr).Port

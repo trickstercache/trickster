@@ -32,7 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 )
 
-const Name types.Name = "newest_last_modified"
+const Name types.Name = names.MechanismNewestLastModified
 
 type handler struct {
 	mech.PoolHolder

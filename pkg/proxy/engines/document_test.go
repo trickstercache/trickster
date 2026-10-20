@@ -351,3 +351,33 @@ func TestGetByterangeChunkParts(t *testing.T) {
 		t.Errorf("ranges incorrect, got %s", d1.Ranges.String())
 	}
 }
+
+func TestGetByterangeChunkGap(t *testing.T) {
+	d := &HTTPDocument{
+		RangeParts: byterange.MultipartByteRanges{
+			byterange.Range{Start: 0, End: 1}: &byterange.MultipartByteRange{Range: byterange.Range{Start: 0, End: 1}, Content: []byte{0, 1}},
+			byterange.Range{Start: 9, End: 9}: &byterange.MultipartByteRange{Range: byterange.Range{Start: 9, End: 9}, Content: []byte{9}},
+		},
+	}
+	// the chunk lies wholly between the stored parts
+	d1 := d.GetByterangeChunk(byterange.Range{Start: 3, End: 5}, 3)
+	if !d1.IsChunk || len(d1.Ranges) != 0 || len(d1.Body) != 0 {
+		t.Errorf("expected an empty chunk, got ranges %s and body %v", d1.Ranges, d1.Body)
+	}
+}
+
+func TestGetMetaKeepsUnloadedRanges(t *testing.T) {
+	d := &HTTPDocument{
+		Ranges:         byterange.Ranges{{Start: 16, End: 31}},
+		unloadedRanges: byterange.Ranges{{Start: 0, End: 9}, {Start: 64, End: 70}},
+	}
+	want := byterange.Ranges{{Start: 0, End: 9}, {Start: 16, End: 31}, {Start: 64, End: 70}}
+	if got := d.GetMeta().Ranges; !got.Equal(want) {
+		t.Errorf("meta ranges = %s, want %s", got, want)
+	}
+	// a whole object has no ranges, and nothing left unloaded can narrow it
+	d.Ranges = nil
+	if got := d.GetMeta().Ranges; len(got) != 0 {
+		t.Errorf("whole-object meta ranges = %s, want none", got)
+	}
+}

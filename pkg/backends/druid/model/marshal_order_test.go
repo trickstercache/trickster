@@ -93,7 +93,12 @@ func requireLegacyNative(t *testing.T, ds *dataset.DataSet, plan *QueryPlan) {
 		var want, got bytes.Buffer
 		werr := legacyNativeMarshal(ds, &p, &want)
 		err := MarshalTimeseriesWriter(ds, &timeseries.RequestOptions{ProviderRequest: &p}, 200, &got)
-		require.Equal(t, werr, err, "%s descending=%t", p.queryType, descending)
+		if werr == nil {
+			require.NoError(t, err, "%s descending=%t", p.queryType, descending)
+		} else {
+			require.IsType(t, werr, err, "%s descending=%t", p.queryType, descending)
+			require.EqualError(t, err, werr.Error(), "%s descending=%t", p.queryType, descending)
+		}
 		require.Equal(t, want.String(), got.String(), "%s descending=%t", p.queryType, descending)
 	}
 }

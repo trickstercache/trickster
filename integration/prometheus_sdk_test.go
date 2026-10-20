@@ -48,7 +48,7 @@ func TestPrometheusSDK(t *testing.T) {
 		step := 15 * time.Second
 		end := now.Truncate(step)
 		start := end.Add(-5 * time.Minute)
-		result, warnings, err := sdk.QueryRange(ctx, "up", v1.Range{
+		result, warnings, _, err := sdk.QueryRange(ctx, "up", v1.Range{
 			Start: start,
 			End:   end,
 			Step:  step,
@@ -61,7 +61,7 @@ func TestPrometheusSDK(t *testing.T) {
 	})
 
 	t.Run("instant_query", func(t *testing.T) {
-		result, warnings, err := sdk.Query(ctx, "up", time.Now())
+		result, warnings, _, err := sdk.Query(ctx, "up", time.Now())
 		require.NoError(t, err)
 		t.Logf("warnings: %v", warnings)
 		vec, ok := result.(model.Vector)
@@ -70,7 +70,7 @@ func TestPrometheusSDK(t *testing.T) {
 	})
 
 	t.Run("labels", func(t *testing.T) {
-		labels, warnings, err := sdk.LabelNames(ctx, nil, time.Now().Add(-5*time.Minute), time.Now())
+		labels, warnings, _, err := sdk.LabelNames(ctx, nil, time.Now().Add(-5*time.Minute), time.Now())
 		require.NoError(t, err)
 		t.Logf("warnings: %v", warnings)
 		require.Contains(t, labels, model.LabelName("__name__"))
@@ -79,7 +79,7 @@ func TestPrometheusSDK(t *testing.T) {
 	})
 
 	t.Run("label_values", func(t *testing.T) {
-		values, warnings, err := sdk.LabelValues(ctx, "job", nil, time.Now().Add(-5*time.Minute), time.Now())
+		values, warnings, _, err := sdk.LabelValues(ctx, "job", nil, time.Now().Add(-5*time.Minute), time.Now())
 		require.NoError(t, err)
 		t.Logf("warnings: %v", warnings)
 		found := false
@@ -94,7 +94,7 @@ func TestPrometheusSDK(t *testing.T) {
 
 	t.Run("series", func(t *testing.T) {
 		now := time.Now()
-		series, warnings, err := sdk.Series(ctx, []string{"up"}, now.Add(-5*time.Minute), now)
+		series, warnings, _, err := sdk.Series(ctx, []string{"up"}, now.Add(-5*time.Minute), now)
 		require.NoError(t, err)
 		t.Logf("warnings: %v", warnings)
 		require.NotEmpty(t, series)
@@ -134,13 +134,13 @@ func TestPrometheusSDK(t *testing.T) {
 		start := end.Add(-5 * time.Minute)
 		r := v1.Range{Start: start, End: end, Step: step}
 
-		result1, _, err := sdk.QueryRange(ctx, "process_cpu_seconds_total", r)
+		result1, _, _, err := sdk.QueryRange(ctx, "process_cpu_seconds_total", r)
 		require.NoError(t, err)
 		mat1, ok := result1.(model.Matrix)
 		require.True(t, ok, "expected model.Matrix, got %T", result1)
 		require.Greater(t, len(mat1), 0)
 
-		result2, _, err := sdk.QueryRange(ctx, "process_cpu_seconds_total", r)
+		result2, _, _, err := sdk.QueryRange(ctx, "process_cpu_seconds_total", r)
 		require.NoError(t, err)
 		mat2, ok := result2.(model.Matrix)
 		require.True(t, ok, "expected model.Matrix from cache, got %T", result2)
@@ -161,7 +161,7 @@ func TestPrometheusSDK_ALB(t *testing.T) {
 		step := 15 * time.Second
 		end := now.Truncate(step)
 		start := end.Add(-5 * time.Minute)
-		result, warnings, err := sdk.QueryRange(ctx, "up", v1.Range{
+		result, warnings, _, err := sdk.QueryRange(ctx, "up", v1.Range{
 			Start: start,
 			End:   end,
 			Step:  step,

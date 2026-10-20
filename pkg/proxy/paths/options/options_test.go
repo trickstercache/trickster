@@ -570,3 +570,19 @@ func TestListMatchMethodSplit(t *testing.T) {
 		t.Error("nil list must not match")
 	}
 }
+
+func TestIdentityKeyPartGolden(t *testing.T) {
+	// the identity key part is a cache key component, so its encoding must not change
+	o := &Options{
+		Path:           "/",
+		RequestHeaders: map[string]string{"Authorization": "Bearer pinned", "X-Empty": ""},
+		RequestParams:  map[string]string{"tenant": "t1", "z": string(make([]byte, 200))},
+	}
+	if err := o.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	const want = "5ee97bf0623e125c0d79e5928b8ae8f4ba863c325dab6d3e0613cbff69861d54"
+	if got := o.IdentityKeyPart(); got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}

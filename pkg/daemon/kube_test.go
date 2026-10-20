@@ -46,6 +46,7 @@ import (
 	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/stretchr/testify/require"
@@ -782,6 +783,79 @@ func TestKubeSupervisorResyncsOnIPACLEligibility(t *testing.T) {
 	require.True(t, s.knownNames().IPACLs.Contains("office"))
 	require.True(t, s.knownNames().DefinedIPACLs.Contains("office"))
 	require.False(t, s.knownNames().IPACLs.Contains("edge"))
+}
+
+func TestKubeSupervisorResyncsOnRateLimitEligibility(t *testing.T) {
+	// a close or stream limiter is defined, not eligible; editing its limit changes neither set
+	f := install(t)
+	s, _ := newTestSupervisor(t)
+	lim := func(t *testing.T, mutate func(*rlopts.Options)) *rlopts.Options {
+		t.Helper()
+		o := &rlopts.Options{Limit: 1}
+		if mutate != nil {
+			mutate(o)
+		}
+		require.NoError(t, o.Validate())
+		return o
+	}
+	apply := func(lists rlopts.Lookup) {
+		t.Helper()
+		conf := kubeConfig()
+		conf.RateLimiters = lists
+		s.Apply(conf, nil)
+	}
+	wait := func(n int32, msg string) {
+		t.Helper()
+		eventually(t, func() bool { return f.at(0).resyncs.Load() == n }, msg)
+		require.Equal(t, 1, f.count(), "a limiter edit must not restart the controller")
+	}
+
+	apply(rlopts.Lookup{
+		"edge":  lim(t, nil),
+		"shut":  lim(t, func(o *rlopts.Options) { o.Action = rlopts.ActionClose }),
+		"wire":  lim(t, func(o *rlopts.Options) { o.Unit = rlopts.UnitConnections; o.Keys = []string{"sni"} }),
+		"ghost": nil,
+	})
+	eventually(t, func() bool { return f.count() == 1 }, "controller not started")
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+	require.True(t, s.knownNames().RateLimiters.Contains("edge"))
+	require.False(t, s.knownNames().RateLimiters.Contains("shut"))
+	require.False(t, s.knownNames().RateLimiters.Contains("wire"))
+	require.True(t, s.knownNames().DefinedRateLimiters.Contains("edge"))
+	require.True(t, s.knownNames().DefinedRateLimiters.Contains("shut"))
+	require.True(t, s.knownNames().DefinedRateLimiters.Contains("wire"))
+	require.False(t, s.knownNames().DefinedRateLimiters.Contains("ghost"))
+
+	apply(rlopts.Lookup{
+		"edge": lim(t, func(o *rlopts.Options) { o.Limit = 9 }),
+		"shut": lim(t, func(o *rlopts.Options) { o.Action = rlopts.ActionClose }),
+		"wire": lim(t, func(o *rlopts.Options) { o.Unit = rlopts.UnitConnections; o.Keys = []string{"sni"} }),
+	})
+	time.Sleep(20 * time.Millisecond)
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+
+	apply(rlopts.Lookup{
+		"edge": lim(t, nil),
+		"wire": lim(t, func(o *rlopts.Options) { o.Unit = rlopts.UnitConnections; o.Keys = []string{"sni"} }),
+	})
+	wait(1, "removing a limiter did not ask the controller to translate again")
+	require.False(t, s.knownNames().DefinedRateLimiters.Contains("shut"))
+
+	apply(rlopts.Lookup{
+		"edge": lim(t, func(o *rlopts.Options) { o.Action = rlopts.ActionClose }),
+		"wire": lim(t, func(o *rlopts.Options) { o.Unit = rlopts.UnitConnections; o.Keys = []string{"sni"} }),
+	})
+	wait(2, "losing eligibility did not ask the controller to translate again")
+	require.False(t, s.knownNames().RateLimiters.Contains("edge"))
+	require.True(t, s.knownNames().DefinedRateLimiters.Contains("edge"))
+
+	apply(rlopts.Lookup{
+		"edge": lim(t, nil),
+		"wire": lim(t, func(o *rlopts.Options) { o.Unit = rlopts.UnitConnections; o.Keys = []string{"sni"} }),
+	})
+	wait(3, "regaining eligibility did not ask the controller to translate again")
+	require.True(t, s.knownNames().RateLimiters.Contains("edge"))
+	require.False(t, s.knownNames().RateLimiters.Contains("wire"))
 }
 
 func TestKubeSupervisorSharesCertificateState(t *testing.T) {

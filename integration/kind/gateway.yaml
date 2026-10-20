@@ -253,6 +253,11 @@ data:
         default: deny
         source: client_ip
         action: reject
+    rate_limiters:
+      kind-route:
+        limit: 2
+        window: 1m
+        unit: requests
     listeners:
       # the listener the annotation scenario's Ingress is served on; Gateway listeners
       # are generated from the Gateways themselves

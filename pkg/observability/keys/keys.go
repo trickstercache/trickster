@@ -117,6 +117,7 @@ const (
 	TargetName           = "targetName"
 	Targets              = "targets"
 	Threshold            = "threshold"
+	Tier                 = "tier"
 	Transport            = "transport"
 	Type                 = "type"
 	URL                  = "url"
@@ -138,5 +139,6 @@ const (
 	HTTP_Status    = "http_status"
 	Router_Name    = "router_name"
 	IP_ACL         = "ip_acl"
+	Limiter        = "limiter"
 	Verdict        = "verdict"
 )

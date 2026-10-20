@@ -112,7 +112,7 @@ func TestFlavorValidation(t *testing.T) {
 		{"unknown flavor", `    provider: prometheus
     origin_url: http://example.com
     prometheus:
-      flavor: mimir
+      flavor: cortex
 `, prop.ErrUnknownFlavor},
 		{"wrong provider", `    provider: greptimedb
     origin_url: http://example.com

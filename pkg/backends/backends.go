@@ -18,15 +18,20 @@
 package backends
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 type protocolHealthProber interface {
@@ -228,6 +233,56 @@ func closeIdle(c *http.Client) {
 	if ic, ok := c.Transport.(idleCloser); ok {
 		ic.CloseIdleConnections()
 	}
+}
+
+// Retirer holds what its HTTP transports don't, as a connection of its own or work it runs in the background. Retire,
+// called once its requests have drained, releases that and starts no more such work, waiting for it no longer than ctx.
+type Retirer interface {
+	Retire(ctx context.Context)
+}
+
+// Retire retires v when it is a Retirer.
+func Retire(ctx context.Context, v any) {
+	if r, ok := v.(Retirer); ok {
+		r.Retire(ctx)
+	}
+}
+
+// Retire retires each backend once their requests have drained, waiting no longer than wait in all for the work they
+// still run; virtual backends go first, as what they run reads through the others.
+func (b Backends) Retire(wait time.Duration) {
+	if len(b) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	b.RetireContext(ctx)
+}
+
+// RetireContext is Retire, waiting no longer than ctx. The backends of each kind retire together, so none waits out
+// another's work, or finds ctx ended by it.
+func (b Backends) RetireContext(ctx context.Context) {
+	var wg sync.WaitGroup
+	for _, virtual := range [2]bool{true, false} {
+		for name, c := range b {
+			if r, ok := c.(Retirer); ok && isVirtual(c) == virtual {
+				wg.Go(func() { safego.Run(retirePanicHandler(name), func() { r.Retire(ctx) }) })
+			}
+		}
+		wg.Wait()
+	}
+}
+
+func retirePanicHandler(name string) safego.PanicHandler {
+	return func(r any, stack []byte) {
+		logger.Error("backend retirement panicked",
+			logging.Pairs{keys.BackendName: name, keys.Panic: r, keys.Stack: string(stack)})
+	}
+}
+
+func isVirtual(c Backend) bool {
+	o := c.Configuration()
+	return o != nil && IsVirtual(o.Provider)
 }
 
 // UsesCache returns true if the backend uses a cache

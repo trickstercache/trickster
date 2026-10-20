@@ -477,6 +477,8 @@ If replicas disagree at the same logical point, the first configured member wins
 
 For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
 
+By default, TSM merges the answers its members give to a query. A TSM ALB can instead read its members' raw series and evaluate each query once, the way Thanos does; see [Global Evaluation](#global-evaluation).
+
 #### Merge Strategy
 
 Within each configured replica group, TSM deduplicates values when merging series with identical labels — for each timestamp, only one replica value is kept. Across different groups it uses the query's merge strategy.
@@ -497,12 +499,15 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `quantile` | Query the inner expression, merge all float samples globally, then calculate the exact quantile per timestamp and aggregation group |
 | `limit_ratio` | Apply Prometheus-compatible label-hash sampling, globally finalizing a supported inner aggregation when necessary |
 | `limitk` | Query the inner expression, merge it globally, then retain the first k samples in stable TSM series order per timestamp and aggregation group |
+| `count` or `group` over an inner `count` or `group` of a selector | Query the inner aggregation, union its label sets across backends, then count or group each label set once per timestamp and aggregation group |
 | `sum`, `count`, or `count_values` followed by `or vector(0)` | Sum of values per unique label set + timestamp |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
-When an outer aggregation's input contains a nested aggregation, binary expression, or function that needs globally complete input, Trickster retains the aggregation's established merge strategy and adds a warning. This fail-open behavior preserves correct results when the input series are colocated while noting that results can be inaccurate when matching series are split across shards.
+When an outer aggregation's input contains a nested aggregation (other than the `count` and `group` forms below), binary expression, or function that needs globally complete input, Trickster retains the aggregation's established merge strategy and adds a warning. This fail-open behavior preserves correct results when the input series are colocated while noting that results can be inaccurate when matching series are split across shards.
+
+For an outer `count` or `group` whose input is a `count` or `group` of a vector selector, such as `count(count by (pod) (up))`, the result depends only on which label sets the inner aggregation produces. Trickster sends the inner aggregation to each backend, unions the label sets the backends return, and applies the outer operator once per timestamp and aggregation group. A label set returned by several backends counts once, so replicated or partially overlapping backends don't inflate the count. The selector may use label matchers, `offset`, and `@`, and the aggregation may be wrapped in `sort()`, `sort_desc()`, or a literal scalar operation such as `> 1`. A label set counts at a timestamp when any backend returned it there. Inner inputs that apply functions, filters, or binary operations can change which label sets a backend returns, so they keep the warning described above. When a backend fails, the result covers the backends that answered and is marked as a partial hit.
 
 For `sum`, `count`, or `count_values` followed by `or vector(0)`, Trickster sends the complete expression to each backend and sums the results, because a backend without matching series contributes only the explicit zero. This requires an aggregation input that each backend can evaluate independently: no nested aggregation, binary expression, or function that needs globally complete input. When the `or` uses `on(...)` or `ignoring(...)` label matching, this applies only to `sum` or `count` without `by` or `without` grouping; other forms use the warning fallback described below.
 
@@ -522,7 +527,7 @@ For an unsupported inner expression, Trickster retains the established per-shard
 
 The same deduplicating fallback and warning apply when an aggregation is not the query's outermost operation (for example, `histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))`), when an aggregation is combined with a binary expression other than the supported `or vector(0)` form, and when the query cannot be parsed as PromQL, such as a query that uses another dialect's extensions.
 
-When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+When a non-dedup strategy is in effect, or Trickster sends backends an inner expression to finalize after merging, and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
 #### Native Histograms
 
@@ -543,6 +548,67 @@ A static pool member that can't apply the chosen mode fails the configuration. W
 #### Members With a Series Limit
 
 Some managed services, such as [Amazon CloudWatch PromQL](./aws.md#amazon-cloudwatch-promql), cut a query result short at a series limit and flag it with a warning. Each member applies its own limit, so a member's truncated result is proxied and never cached, while the other members' results are cached as usual. The merged response then covers only the series each member returned, and it carries the truncation warning so the client can tell.
+
+#### Global Evaluation
+
+Merging members' answers is exact only for queries whose aggregation can be split across shards, as described in [Merge Strategy](#merge-strategy). A query such as `sum(rate(x[5m]))` over replicas that differ by a label, or `histogram_quantile(...)` over buckets split across members, needs every raw sample in one place. With `tsm.evaluation: global`, a TSM ALB answers each instant and range query the way Thanos Querier does: it reads the raw series the query selects from every member, deduplicates replicas, and evaluates the whole expression once in an embedded Prometheus engine.
+
+```yaml
+backends:
+  mimir-east:
+    provider: prometheus
+    origin_url: http://mimir-east:8080/prometheus
+    prometheus:
+      flavor: mimir
+  mimir-west:
+    provider: prometheus
+    origin_url: http://mimir-west:8080/prometheus
+    prometheus:
+      flavor: mimir
+  mimir-global:
+    provider: alb
+    cache_name: default
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global        # merge (the default) or global
+        replica_labels: [replica] # labels that tell copies of one series apart; no default
+        deduplication: penalty    # penalty (the default) or chain
+        partial_response: true    # the default
+        max_samples: 50000000     # the default
+        query_timeout: 2m         # the default
+        max_concurrent_queries: 20 # the default
+        max_fetched_series: 0     # the default, unlimited
+        max_fetched_samples: 0    # the default, unlimited
+        raw_cache_window: 31d     # the default
+      pool:
+        - mimir-east
+        - mimir-west
+```
+
+The evaluation is set per ALB, and covers every query the ALB receives; other TSM ALBs keep merging. Requests for other paths, such as labels and series, are merged as usual. The settings below `evaluation` are valid only with `evaluation: global`.
+
+**Members.** Every pool member must be a `prometheus` backend with a [series source](./prometheus.md#series-sources): `flavor: mimir` reads Prometheus remote read, `flavor: thanos` reads Thanos StoreAPI at the member's `series_endpoint`, and any other Prometheus backend can set `series_api`. Configuration fails for any other member, including a nested ALB. With [autodiscovery](./alb-autodiscovery.md#template-backends), the `template_backend` must be such a backend. A template's `series_endpoint`, including the one StoreAPI requires, is used unchanged by every discovered member, so every member reads that one store and Trickster logs a warning at startup; remote read without a `series_endpoint` instead reads each member's own origin. A discovery `query.scheme` of `tcp` or `udp` gives no such origin and fails configuration, and a discovered member whose series endpoint still can't be formed is logged and left out of the pool. Every live member is read, whatever its `replica_group`. Each read reuses the member's TLS settings, and carries the client's request headers and the member path's `request_headers`.
+
+**Deduplication.** Series whose labels match once `replica_labels` are removed are replicas of one series, and the result keeps one series per such label set, without the replica labels. `deduplication: penalty` follows Thanos: it reads one replica until that replica falls silent for twice its sampling interval, then switches to another. When the query reads the series through `rate`, `increase`, `irate` or `resets`, a switch to a replica whose counter is behind is adjusted so that it doesn't read as a counter reset. When replicas sample at the same instant, the earliest-configured member's replica is read first. `deduplication: chain` instead keeps every distinct timestamp across replicas, and the earliest-configured member's value where they share one. Series with identical labels from different members are always combined like `chain`. Leaving `replica_labels` empty still combines identical series. A native histogram's counter reset hint describes its change from the previous sample of its own source, so where deduplication moves to another replica or copy, or passes over samples, the hint is cleared and the engine finds any reset from the counts, as Prometheus does where it merges series.
+
+**Partial responses.** When a member is unavailable or fails to answer, by default the result is evaluated over the members that answered, and carries a warning naming the member, as Thanos does with partial responses enabled. Why the member failed is logged rather than returned, since a transport error can name internal hosts. Set `partial_response: false` to fail such a query with a 503 instead, as soon as a member fails, stopping the reads of the others. A request's `partial_response` parameter overrides the ALB's setting. A failed evaluation is returned as a Prometheus API error, never replaced by a merged answer.
+
+**Limits.** `max_samples` bounds the samples the engine holds at once, like Prometheus's `--query.max-samples`. `query_timeout` bounds an evaluation from its arrival, including any wait for one of the ALB's `max_concurrent_queries` slots; a request's `timeout` parameter can shorten it. `max_fetched_series` and `max_fetched_samples` bound the raw series and samples one evaluation reads from all its members before deduplication: the samples each selector reads within its range, whether from a member or the raw series cache, and the series with any such sample. What the raw series cache serves for a selector is counted before any member is read for it, and what members send as their answers arrive, so a read stops as soon as its samples and the cache's pass the allowance. As a member's series are mostly those the cache serves too, a read counts series only past as many as the cache served, and each selector's exact count is settled once its answer is assembled. A series counts once for each selector and member, however many frames, messages, or uncached time ranges carry it. With `max_fetched_series` set, series are told apart by a hash of their labels as they arrive, so a copy of a series that a member sends apart from the rest of it counts once too; without it, such a copy may count again. A read stops as soon as the evaluation's allowance runs out, and a read several evaluations share counts against each of them, stopping only when none can afford more. Each member's raw response, and each StoreAPI message or remote-read frame in it, is bounded by the ALB's [`max_capture_bytes`](#bounding-per-member-response-captures). Only the chunks and samples within a selector's range are kept from a response, and what is kept from one response, with the buckets its native histogram chunks lay out as they are read, may take at most four times `max_capture_bytes` in memory once decoded, so a response can't expand far past its size even when the fetch limits are unlimited. Deduplication reads every copy and replica of a series at once, so the buckets their chunks lay out count together. Responses of float chunks stay within that bound; native histograms expand more, integer ones sent as samples to around eight times their size, so a response of them can reach it before `max_capture_bytes`. A histogram chunk whose bucket layout declares more buckets than its data holds is refused as malformed, as is one whose samples couldn't be read: spans offset back after the first, in a schema finer than the engine reads, or custom-bucket spans offset back, on the negative side, or reaching past their bounds. A histogram sent as a sample is refused for the same layouts, and for spans laying out more or fewer buckets than it holds. `max_capture_bytes` also bounds the result an evaluation encodes as its response, whether or not the result can be cached: encoding stops as soon as the result passes it, and the query fails whole with `execution`, never returning part of the result. A failed evaluation's error stays within it too, or within 4 KiB when that is more, leaving out warnings and shortening its message as needed. A result takes some 15 to 35 bytes of JSON for each sample it returns, where members' chunk-encoded reads often take one or two, so an ALB that returns raw series over wide ranges needs a `max_capture_bytes` sized for its results as well as its members' reads. A query that reaches one of these limits or times out fails, even when partial responses are allowed; a limit a member enforces itself, such as Mimir's query limits, is that member's failure. Errors use Prometheus's types and status codes: `bad_data` (400), `execution` (422, which includes the limits), `canceled` (499), `internal` (500), and `timeout` or `unavailable` (503). Once a member's read of one of a query's selectors reaches a limit, the other members' reads of that selector stop, and the query fails with `execution`, even when any other of its reads also failed, of that selector or another, or it also timed out or its client canceled it as the limit was reached.
+
+**The engine.** The engine is the Prometheus version Trickster is built with, with a 5-minute lookback, the `@` modifier, negative offsets and the experimental functions enabled, a 1-minute step for subqueries that name none, and at most 11,000 points per series. The query's `limit` parameter is honored. A request is validated as Prometheus validates it before any cache lookup or raw read, except that a range query's `step` must be a whole number of milliseconds, the engine's resolution, rather than be evaluated at another step; a `timeout` must be positive, a `limit` a non-negative integer, and `partial_response` a boolean.
+
+**Caching.** A global ALB keeps each complete evaluation in its own `cache_name` (`default` when unset), whole. Its range queries are not delta-cached, as a Prometheus backend's are: penalty deduplication follows replicas from a range's first sample, so samples evaluated as part of a range can differ from the same samples evaluated with the whole of it. A cached result answers only the same query with the same time, or the same start, end and step, so a dashboard's moving range is evaluated each time, while repeats and concurrent viewers are answered from the cache. A result that reaches into the recent past, within the 5-minute lookback or the ALB's `volatile_window`, is kept for up to 30 seconds, while samples may still arrive; an older one is kept for the ALB's `timeseries_ttl`. A partial result or a failed evaluation is never cached, and is answered with `Cache-Control: no-store`.
+
+The cache key holds the query's `limit`, and its `timeout` and `partial_response` resolved against the ALB's settings, so requests that share a result or an evaluation agree on how it ends. It also holds the `Authorization` header, the `X-Scope-OrgID` and `THANOS-TENANT` tenant headers, the `cache_key_headers`, `cache_key_params` and `cache_key_form_fields` configured on the ALB's query paths and on the ALB path a request arrives on, such as an alias like `/prometheus/api/v1/query_range`, and the `cache_key_headers` configured on its members' query paths, so no tenant or scope reads another's results. Results are kept under a namespace that digests the ALB's members, in order, with each one's series endpoint, the request headers its query paths send, and its TLS client and SigV4 settings. The namespace changes when membership does, as when a discovery adds or removes a member, and when a member's configuration does, but not with health, so results kept before a member's outage stay usable. A request's evaluation reads the members whose namespace keys its result, even when the pool changes while it runs.
+
+**Raw series caching.** Beneath its results, a global ALB with a cache also keeps the raw series it reads, so each member is read only for samples the cache doesn't hold. A member's series are kept per selector, in two-hour blocks aligned to the epoch, keyed by the member's series endpoint and configuration (as for the namespace above), the selector's matchers, and the identity headers that key results, as the member receives them. Samples within a member's volatile window are read from it by every evaluation and never kept, since replicas' samples may still arrive; older samples are read once and kept for the ALB's `timeseries_ttl`. A dashboard's moving range therefore reads only its newest minutes from each member, and a wider range reads only the part the cache lacks. The volatile window is 5 minutes for members with `flavor: mimir` or `flavor: thanos`, and none for other members; an ALB that sets `volatile_window` uses it for every member instead, so set it to cover any out-of-order window your members accept. Samples older than `raw_cache_window`, 31 days by default, aren't kept either: a range reaching further back reads that older part from the members every time, and the rest from the cache. The window counts whole blocks, and each block a range spans is one cache lookup per selector and member. A selector with an exact metric name can also be answered from the cached blocks of a broader one on the same metric, member and identity, whose matchers are all among its own: `up{job="api",code=~"5.."}` from `up{job="api"}`'s blocks, filtered to the series it matches. Each Trickster instance remembers in memory which selectors have cached blocks; nothing more is stored. Concurrent evaluations needing the same samples share one read, and a selector's missing ranges are read from a member a few at a time. Every chunk of a member's answer is read through, and the bucket layout of every histogram in it checked, whether the answer arrives as chunks or as samples, before it is kept, so a chunk or histogram that can't be read fails that member's read rather than being cached. An answer a member gave incompletely, or failed to give, is never kept. If keeping an answer fails anyway, the evaluations that read it already have their answer, the failure is logged, and its samples are read from the member next time; a cached block that fails as they are merged into it is dropped, and its samples are read again too. The ALB's `max_object_size_bytes`, 64 MB by default for a TSM ALB, bounds each block as it bounds each cached result: samples that would take a block past it aren't kept, so they are read from the members every time while the block keeps what it held. A block refused some samples isn't tried with them again until `timeseries_ttl` passes, unless it no longer holds what it held then, as once evicted, when they may fit; each refusal counts in `trickster_cache_events_total` as event `error` with reason `tsm_global_raw_max_object_size`. Blocks are keyed by the limit too, so ALBs of different limits sharing a cache keep their own, and changing the limit starts new blocks while the old ones expire. A `memory` cache measures a block by the memory it holds, and other caches by its encoded size. The small chunks that frequent refreshes add to a block are encoded again into full ones as they accumulate, so a block kept current every few seconds ends as compact as one read whole. Each selector reads exactly the samples from its start to its end, cached or not, so cached and uncached evaluations agree, and penalty deduplication starts at a selector's first sample.
+
+Concurrent requests for the same result share one evaluation. The request that starts it owns it: when its client goes away, the evaluation and its raw reads are canceled, and a request that joined it runs the query again.
+
+**Reloads and shutdown.** A configuration reload leaves the replaced ALB's evaluations running for the `reload_drain_timeout`. Then that ALB admits no more evaluations and cancels those still running, which are answered `unavailable` (503) unless one already failed with `execution`, as on reaching a limit, which decides its answer as it would a timeout's, and waits up to the same timeout again for raw series blocks still being stored; nothing a raw read returns from then on is stored. Only after that are its members' StoreAPI connections closed, discovered members' included. A `memory` or `redis` cache that the new configuration changes or removes, and that a replaced global ALB keeps its results in, is closed after that too, so the blocks still being stored reach it; until then, a `memory` cache's objects stay in memory alongside those of the cache replacing it. A cache that keeps its objects in local files (`filesystem`, `bbolt`, `badger`) is closed as the reload applies, since its replacement can open the same files, so it refuses what the replaced ALB stores in it during the drain. A changed or removed cache that no global ALB uses is closed as the reload applies too, once the operations under way in it end, whatever its provider. A reload that fails restores the previous ALB, which keeps reading its discovered members over the connections it already has. Shutdown does the same once the listeners have drained: retiring the evaluators and closing the caches share one `shutdown_drain_timeout`. A discovered member that autodiscovery removes or rebuilds has its StoreAPI connection closed once the `reload_drain_timeout` passes, and one it refuses as it builds it, at once.
+
+Reading raw series moves much more data than reading answers, as it does in Thanos: plan `max_capture_bytes` and the fetch limits for the widest dashboard ranges. To compare global evaluation with Thanos or with merging, see the `mimir` and `thanos` profiles of the [developer environment](./developer/environment/README.md#mimir-and-thanos-details).
 
 #### Providers Supporting Time Series Merge
 
@@ -581,7 +647,7 @@ backends:
     provider: alb
     max_query_range: 14d
     alb:
-      mechanism: tsm # time series merge
+      mechanism: tsm # or time_series_merge
       pool: 
         - prom01a
         - prom01b
@@ -641,7 +707,7 @@ backends:
   node-alb-fr:
     provider: alb
     alb:
-      mechanism: fr # first response
+      mechanism: fr # or first_response
       pool:
         - node01
         - node02
@@ -681,7 +747,7 @@ backends:
   node-alb-fgr:
     provider: alb
     alb:
-      mechanism: fgr # first good response
+      mechanism: fgr # or first_good_response
       pool:
         - node01
         - node02
@@ -718,7 +784,7 @@ backends:
   node-alb-nlm:
     provider: alb
     alb:
-      mechanism: nlm # newest last modified
+      mechanism: nlm # or newest_last_modified
       pool:
         - node01
         - node02
@@ -757,7 +823,7 @@ backends:
     provider: alb
     authenticator_name: dbUsers
     alb:
-      mechanism: ur # User Router Mechanism
+      mechanism: ur # or user_router
       user_router: # User Router-specific configs
         default_backend: readersBackend # optional - users not in the list will route here, origin will 401
         users:
@@ -866,6 +932,8 @@ backends:
 ```
 
 The ALB-level value takes precedence over the backend-level value, which in turn takes precedence over the 256 MiB default.
+
+A TSM ALB with [`evaluation: global`](#global-evaluation) applies the cap to each member's raw series response and to the result each evaluation encodes as its response. Unlike the fanout mechanisms above, it doesn't treat a member's response over the cap as a partial failure: the whole query fails with a Prometheus `execution` error (422), even when partial responses are allowed, with no `X-Trickster-Result: phit` marker and no `truncated` count in `trickster_alb_fanout_failures_total`. A result that would exceed the cap fails with the same error rather than being returned in part.
 
 ### Bounding Aggregate In-Flight Captures
 

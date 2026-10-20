@@ -203,7 +203,8 @@ func queryCache(ctx context.Context, c cache.Cache, key string,
 		ranges = byterange.Ranges{byterange.Range{Start: 0, End: d.ContentLength - 1}}
 	}
 
-	if len(ranges) > 0 && len(d.Ranges) > 0 {
+	// a chunked read that loaded none of the stored ranges has no Ranges yet still isn't the whole object
+	if len(ranges) > 0 && (len(d.Ranges) > 0 || len(d.unloadedRanges) > 0) {
 		delta = d.Ranges.CalculateDeltas(ranges, d.ContentLength)
 		if len(delta) > 0 {
 			if len(d.Body) > 0 {

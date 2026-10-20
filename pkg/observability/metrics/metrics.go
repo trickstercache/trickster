@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -49,6 +50,7 @@ const (
 	stepAlignSubsystem  = "step_alignment"
 	geoSubsystem        = "geo"
 	ipACLSubsystem      = "ip_acl"
+	rateLimitSubsystem  = "ratelimit"
 	moqSubsystem        = "moq"
 )
 
@@ -77,6 +79,23 @@ var (
 			Help:      "Count of IP access list decisions by list, scope and verdict.",
 		},
 		[]string{keys.IP_ACL, keys.Scope, keys.Verdict},
+	)
+
+	// RateLimitDecisions counts judged events. The limiter name, plane and result are the only labels.
+	RateLimitDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: rateLimitSubsystem,
+			Name:      "decisions_total",
+			Help:      "Count of rate limiter decisions by limiter, plane and result.",
+		},
+		[]string{keys.Limiter, keys.Plane, keys.Result},
+	)
+
+	rateLimitKeysDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(metricNamespace, rateLimitSubsystem, "keys"),
+		"Rate limiter buckets held at scrape time.",
+		[]string{keys.Limiter}, nil,
 	)
 
 	// AccessLogDroppedLines counts access and error log lines that could not be written
@@ -594,6 +613,28 @@ var (
 		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
 	)
 
+	// OriginSRVLookups counts SRV origin-resolution lookups by result: hit, miss, stale, negative or error
+	OriginSRVLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "origin_srv_lookups_total",
+			Help:      "Count of SRV origin-resolution lookups, by result.",
+		},
+		[]string{keys.Backend_Name, keys.Result},
+	)
+
+	// OriginSRVDialAttempts counts dials to SRV targets by priority tier (0 is the preferred tier) and result
+	OriginSRVDialAttempts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "origin_srv_dial_attempts_total",
+			Help:      "Count of dial attempts to SRV origin targets, by priority tier and result.",
+		},
+		[]string{keys.Backend_Name, keys.Tier, keys.Result},
+	)
+
 	// GeoACLDecisions counts geo ACL judgments by the plane they were made on and their result
 	GeoACLDecisions = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -957,6 +998,87 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
+	// ALBGlobalEvaluations counts TSM global evaluations by ALB and outcome: success, partial, or the
+	// Prometheus API error type that answered the query.
+	ALBGlobalEvaluations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_evaluations_total",
+			Help:      "Count of TSM global evaluations, by ALB and outcome.",
+		},
+		[]string{keys.ALB_Name, keys.Status},
+	)
+
+	// ALBGlobalEvaluationDuration measures TSM global evaluations, including raw series retrieval.
+	ALBGlobalEvaluationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_evaluation_duration_seconds",
+			Help:      "Histogram of TSM global evaluation durations, by ALB.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalFetchedSeries counts the raw series TSM global evaluations read, before deduplication.
+	ALBGlobalFetchedSeries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_fetched_series_total",
+			Help:      "Count of raw series read by TSM global evaluations before deduplication, by ALB.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalFetchedSamples counts the raw samples TSM global evaluations read, before deduplication.
+	ALBGlobalFetchedSamples = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_fetched_samples_total",
+			Help:      "Count of raw samples read by TSM global evaluations before deduplication, by ALB.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalRawSubsumed counts member raw series reads during TSM global evaluation answered in part from a
+	// broader selector's cached blocks, by ALB.
+	ALBGlobalRawSubsumed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_raw_subsumed_total",
+			Help:      "Count of member raw series reads answered in part from a broader selector's cached raw series.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalRawReads counts member raw series reads during TSM global evaluation, by ALB and how the
+	// raw series cache answered them: hit, phit, kmiss or proxy-only.
+	ALBGlobalRawReads = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_raw_reads_total",
+			Help:      "Count of member raw series reads during TSM global evaluation, by ALB and cache status.",
+		},
+		[]string{keys.ALB_Name, keys.Status},
+	)
+
+	// ALBGlobalMemberFailures counts member reads that failed during TSM global evaluation.
+	ALBGlobalMemberFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_member_failures_total",
+			Help:      "Count of failed member raw series reads during TSM global evaluation, by ALB and member.",
+		},
+		[]string{keys.ALB_Name, keys.Member},
+	)
+
 	// ALBTSMReplicaEvents counts logical replica-group activity without using
 	// configured group names as labels. "group_attempted" and "group_failed"
 	// describe logical availability; "fallback", "conflict", and "suppressed"
@@ -1316,9 +1438,58 @@ func (d *IPACLDecision) Observe(allowed bool) {
 	d.Deny.Inc()
 }
 
+// RateLimitDecision is the five result counters for one attachment, resolved when it is built.
+type RateLimitDecision struct {
+	allowed, limited, counted, exempt, full prometheus.Counter
+}
+
+// NewRateLimitDecision resolves the result counters for one limiter and plane.
+func NewRateLimitDecision(name, plane string) *RateLimitDecision {
+	return &RateLimitDecision{
+		allowed: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultAllowed.String()),
+		limited: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultLimited.String()),
+		counted: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultCounted.String()),
+		exempt:  RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultExempt.String()),
+		full:    RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultFull.String()),
+	}
+}
+
+// Observe records one decision.
+func (d *RateLimitDecision) Observe(result ratelimit.Result) {
+	if d == nil {
+		return
+	}
+	switch result {
+	case ratelimit.ResultAllowed:
+		d.allowed.Inc()
+	case ratelimit.ResultLimited:
+		d.limited.Inc()
+	case ratelimit.ResultCounted:
+		d.counted.Inc()
+	case ratelimit.ResultExempt:
+		d.exempt.Inc()
+	case ratelimit.ResultFull:
+		d.full.Inc()
+	}
+}
+
+type rateLimitKeysCollector struct{}
+
+func (rateLimitKeysCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- rateLimitKeysDesc
+}
+
+func (rateLimitKeysCollector) Collect(ch chan<- prometheus.Metric) {
+	ratelimit.Walk(func(name string, n int) {
+		ch <- prometheus.MustNewConstMetric(rateLimitKeysDesc, prometheus.GaugeValue, float64(n), name)
+	})
+}
+
 func init() {
 	// Register Metrics
 	prometheus.MustRegister(IPACLDecisions)
+	prometheus.MustRegister(RateLimitDecisions)
+	prometheus.MustRegister(rateLimitKeysCollector{})
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)
@@ -1347,6 +1518,13 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionFailed)
 	prometheus.MustRegister(ALBFanoutFailures)
 	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBGlobalEvaluations)
+	prometheus.MustRegister(ALBGlobalEvaluationDuration)
+	prometheus.MustRegister(ALBGlobalFetchedSeries)
+	prometheus.MustRegister(ALBGlobalFetchedSamples)
+	prometheus.MustRegister(ALBGlobalMemberFailures)
+	prometheus.MustRegister(ALBGlobalRawReads)
+	prometheus.MustRegister(ALBGlobalRawSubsumed)
 	prometheus.MustRegister(ALBTSMReplicaEvents)
 	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)
@@ -1382,6 +1560,8 @@ func init() {
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(ProxyPartialBucketFetches)
+	prometheus.MustRegister(OriginSRVLookups)
+	prometheus.MustRegister(OriginSRVDialAttempts)
 	prometheus.MustRegister(StepAlignmentFallbacks)
 	prometheus.MustRegister(GeoACLDecisions)
 	prometheus.MustRegister(GeoLocatorLookups)
@@ -1456,6 +1636,8 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
 	ProxyPartialBucketFetches,
+	OriginSRVLookups,
+	OriginSRVDialAttempts,
 	StepAlignmentFallbacks,
 	TimeseriesRetentionFactorExceeded,
 	TimeseriesOffGridExtents,

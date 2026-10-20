@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -34,8 +35,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -53,11 +56,12 @@ import (
 
 const (
 	ShortName            = names.MechanismTSM
-	Name      types.Name = "time_series_merge"
+	Name      types.Name = names.MechanismTimeSeriesMerge
 )
 
 type handler struct {
 	mech.PoolHolder
+	name                  string   // the ALB's backend name
 	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
 	outputFormat          string   // the provider output format (e.g., "prometheus")
 	tsmOptions            options.Options
@@ -76,6 +80,16 @@ type handler struct {
 	// as the pool hasn't been replaced. Hot path is a single atomic load
 	// plus a uint64 compare.
 	cachedStripKeys atomic.Pointer[stripKeysSnapshot]
+	// evaluator answers queries over the members' raw series when the ALB's evaluation is global; once retired, set under
+	// evaluatorMu, the handler builds none
+	evaluator   atomic.Pointer[backends.TSMGlobalEvaluator]
+	evaluatorMu sync.Mutex
+	retired     bool
+	// cache and backendOptions keep global evaluations' results; they are set before requests arrive
+	cache          cache.Cache
+	backendOptions *bo.Options
+	// identity is the current pool's namespace for cached global results
+	identity atomic.Pointer[globalIdentity]
 }
 
 type mergeFinalizer interface {
@@ -98,6 +112,7 @@ type stripKeysSnapshot struct {
 // New constructs a time-series merge mechanism from its resolved configuration.
 func New(c Config, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
+		name:                  c.Name,
 		tsmOptions:            c.Options,
 		maxCaptureBytes:       c.MaxCaptureBytes,
 		maxFanoutCaptureBytes: c.MaxFanoutCaptureBytes,
@@ -321,6 +336,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 				return
 			}
+		}
+	}
+
+	if h.tsmOptions.IsGlobal() {
+		evaluator, err := h.globalEvaluator(hl)
+		if err != nil {
+			logger.Warn("tsm global evaluation unavailable", logging.Pairs{keys.Error: err})
+			failures.HandleBadGateway(w, r)
+			return
+		}
+		if evaluator.Handles(r) {
+			evaluator.ServeTSMGlobal(w, r, h.globalRequest(p, hl))
+			return
 		}
 	}
 

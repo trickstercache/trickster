@@ -34,7 +34,7 @@ BUMPER_FILE    := ./testdata/license_header_template.txt
 THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
 # `go tool` compiles for GOOS/GOARCH, so a cross-build must point this at a host-built binary
 GO_LICENSES    ?= $(GO) tool go-licenses
-GOLANG_CI_LINT_VERSION ?= v2.13.1
+GOLANG_CI_LINT_VERSION ?= v2.14.0
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -42,7 +42,9 @@ go-mod-vendor:
 
 .PHONY: go-mod-tidy
 go-mod-tidy:
-	$(GO) mod tidy
+	@set -e; for mod in $$(git ls-files '*go.mod'); do \
+		(cd "$$(dirname "$$mod")" && $(GO) mod tidy); \
+	done
 
 .PHONY: test-go-mod
 test-go-mod:
@@ -181,6 +183,8 @@ gofix-diff:
 	@go fix -diff ./...
 
 LINT_FLAGS ?= 
+# TOOL_MODULES are the separate Go modules of the developer tools, which lint and gotest cover too
+TOOL_MODULES := hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/mimirseed hack/diagstreamer
 # tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
 # full set of linters is not run over them
 TEST_LINTERS := forbidigo,depguard,godox,goheader
@@ -188,7 +192,7 @@ TEST_LINTERS := forbidigo,depguard,godox,goheader
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/diagstreamer; do \
+	@for m in $(TOOL_MODULES); do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
 			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
 			-c ../../.golangci.yml ./...) || exit 1; \
@@ -258,7 +262,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/diagstreamer; do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
+	@for m in $(TOOL_MODULES); do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -420,7 +424,8 @@ COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
 COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
-DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite moq
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite \
+	mimir thanos moq
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -457,6 +462,9 @@ developer-start: developer-credentials
 	$(call wait_ready,graphite,http://127.0.0.1:8081/metrics/find?query=carbon,120)
 	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
 	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
+	$(call wait_ready,mimir_east,http://127.0.0.1:11080/ready,120)
+	$(call wait_ready,mimir_west,http://127.0.0.1:11081/ready,120)
+	$(call wait_ready,thanos_query,http://127.0.0.1:11903/-/ready,120)
 
 # developer-start-<profile> starts the always-on services plus that one backend
 .PHONY: $(DEVELOPER_START_TARGETS)
@@ -574,20 +582,13 @@ kind-integration-ingress:
 		deployment/trickster-ingress deployment/trickster-ingress-endpoint \
 		deployment/prometheus --timeout=180s
 
-# Deploys the Gateway API controller scenarios (TestGatewayKind,
-# TestIngressAnnotationsKind, TestGatewayRollingUpgradeKind, TestGatewayMoQKind and
-# the conformance suite) into the running kind cluster, after kind-integration-ingress. The
-# Gateway API CRDs come from the module go.mod pins, so the cluster serves the
-# version the controller is built against, and go first because the controller
-# probes for them once at startup. The experimental channel is installed
-# because HTTPRoute retries, which the controller implements, exist only
-# there. The Service's externalIPs are set to the worker node, which is how
-# the conformance suite reaches the ports its Gateways declare.
-GATEWAY_API_CRDS = $(shell cd integration/conformance && \
-	$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
+# Deploys Gateway scenarios with the conformance module's pinned experimental CRDs.
+# Install CRDs before startup and expose Gateway ports through the worker node.
 .PHONY: kind-integration-gateway
 kind-integration-gateway:
-	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
+	@crds=$$(cd integration/conformance && $(GO) mod download sigs.k8s.io/gateway-api && \
+		$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api) && \
+	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k "$$crds/config/crd/experimental"
 	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway-moq.yaml

@@ -1,0 +1,48 @@
+# Copyright 2026 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestRateLimitHTTP. Distinct limiter names so a readiness poll cannot empty a route bucket.
+
+listeners:
+  default:
+    port: 8539
+    trusted_proxies: [127.0.0.1/32, '::1/128']
+  metrics:
+    port: 8540
+  mgmt:
+    port: 8541
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+rate_limiters:
+  rl-it-route:
+    limit: 1
+    window: 1s
+    keys: [client_ip]
+    policy_headers: ietf
+  rl-it-count:
+    limit: 1
+    window: 1m
+    action: count
+  rl-it-listen:
+    limit: 1
+    window: 1m
+
+backends:
+  rl-it-prom:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    rate_limiter_name: rl-it-route
+    paths:
+      - path: /api/v1/query_range
+        handler: proxy
+        rate_limiter_name: rl-it-count
+      - path: /api/v1/labels
+        handler: proxy
+        rate_limiter_name: none

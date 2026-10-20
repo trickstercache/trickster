@@ -84,9 +84,11 @@ type Registrar func(handlers.Lookup)
 func New(name string, o *bo.Options, registrar Registrar,
 	router http.Handler, cache cache.Cache,
 ) (Backend, error) {
-	// one signer for both clients, so the health checker shares the proxy's credential cache
+	// one signer and one origin dialer for both clients, so the health checker shares the
+	// proxy's credential and SRV caches
 	signer, err := proxy.NewSigner(o)
-	c, err1 := proxy.NewHTTPClientWithSigner(o, signer)
+	dialer := proxy.NewOriginDialer(o)
+	c, err1 := proxy.NewHTTPClientWith(o, signer, dialer)
 	if err == nil {
 		err = err1
 	}
@@ -97,7 +99,7 @@ func New(name string, o *bo.Options, registrar Registrar,
 		hco = bo.New()
 		hco.HealthCheck = ho.New()
 	}
-	hcc, err2 := proxy.NewHTTPClientWithSigner(hco, signer)
+	hcc, err2 := proxy.NewHTTPClientWith(hco, signer, dialer)
 	if err == nil {
 		err = err2
 	}

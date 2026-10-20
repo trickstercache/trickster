@@ -38,12 +38,22 @@ const (
 
 	failureDecode    = "decode_failure"
 	failureOversized = "oversized_cached_object"
+	failureEncode    = "encode_failure"
+	failureStore     = "store_failure"
+	failureTooLarge  = "max_object_size"
 	explicitRemoval  = "explicit_removal"
 )
 
 // envelopeMagic identifies a native-delta cache envelope: magic(4) version(1)
 // flags(1) reserved(1) extentCount(4) extents(16 each) payloadLen(4) payload.
 var envelopeMagic = [4]byte{'T', 'N', 'D', 'C'}
+
+var (
+	// ErrObjectTooLarge is returned by Keep for an entry larger than the engine's MaxObjectSize, which isn't stored.
+	ErrObjectTooLarge = errors.New("native delta cache entry exceeds max object size")
+	errNilEntry       = errors.New("nil cache entry")
+	errNoCacheClient  = errors.New("native delta cache has no cache client")
+)
 
 // Entry is one cached object: a protocol payload plus the extents it covers.
 // A Marker entry carries no payload; its presence is its meaning (e.g. the
@@ -93,6 +103,12 @@ func (e *Engine[R]) Retrieve(key string) (*Entry[R], bool) {
 // Failures are observed, not returned: a failed store costs only a later miss.
 func (e *Engine[R]) Store(key string, entry *Entry[R]) {
 	e.objects.store(key, entry, e.cfg.CacheTTL)
+}
+
+// Keep writes the object-tier entry at key as Store does, and returns why it wasn't stored: ErrObjectTooLarge
+// when it exceeds MaxObjectSize, else the encoding or cache failure, observed as Store observes it.
+func (e *Engine[R]) Keep(key string, entry *Entry[R]) error {
+	return e.objects.keep(key, entry, e.cfg.CacheTTL)
 }
 
 // RetrieveDelta loads and validates the delta-tier entry stored at key, as Retrieve does for
@@ -166,58 +182,62 @@ func (t *tier[P]) retrieve(key string) (*Entry[P], bool) {
 }
 
 func (t *tier[P]) store(key string, entry *Entry[P], ttl time.Duration) {
+	_ = t.keep(key, entry, ttl)
+}
+
+// keep writes entry at key for ttl, and returns why it wasn't stored
+func (t *tier[P]) keep(key string, entry *Entry[P], ttl time.Duration) error {
 	if entry == nil {
-		t.observeCacheFailure("encode_failure")
-		t.logCacheError("native delta cache encoding failed", "nil cache entry")
-		return
+		t.observeCacheFailure(failureEncode)
+		t.logCacheError("native delta cache encoding failed", errNilEntry.Error())
+		return errNilEntry
 	}
 	cacheClient := t.cacheClient()
 	if cacheClient == nil {
-		return
+		return errNoCacheClient
 	}
 	if memoryCache, ok := memoryCacheClient(cacheClient); ok {
 		entry.size = t.entrySize(entry)
 		if t.cfg.MaxObjectSize > 0 && int64(entry.size) > t.cfg.MaxObjectSize {
-			t.observeCacheFailure("max_object_size")
-			if logger.Level() == level.Debug {
-				logger.Debug("native delta cache entry exceeds max object size",
-					logging.Pairs{
-						keys.Protocol:    t.cfg.Protocol,
-						keys.BackendName: t.cfg.BackendName,
-						keys.Size:        entry.size,
-					})
-			}
-			return
+			return t.refuseOversized(entry.size)
 		}
 		if err := memoryCache.StoreReference(key, entry, ttl); err != nil {
-			t.observeCacheFailure("store_failure")
+			t.observeCacheFailure(failureStore)
 			t.logCacheError("native delta cache storage failed", err.Error())
+			return err
 		}
-		return
+		return nil
 	}
 	data, err := t.marshalEntry(entry)
 	if err != nil {
-		t.observeCacheFailure("encode_failure")
+		t.observeCacheFailure(failureEncode)
 		t.logCacheError("native delta cache encoding failed", err.Error())
-		return
+		return err
 	}
 	if t.cfg.MaxObjectSize > 0 && int64(len(data)) > t.cfg.MaxObjectSize {
-		t.observeCacheFailure("max_object_size")
-		if logger.Level() == level.Debug {
-			logger.Debug("native delta cache entry exceeds max object size",
-				logging.Pairs{
-					keys.Protocol:    t.cfg.Protocol,
-					keys.BackendName: t.cfg.BackendName,
-					keys.Size:        len(data),
-				})
-		}
-		return
+		return t.refuseOversized(len(data))
 	}
 	entry.size = len(data)
 	if err := cacheClient.Store(key, data, ttl); err != nil {
-		t.observeCacheFailure("store_failure")
+		t.observeCacheFailure(failureStore)
 		t.logCacheError("native delta cache storage failed", err.Error())
+		return err
 	}
+	return nil
+}
+
+// refuseOversized observes an entry of size bytes refused for exceeding MaxObjectSize, and returns ErrObjectTooLarge
+func (t *tier[P]) refuseOversized(size int) error {
+	t.observeCacheFailure(failureTooLarge)
+	if logger.Level() == level.Debug {
+		logger.Debug("native delta cache entry exceeds max object size",
+			logging.Pairs{
+				keys.Protocol:    t.cfg.Protocol,
+				keys.BackendName: t.cfg.BackendName,
+				keys.Size:        size,
+			})
+	}
+	return ErrObjectTooLarge
 }
 
 func (t *tier[P]) remove(key, reason string) {

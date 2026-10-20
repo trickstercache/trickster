@@ -19,6 +19,8 @@ package engines
 import (
 	"context"
 	"errors"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -88,6 +90,9 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIt
 			if qr.lookupStatus != status.LookupStatusHit &&
 				qr.lookupStatus != status.LookupStatusProxyHit &&
 				(qr.err == nil || errors.Is(qr.err, cache.ErrKNF)) {
+				if mr, ok := processor.(chunkMissRecorder); ok {
+					mr.ChunkMissed(index)
+				}
 				return nil
 			}
 			if qr.err != nil {
@@ -129,6 +134,11 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIt
 
 	// Finalize processing
 	return processor.Finalize()
+}
+
+// chunkMissRecorder is a ChunkQueryProcessor that must learn which chunks the cache didn't hold
+type chunkMissRecorder interface {
+	ChunkMissed(index int)
 }
 
 // TimeseriesChunkQueryIterator implements ChunkQueryIterator for timeseries chunks (reading)
@@ -250,7 +260,12 @@ func (bci *ByterangeChunkQueryIterator) IterateChunks(fn func(int, string) bool)
 type ByterangeChunkQueryProcessor struct {
 	d    *HTTPDocument
 	size int64
+	crs  int64  // start of the first chunk read
+	cre  int64  // end of the last chunk read, exclusive
 	dbl  *int64 // atomic counter for document body length
+
+	mu      sync.Mutex
+	missing byterange.Ranges // windows of chunks that were not in the cache
 }
 
 func (bcp *ByterangeChunkQueryProcessor) ProcessChunk(index int, subkey string, qr *queryResult, c cache.Cache) error {
@@ -263,20 +278,51 @@ func (bcp *ByterangeChunkQueryProcessor) ProcessChunk(index int, subkey string, 
 		return qr.err
 	}
 
-	// Process successful result immediately
-	if !qr.d.IsMeta && qr.lookupStatus == status.LookupStatusHit {
-		for _, r := range qr.d.Ranges {
-			content := qr.d.Body[r.Start%bcp.size : r.End%bcp.size+1]
-			r.Copy(bcp.d.Body, content)
-			if v := atomic.LoadInt64(bcp.dbl); r.End+1 > v {
-				atomic.CompareAndSwapInt64(bcp.dbl, v, r.End+1)
+	if qr.d == nil || qr.lookupStatus != status.LookupStatusHit {
+		bcp.ChunkMissed(index)
+		return nil
+	}
+	if qr.d.IsMeta {
+		return nil
+	}
+	for _, r := range qr.d.Ranges {
+		content := qr.d.Body[r.Start%bcp.size : r.End%bcp.size+1]
+		r.Copy(bcp.d.Body, content)
+		// chunks finish concurrently, so a lost swap is retried until the length covers this range
+		for end := r.End + 1; ; {
+			v := atomic.LoadInt64(bcp.dbl)
+			if end <= v || atomic.CompareAndSwapInt64(bcp.dbl, v, end) {
+				break
 			}
 		}
 	}
 	return nil
 }
 
+// ChunkMissed notes a chunk the cache didn't hold; an evicted or expired chunk's bytes can't be served
+func (bcp *ByterangeChunkQueryProcessor) ChunkMissed(index int) {
+	start := bcp.crs + int64(index)*bcp.size
+	bcp.mu.Lock()
+	bcp.missing = append(bcp.missing, byterange.Range{Start: start, End: start + bcp.size - 1})
+	bcp.mu.Unlock()
+}
+
 func (bcp *ByterangeChunkQueryProcessor) Finalize() error {
+	if len(bcp.missing) > 0 {
+		rs := bcp.d.Ranges
+		if len(rs) == 0 && len(bcp.d.unloadedRanges) == 0 {
+			// a whole object missing a chunk is reduced to the parts that were read and found
+			rs, bcp.d.unloadedRanges = splitRangesByWindow(byterange.Ranges{{Start: 0, End: bcp.d.ContentLength - 1}},
+				byterange.Range{Start: bcp.crs, End: bcp.cre - 1})
+		}
+		for _, m := range bcp.missing {
+			_, rs = splitRangesByWindow(rs, m)
+		}
+		if len(rs) == 0 && len(bcp.d.unloadedRanges) == 0 {
+			return cache.ErrKNF
+		}
+		bcp.d.Ranges = rs
+	}
 	if len(bcp.d.Ranges) > 1 {
 		bcp.d.StoredRangeParts = make(map[string]*byterange.MultipartByteRange)
 		for _, r := range bcp.d.Ranges {
@@ -304,6 +350,11 @@ func executeByterangeChunkQuery(ctx context.Context, c cache.Cache, key string, 
 	crs = (crs / size) * size
 	cre = (cre/size + 1) * size
 
+	// only the chunks under the requested ranges are read, so the document claims just the bytes they hold
+	if len(d.Ranges) > 0 {
+		d.Ranges, d.unloadedRanges = splitRangesByWindow(d.Ranges, byterange.Range{Start: crs, End: cre - 1})
+	}
+
 	// Allocate body in meta document
 	d.Body = make([]byte, d.ContentLength)
 
@@ -319,8 +370,31 @@ func executeByterangeChunkQuery(ctx context.Context, c cache.Cache, key string, 
 	processor := &ByterangeChunkQueryProcessor{
 		d:    d,
 		size: size,
+		crs:  crs,
+		cre:  cre,
 		dbl:  &dbl,
 	}
 
 	return executeChunkQuery(ctx, c, iterator, processor, opts)
+}
+
+// splitRangesByWindow returns the parts of rs inside w and the parts outside it
+func splitRangesByWindow(rs byterange.Ranges, w byterange.Range) (in, out byterange.Ranges) {
+	if !slices.ContainsFunc(rs, func(r byterange.Range) bool { return r.Start < w.Start || r.End > w.End }) {
+		return rs, nil
+	}
+	for _, r := range rs {
+		if r.End < w.Start || r.Start > w.End {
+			out = append(out, r)
+			continue
+		}
+		if r.Start < w.Start {
+			out = append(out, byterange.Range{Start: r.Start, End: w.Start - 1})
+		}
+		if r.End > w.End {
+			out = append(out, byterange.Range{Start: w.End + 1, End: r.End})
+		}
+		in = append(in, byterange.Range{Start: max(r.Start, w.Start), End: min(r.End, w.End)})
+	}
+	return in, out
 }

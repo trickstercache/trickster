@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -232,5 +233,44 @@ func TestFinalizeTSMMergeVarianceFallbackOnlySorts(t *testing.T) {
 	if len(ds.Results[0].SeriesList) != 2 ||
 		ds.Results[0].SeriesList[0].Header.Tags["instance"] != "b" {
 		t.Fatalf("fallback was regrouped or unsorted: %#v", ds.Results[0].SeriesList)
+	}
+}
+
+func TestAppendGroupingKeyMatchesGroupingTags(t *testing.T) {
+	wide := dataset.Tags{"__name__": "up"}
+	for i := range 20 {
+		wide["l"+strconv.Itoa(i)] = strconv.Itoa(i)
+	}
+	tagSets := []dataset.Tags{
+		nil,
+		{},
+		{"__name__": "up"},
+		{"__name__": "up", "instance": "a", "job": "api"},
+		{"instance": "a", "job": ""},
+		{"__name__": "up", "zone.name": `x";b=y`, "job": "<&>\u2028", "instance": "\xff"},
+		wide,
+	}
+	for _, query := range []string{
+		"sum(x)", "sum by () (x)", "sum without () (x)", "sum by (job, instance) (x)",
+		"sum by (__name__) (x)", "sum without (job) (x)", "sum without (__name__, instance) (x)",
+		"sum by (missing) (x)", `sum by ("zone.name", job, job) (x)`, `sum without ("zone.name", l3) (x)`,
+	} {
+		expr, err := promql.Parse(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		grouping, ok := promql.CompleteOuterAggregationGrouping(expr)
+		if !ok {
+			t.Fatalf("%s has no grouping", query)
+		}
+		for _, tags := range tagSets {
+			want := aggregationGroupingTags(tags, grouping).JSON()
+			if got := string(appendGroupingKey(nil, tags, grouping)); got != want {
+				t.Fatalf("%s over %v: got %s want %s", query, tags, got, want)
+			}
+			if got := string(appendGroupingKey([]byte("prefix"), tags, grouping)); got != "prefix"+want {
+				t.Fatalf("%s over %v: appended %s", query, tags, got)
+			}
+		}
 	}
 }

@@ -18,7 +18,6 @@ package options
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"maps"
@@ -28,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -102,6 +103,9 @@ type Options struct {
 	// IPACLName replaces the backend access list for this path. An empty name
 	// inherits the backend list. none clears it.
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
+	// RateLimiterName replaces the backend limiter for this path. An empty name
+	// inherits it. none clears it. The listener limiter still applies.
+	RateLimiterName string `yaml:"rate_limiter_name,omitempty"`
 	// DispatchOnly registers the path on the backend's own router only, so it is
 	// reachable through an ALB pool or a rule's next_route but never from a listener
 	DispatchOnly bool `yaml:"dispatch_only,omitempty"`
@@ -153,6 +157,9 @@ type Options struct {
 	// IPACL is the compiled list named by IPACLName. It stays nil when the
 	// path inherits the backend list or clears it with none.
 	IPACL *ipacl.List `yaml:"-"`
+	// RateLimiter is the definition named by RateLimiterName. It stays nil when
+	// the path inherits the backend limiter or clears it with none.
+	RateLimiter *rlopts.Options `yaml:"-"`
 
 	// identityKeyPart is the request_headers/request_params digest,
 	// precomputed by Initialize; see IdentityKeyPart
@@ -373,11 +380,10 @@ func (o *Options) computeIdentityKeyPart() string {
 		return ""
 	}
 	h := sha256.New()
-	var sizes [binary.MaxVarintLen64]byte
+	var buf []byte
 	writeStr := func(s string) {
-		n := binary.PutUvarint(sizes[:], uint64(len(s)))
-		h.Write(sizes[:n])
-		h.Write([]byte(s))
+		buf = tbytes.AppendLengthPrefixed(buf[:0], s)
+		h.Write(buf)
 	}
 	writeMap := func(class byte, m map[string]string) {
 		for _, k := range slices.Sorted(maps.Keys(m)) {

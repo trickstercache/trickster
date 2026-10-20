@@ -261,6 +261,9 @@ type DefaultsOptions struct {
 	// IPACLName is the access list every generated backend is behind, one judging client_ip and rejecting; no
 	// annotation sets it, since one that could name it could also omit it
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
+	// RateLimiterName is the limiter every generated HTTP route is behind. No annotation sets it.
+	// A stream route does not use it. It must use HTTP keys, unit requests or unset, and not action close.
+	RateLimiterName string `yaml:"rate_limiter_name,omitempty"`
 	// Timeout is the upstream timeout for generated backends
 	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs; 'provider' by default,
