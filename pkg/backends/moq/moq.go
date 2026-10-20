@@ -121,6 +121,7 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			if sh.dialer, err = newDialer(origin, tc, m.Upstream.Drafts, defaultDraft, implementation("")); err != nil {
 				return nil, err
 			}
+			sh.dialer.connKey = connKey(origin, o, m.Upstream.Drafts)
 			up = sh.dialer
 		}
 		sh.relay = relay.New(relay.Options{
@@ -131,8 +132,10 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			Metrics: relayMetrics(name),
 		}, up, sh)
 		if sh.dialer != nil {
-			// set before the dialer's first session, so every namespace the origin publishes reaches the relay
-			sh.dialer.namespaces = sh.relay
+			sh.unwatch = append(sh.unwatch, sh.dialer.origin.watch(sh.relay))
+		}
+		if sh.pool != nil {
+			sh.pool.sink = sh.relay
 		}
 		// a relay that outlives a reload takes the new policy when the reload commits, in RetireClients
 		sh.relay.SetAccess(cl.access)

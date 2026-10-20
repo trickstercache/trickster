@@ -99,6 +99,8 @@ type track struct {
 	lost       error
 	arrived    chan struct{}
 	awaiting   map[*session.Session]int
+	newGroup   newGroupState
+	fromOrigin bool
 
 	ctrlMu sync.Mutex
 }
@@ -610,7 +612,11 @@ type upstreamSub struct {
 
 	live    bool
 	fwd     bool
-	updates int
+	updates []updateKind
+	sentNG  uint64
+
+	updMu sync.Mutex
+	renew renewer
 
 	mu       sync.Mutex
 	req      *session.Request
@@ -663,6 +669,13 @@ func (u *upstreamSub) open(forward bool) {
 	}
 	var p message.Params
 	p.SetForward(forward)
+	t.mu.Lock()
+	if ng := &t.newGroup; ng.wanted {
+		// §9.20.19: a NEW_GROUP_REQUEST that arrived without an Established subscription goes upstream with it
+		p.SetNewGroupRequest(ng.want)
+	}
+	u.sentNG = t.newGroup.seq
+	t.mu.Unlock()
 	req, err := sess.Open(ctx, &message.Subscribe{Track: t.name, Params: p}, u, u)
 	if err != nil {
 		t.upstreamEnded(u, errUpstream)
@@ -749,9 +762,15 @@ func (u *upstreamSub) HandleMessage(_ *session.Request, m message.Message) {
 			u.fwd = v.Params.Forward
 		}
 		t.mu.Unlock()
-	case *message.RequestOK, *message.RequestError:
-		// an answer to a FORWARD update frees room for the next one
-		u.t.ackedSource(u)
+	case *message.RequestOK:
+		// answers come in the order the updates were sent; one carrying EXPIRES schedules the next renewal
+		if u.t.answered(u, false) == updateForward {
+			go u.t.syncForward()
+		}
+		u.renew.schedule(&v.Params, u.extend)
+	case *message.RequestError:
+		// a refused update fails the ones outstanding with it
+		u.t.answered(u, true)
 		go u.t.syncForward()
 	}
 }

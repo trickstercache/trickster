@@ -88,17 +88,19 @@ func TestNamespacesFromOrigin(t *testing.T) {
 	if n := h.o.nsAsks.Load(); n != 1 {
 		t.Errorf("the origin was asked %d times", n)
 	}
-	// a listener of a longer prefix gets its own, and suffixes after its own prefix; the reported namespace
-	// that equals its prefix comes first, with an empty suffix
+	// a listener of a longer prefix shares it too, since one session cannot carry overlapping prefixes; the
+	// reported namespace that equals its prefix comes with an empty suffix
 	_, deep := listen(t, h.client(), ns("live", "studio"))
 	expectNamespace(t, deep, ns())
-	up2 := recv(t, h.o.namespaces, "the longer prefix's SUBSCRIBE_NAMESPACE")
-	if err := up2.Send(&message.Namespace{Suffix: ns("cam1")}); err != nil {
+	if err := up.Send(&message.Namespace{Suffix: ns("studio", "cam1")}); err != nil {
 		t.Fatal(err)
 	}
 	expectNamespace(t, deep, ns("cam1"))
 	expectNamespace(t, first, ns("studio", "cam1"))
 	expectNamespace(t, second, ns("studio", "cam1"))
+	if n := h.o.nsAsks.Load(); n != 1 {
+		t.Errorf("the origin was asked %d times", n)
+	}
 
 	if err := up.Send(&message.NamespaceDone{Suffix: ns("studio")}); err != nil {
 		t.Fatal(err)
@@ -106,8 +108,57 @@ func TestNamespacesFromOrigin(t *testing.T) {
 	expectNamespaceDone(t, first, ns("studio"))
 	expectNamespaceDone(t, second, ns("studio"))
 	expectNamespaceDone(t, deep, ns())
-	// the longer prefix's own report stays
 	expectQuiet(t, deep)
+}
+
+func TestWiderPrefixReplacesNarrower(t *testing.T) {
+	h := originNamespaces(t, relay.Options{ReconnectBackoff: 5 * time.Millisecond})
+	_, deep := listen(t, h.client(), ns("live", "studio"))
+	narrow := recv(t, h.o.namespaces, "the narrow SUBSCRIBE_NAMESPACE")
+	for _, cam := range []string{"cam1", "cam2"} {
+		if err := narrow.Send(&message.Namespace{Suffix: ns(cam)}); err != nil {
+			t.Fatal(err)
+		}
+		expectNamespace(t, deep, ns(cam))
+	}
+	// a wider prefix replaces the narrower request, which the origin would otherwise refuse as overlapping
+	_, wide := listen(t, h.client(), ns("live"))
+	got := map[string]bool{}
+	for range 2 {
+		n, ok := recv(t, wide.messages, "a handed-over NAMESPACE").(*message.Namespace)
+		if !ok {
+			t.Fatalf("got %+v", n)
+		}
+		got[string(n.Suffix[1])] = true
+	}
+	if !got["cam1"] || !got["cam2"] {
+		t.Errorf("the narrow request's reports carry over: %v", got)
+	}
+	up := recv(t, h.o.namespaces, "the wide SUBSCRIBE_NAMESPACE")
+	if m := up.Message().(*message.SubscribeNamespace); !m.Prefix.Equal(ns("live")) {
+		t.Fatalf("asked for %v", m.Prefix)
+	}
+	eventually(t, "the narrow request ends", func() bool { return narrow.Err() != nil })
+	if err := up.Send(&message.Namespace{Suffix: ns("studio", "cam1")}); err != nil {
+		t.Fatal(err)
+	}
+	// after the handover, what the wide request did not report again is withdrawn, and nothing else flaps
+	if d, ok := recv(t, deep.messages, "NAMESPACE_DONE after the handover").(*message.NamespaceDone); !ok ||
+		!d.Suffix.Equal(ns("cam2")) {
+		t.Fatalf("got %+v", d)
+	}
+	expectNamespaceDone(t, wide, ns("studio", "cam2"))
+	expectQuiet(t, deep)
+	expectQuiet(t, wide)
+}
+
+func TestOriginNamespacesRenewed(t *testing.T) {
+	h := originNamespaces(t, relay.Options{})
+	h.o.nsExpires = 40
+	listen(t, h.client(), ns("live"))
+	recv(t, h.o.namespaces, "the relay's SUBSCRIBE_NAMESPACE")
+	// the relay extends the subscription before each EXPIRES the origin gives elapses (§9.20.16)
+	eventually(t, "two renewals", func() bool { return h.o.nsRenewals.Load() >= 2 })
 }
 
 func TestOriginNamespacesBesidePublishers(t *testing.T) {
@@ -239,19 +290,34 @@ func TestOriginPublishedNamespaces(t *testing.T) {
 	h := originNamespaces(t, relay.Options{})
 	_, here := listen(t, h.client(), ns("live"))
 	up := recv(t, h.o.namespaces, "the relay's SUBSCRIBE_NAMESPACE")
+	// another scope shares the one origin subscription, since what the origin reports is backend-wide
 	h.scope = relay.Scope{Authority: "other.test", Path: "/"}
 	_, there := listen(t, h.client(), ns("live"))
-	// a namespace the origin published on an upstream session reaches every scope
-	withdraw := h.relay.OriginNamespace(ns("live", "a"))
-	expectNamespace(t, here, ns("a"))
-	expectNamespace(t, there, ns("a"))
-	// and is reported once beside the same namespace from the origin's SUBSCRIBE_NAMESPACE answer
+	if n := h.o.nsAsks.Load(); n != 1 {
+		t.Errorf("the origin was asked %d times", n)
+	}
+	// a namespace the origin reports reaches every scope, and one it also publishes on an upstream session is
+	// reported once
 	if err := up.Send(&message.Namespace{Suffix: ns("a")}); err != nil {
 		t.Fatal(err)
 	}
+	expectNamespace(t, here, ns("a"))
+	expectNamespace(t, there, ns("a"))
+	withdraw := h.relay.OriginNamespace(ns("live", "a"))
+	withdraw()
+	withdraw()
 	expectQuiet(t, here)
-	withdraw()
-	withdraw()
+	expectQuiet(t, there)
+	// a namespace only published on the upstream session is reported, and withdrawn with it
+	gone := h.relay.OriginNamespace(ns("live", "b"))
+	expectNamespace(t, here, ns("b"))
+	expectNamespace(t, there, ns("b"))
+	gone()
+	expectNamespaceDone(t, here, ns("b"))
+	expectNamespaceDone(t, there, ns("b"))
+	if err := up.Send(&message.NamespaceDone{Suffix: ns("a")}); err != nil {
+		t.Fatal(err)
+	}
+	expectNamespaceDone(t, here, ns("a"))
 	expectNamespaceDone(t, there, ns("a"))
-	expectQuiet(t, here)
 }

@@ -168,7 +168,7 @@ func New(o Options, up Upstream, c CacheProvider) *Relay {
 // accepted them
 func (r *Relay) Close() {
 	r.cancel()
-	r.stopUpstreamNamespaces()
+	r.stopUpstreamPrefixes()
 	r.tracks.each(func(t *track) { t.shutdown() })
 	r.wg.Wait()
 }

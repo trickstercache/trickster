@@ -191,9 +191,14 @@ func (t *track) established(u *upstreamSub, ok *message.SubscribeOK, forward boo
 	if ok.Params.Has(message.ParamLargestObject) {
 		t.raiseLargest(ok.Params.LargestObject)
 	}
+	late := t.newGroupEstablishedLocked(u)
 	t.mu.Unlock()
+	u.renew.schedule(&ok.Params, u.extend)
 	t.r.m.subscriptions(directionUpstream, 1)
 	go t.syncForward()
+	if late != nil {
+		go t.sendNewGroup(late)
+	}
 	return true
 }
 
@@ -223,12 +228,14 @@ func (t *track) addPublisher(u *upstreamSub, m *message.Publish) error {
 		t.raiseLargest(m.Params.LargestObject)
 	}
 	t.signalArrivalLocked()
+	u.renew.schedule(&m.Params, u.extend)
 	return nil
 }
 
 func (t *track) upstreamEnded(u *upstreamSub, cause error) {
 	// a source, or an attempt to open one, ended
 	u.settle(cause)
+	u.renew.stop()
 	t.mu.Lock()
 	i := slices.Index(t.ups, u)
 	if i < 0 {
@@ -347,20 +354,33 @@ func (t *track) lingerExpired() {
 	}
 }
 
-func (t *track) ackedSource(u *upstreamSub) {
+func (t *track) answered(u *upstreamSub, all bool) updateKind {
+	// the oldest outstanding update was answered, or with all, every one of them failed
 	t.mu.Lock()
-	if u.updates > 0 {
-		u.updates--
+	defer t.mu.Unlock()
+	if all {
+		t.forgetUpdatesLocked(u)
+		return updateForward
+	}
+	if len(u.updates) == 0 {
+		return updateNone
+	}
+	k := u.updates[0]
+	u.updates = u.updates[1:]
+	if k == updateForward {
 		t.ackedLocked()
 	}
-	t.mu.Unlock()
+	return k
 }
 
 func (t *track) forgetUpdatesLocked(u *upstreamSub) {
 	// a source that ended will answer none of its outstanding updates
-	for ; u.updates > 0; u.updates-- {
-		t.ackedLocked()
+	for _, k := range u.updates {
+		if k == updateForward {
+			t.ackedLocked()
+		}
 	}
+	u.updates = nil
 }
 
 func (t *track) ackedLocked() {
@@ -376,7 +396,6 @@ func (t *track) ackedLocked() {
 
 type forwardUpdate struct {
 	u       *upstreamSub
-	req     *session.Request
 	forward bool
 }
 
@@ -393,9 +412,8 @@ func (t *track) syncForward() {
 		if !u.live || target == u.fwd {
 			continue
 		}
-		if req := u.request(); req != nil {
-			todo = append(todo, forwardUpdate{u: u, req: req, forward: target})
-			u.updates++
+		if u.request() != nil {
+			todo = append(todo, forwardUpdate{u: u, forward: target})
 			t.fwdPending++
 		}
 	}
@@ -406,8 +424,10 @@ func (t *track) syncForward() {
 	for _, f := range todo {
 		var p message.Params
 		p.SetForward(f.forward)
-		if _, err := f.req.Update(p); err != nil {
-			t.ackedSource(f.u)
+		if err := f.u.sendUpdate(updateForward, p); err != nil {
+			t.mu.Lock()
+			t.ackedLocked()
+			t.mu.Unlock()
 			continue
 		}
 		t.mu.Lock()

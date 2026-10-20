@@ -25,13 +25,13 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
-	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -48,7 +48,6 @@ const (
 	upstreamIdle      = time.Minute
 	upstreamKeepAlive = 15 * time.Second
 	dialTimeout       = 10 * time.Second
-	reasonNotServed   = "requests are not served"
 )
 
 var (
@@ -61,8 +60,10 @@ type dialer struct {
 	connect      func(ctx context.Context) (session.Conn, *codec.Codec, error)
 	transport    *webtransport.Transport
 	webTransport bool
+	connKey      string
+	dialedDirect atomic.Bool
 	setup        message.Setup
-	namespaces   namespaceRecorder
+	origin       originRequests
 
 	mu      sync.Mutex
 	sess    *session.Session
@@ -75,10 +76,6 @@ var (
 	_ relay.Upstream  = (*dialer)(nil)
 	_ session.Handler = (*dialer)(nil)
 )
-
-type namespaceRecorder interface {
-	OriginNamespace(ns wire.Namespace) (withdraw func())
-}
 
 func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int,
 	implementation string,
@@ -138,8 +135,23 @@ func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int
 			TLSClientConfig: tc, QUICConfig: qc, ApplicationProtocols: codec.ALPNs(drafts), DialAddr: quic.DialAddr,
 		}
 		target := origin.String()
+		addr := net.JoinHostPort(host, port)
 		d.connect = func(ctx context.Context) (session.Conn, *codec.Codec, error) {
-			_, s, err := d.transport.Dial(ctx, target, nil)
+			direct := func(ctx context.Context) (*webtransport.Session, error) {
+				d.dialedDirect.Store(true)
+				_, s, err := d.transport.Dial(ctx, target, nil)
+				return s, err
+			}
+			var s *webtransport.Session
+			var err error
+			if d.connKey != "" {
+				w := &wtDial{
+					key: d.connKey, addr: addr, target: target, transport: d.transport, tls: tc, quic: qc, direct: direct,
+				}
+				s, err = w.session(ctx)
+			} else {
+				s, err = direct(ctx)
+			}
 			if err != nil {
 				return nil, nil, err
 			}
@@ -249,29 +261,12 @@ func (d *dialer) dial(ctx context.Context) (*session.Session, error) {
 	return s, nil
 }
 
-func (d *dialer) HandleRequest(r *session.Request) {
-	// the origin may publish the namespaces it serves on a session the relay dialed (§7.6); it is sent nothing
-	// else, and asks for nothing else that is served
-	m, ok := r.Message().(*message.PublishNamespace)
-	if !ok || d.namespaces == nil {
-		_ = r.Reject(message.RequestNotSupported, reasonNotServed, 0)
-		return
-	}
-	withdraw := d.namespaces.OriginNamespace(m.Prefix)
-	r.SetHandlers(originNamespace{withdraw: withdraw}, nil)
-	if r.Send(&message.RequestOK{}) != nil || r.Context().Err() != nil {
-		withdraw()
-	}
+func (d *dialer) clone() *dialer {
+	// the same origin, TLS and SETUP, on a session of its own
+	c := &dialer{transport: d.transport, webTransport: d.webTransport, connKey: d.connKey, setup: d.setup}
+	c.connect = d.connect
+	return c
 }
-
-func (d *dialer) HandleGoAway(*session.Session, *message.GoAway) {}
-
-type originNamespace struct {
-	withdraw func()
-}
-
-func (o originNamespace) HandleMessage(*session.Request, message.Message) {}
-func (o originNamespace) HandleClose(*session.Request, error)             { o.withdraw() }
 
 func (d *dialer) probe(ctx context.Context) error {
 	// a fresh session that completes SETUP shows the origin is serving
@@ -291,8 +286,9 @@ func (d *dialer) close() {
 	if s != nil {
 		_ = s.Close(message.CodeNoError, "backend closed")
 	}
-	if d.transport != nil {
-		// a session still being established toward the origin is abandoned
+	if d.transport != nil && d.dialedDirect.Load() {
+		// a session still being established toward the origin is abandoned; webtransport-go's Close needs a
+		// Transport that has dialed
 		_ = d.transport.Close()
 	}
 }

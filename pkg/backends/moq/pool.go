@@ -44,6 +44,14 @@ type poolUpstream struct {
 
 	mu     sync.Mutex
 	failed map[uint64]*lb.Member
+	sink   originSink
+	own    map[*dialer]*poolDialer
+	closed bool
+}
+
+type poolDialer struct {
+	d       *dialer
+	unwatch func()
 }
 
 var _ relay.Upstream = (*poolUpstream)(nil)
@@ -86,7 +94,12 @@ func (p *poolUpstream) Session(ctx context.Context, _ relay.Scope, track message
 		pk.Done(lb.OutcomeCanceled)
 		return nil, nil, errNoMember
 	}
-	sess, err := c.sh.dialer.session(ctx)
+	d := p.dialerFor(c.sh.dialer)
+	if d == nil {
+		pk.Done(lb.OutcomeCanceled)
+		return nil, nil, errNoMember
+	}
+	sess, err := d.session(ctx)
 	if err != nil {
 		p.blame(key, member)
 		pk.Done(lb.OutcomeConnectFailed)
@@ -107,6 +120,42 @@ func (p *poolUpstream) Session(ctx context.Context, _ relay.Scope, track message
 			}
 		})
 	}, nil
+}
+
+func (p *poolUpstream) dialerFor(member *dialer) *dialer {
+	// the pool dials each member on its own session: one shared with the member's relay could give both relays'
+	// subscriptions to a track one Track Alias, whose objects reach only the first (§2.4.1)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		return nil
+	}
+	if pd := p.own[member]; pd != nil {
+		return pd.d
+	}
+	if p.own == nil {
+		p.own = make(map[*dialer]*poolDialer)
+	}
+	pd := &poolDialer{d: member.clone()}
+	if p.sink != nil {
+		pd.unwatch = pd.d.origin.watch(p.sink)
+	}
+	p.own[member] = pd
+	return pd.d
+}
+
+func (p *poolUpstream) close() {
+	p.mu.Lock()
+	p.closed = true
+	own := p.own
+	p.own = nil
+	p.mu.Unlock()
+	for _, pd := range own {
+		if pd.unwatch != nil {
+			pd.unwatch()
+		}
+		pd.d.close()
+	}
 }
 
 func (p *poolUpstream) blame(key uint64, m *lb.Member) {

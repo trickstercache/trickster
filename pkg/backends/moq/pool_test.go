@@ -58,12 +58,22 @@ func newPoolFixture(t *testing.T, origins map[string]string) *poolFixture {
 	return f
 }
 
-func (f *poolFixture) memberOf(s *session.Session) string {
+func (f *poolFixture) memberOf(up *poolUpstream, s *session.Session) string {
+	// the pool dials each member on a session of its own, never the member backend's
 	for name, c := range f.clients {
+		up.mu.Lock()
+		pd := up.own[c.sh.dialer]
+		up.mu.Unlock()
+		if pd == nil {
+			continue
+		}
+		pd.d.mu.Lock()
+		current := pd.d.sess
+		pd.d.mu.Unlock()
 		c.sh.dialer.mu.Lock()
-		current := c.sh.dialer.sess
+		borrowed := c.sh.dialer.sess == s
 		c.sh.dialer.mu.Unlock()
-		if current == s {
+		if current == s && !borrowed {
 			return name
 		}
 	}
@@ -98,7 +108,7 @@ func TestPoolUpstream(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", what, err)
 		}
-		return f.memberOf(s), release
+		return f.memberOf(up, s), release
 	}
 
 	// a track stays on the member the strategy places it on
@@ -173,7 +183,7 @@ func TestPoolUpstreamDialFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer release(nil)
-	if got := f.memberOf(s); got != "live" {
+	if got := f.memberOf(up, s); got != "live" {
 		t.Errorf("the retry after a failed dial went to %q", got)
 	}
 }

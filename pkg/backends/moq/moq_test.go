@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
+	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
@@ -650,8 +651,104 @@ func TestOriginPublishesNamespaces(t *testing.T) {
 	if m, err := other.Response(context.Background()); err != nil || m.Kind() != message.KindRequestError {
 		t.Errorf("the origin's SUBSCRIBE_NAMESPACE answered %v %v", m, err)
 	}
+	// a REQUEST_UPDATE refreshing the origin's request is answered, and a PUBLISH nobody asked for is declined
+	if _, err = ann.Update(message.Params{}); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := up.Open(context.Background(), &message.Publish{
+		Track: message.FullTrackName{Namespace: wire.Namespace{[]byte("vod")}, Name: []byte("x")}, TrackAlias: 1,
+	}, nopHandler{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := pub.Response(context.Background()); err != nil || m.(*message.RequestError).Code != message.RequestUninterested {
+		t.Errorf("an unwanted PUBLISH answered %v %v", m, err)
+	}
 	ann.Cancel(message.ResetCancelled)
 	if d, ok := recv(t, w.got, "NAMESPACE_DONE").(*message.NamespaceDone); !ok || string(d.Suffix[0]) != "a" {
 		t.Fatalf("got %+v", d)
+	}
+}
+
+type recordingSink struct {
+	mu     sync.Mutex
+	active map[string]int
+}
+
+func (s *recordingSink) OriginNamespace(ns wire.Namespace) func() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.active == nil {
+		s.active = map[string]int{}
+	}
+	key := string(wire.AppendNamespace(nil, ns))
+	s.active[key]++
+	return func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		s.active[key]--
+	}
+}
+
+func (s *recordingSink) OriginPublish(*session.Request, *message.Publish) bool { return false }
+
+func (s *recordingSink) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, v := range s.active {
+		n += v
+	}
+	return n
+}
+
+func TestPoolDialsMembersOnItsOwnSession(t *testing.T) {
+	org := startOrigin(t)
+	f := newPoolFixture(t, map[string]string{"live": org.addr})
+	up := newPoolUpstream("origins")
+	sink := &recordingSink{}
+	up.sink = sink
+	up.bind(f.picker)
+	s, release, err := up.Session(context.Background(), relay.Scope{}, poolTrack("video"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release(nil)
+	// the pool's own session carries what the member's origin publishes to the pool's relay
+	osess := recv(t, org.sessions, "the pool's session at the origin")
+	ann, err := osess.Open(context.Background(), &message.PublishNamespace{Prefix: wire.Namespace{[]byte("live")}},
+		nopHandler{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ann.Response(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(wait)
+	for sink.count() != 1 {
+		if time.Now().After(deadline) {
+			t.Fatal("the pool's relay learns the namespace")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	// a relay watching later is told what is already published, and unwatching withdraws it
+	late := &recordingSink{}
+	d := up.dialerFor(f.clients["live"].sh.dialer)
+	unwatch := d.origin.watch(late)
+	if late.count() != 1 {
+		t.Error("a late watcher hears the published namespace")
+	}
+	unwatch()
+	if late.count() != 0 {
+		t.Error("unwatching withdraws what was reported")
+	}
+	up.close()
+	select {
+	case <-s.Done():
+	case <-time.After(wait):
+		t.Error("the pool's session closes with the pool")
+	}
+	if up.dialerFor(f.clients["live"].sh.dialer) != nil {
+		t.Error("a closed pool dials nothing")
 	}
 }

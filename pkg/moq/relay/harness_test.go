@@ -116,22 +116,94 @@ type fetchAsk struct {
 }
 
 type origin struct {
-	mu         sync.Mutex
-	tracks     map[string]*pubTrack
-	props      message.Properties
-	refuse     map[string]message.RequestCode
-	fetches    []fetchAsk
-	subscribes atomic.Int32
-	statuses   atomic.Int32
-	updates    chan *message.RequestUpdate
-	ended      chan *session.Request
-	datagrams  bool
-	hold       chan struct{}
-	fetchHold  chan struct{}
-	markGaps   bool
-	// namespaces, when set, receives each accepted SUBSCRIBE_NAMESPACE; unset, they are refused
-	namespaces chan *session.Request
-	nsAsks     atomic.Int32
+	mu            sync.Mutex
+	tracks        map[string]*pubTrack
+	props         message.Properties
+	refuse        map[string]message.RequestCode
+	fetches       []fetchAsk
+	subscribes    atomic.Int32
+	statuses      atomic.Int32
+	updates       chan *message.RequestUpdate
+	ended         chan *session.Request
+	datagrams     bool
+	hold          chan struct{}
+	fetchHold     chan struct{}
+	markGaps      bool
+	namespaces    chan *session.Request
+	nsAsks        atomic.Int32
+	nsActive      map[*session.Session][]wire.Namespace
+	nsExpires     uint64
+	nsRenewals    atomic.Int32
+	subExpires    uint64
+	subscribeAsks chan *message.Subscribe
+	trackAsks     chan *session.Request
+}
+
+func (o *origin) subscribeTracks(r *session.Request) {
+	r.SetHandlers(&originReq{o: o}, nil)
+	_ = r.Send(&message.RequestOK{})
+	o.trackAsks <- r
+}
+
+func (o *origin) subscribeNamespace(r *session.Request, m *message.SubscribeNamespace) {
+	// unset, namespaces refuses every request; set, it receives each one accepted. Like a real origin, this
+	// refuses a prefix overlapping one active on the same session
+	h := &nsOriginReq{o: o, prefix: m.Prefix.Clone()}
+	r.SetHandlers(h, nil)
+	if o.namespaces == nil {
+		_ = r.Reject(message.RequestNotSupported, "", 0)
+		return
+	}
+	sess := r.Session()
+	o.mu.Lock()
+	for _, p := range o.nsActive[sess] {
+		if p.HasPrefix(h.prefix) || h.prefix.HasPrefix(p) {
+			o.mu.Unlock()
+			_ = r.Reject(message.RequestPrefixOverlap, "", 0)
+			return
+		}
+	}
+	if o.nsActive == nil {
+		o.nsActive = make(map[*session.Session][]wire.Namespace)
+	}
+	o.nsActive[sess] = append(o.nsActive[sess], h.prefix)
+	h.active = true
+	o.mu.Unlock()
+	ok := &message.RequestOK{}
+	if o.nsExpires > 0 {
+		ok.Params.SetExpires(o.nsExpires)
+	}
+	_ = r.Send(ok)
+	o.namespaces <- r
+}
+
+type nsOriginReq struct {
+	o      *origin
+	prefix wire.Namespace
+	active bool
+}
+
+func (h *nsOriginReq) HandleMessage(r *session.Request, m message.Message) {
+	if _, ok := m.(*message.RequestUpdate); ok {
+		h.o.nsRenewals.Add(1)
+		ok := &message.RequestOK{}
+		if h.o.nsExpires > 0 {
+			ok.Params.SetExpires(h.o.nsExpires)
+		}
+		_ = r.Send(ok)
+	}
+}
+
+func (h *nsOriginReq) HandleClose(r *session.Request, _ error) {
+	h.o.mu.Lock()
+	defer h.o.mu.Unlock()
+	if !h.active {
+		return
+	}
+	sess := r.Session()
+	if i := slices.IndexFunc(h.o.nsActive[sess], h.prefix.Equal); i >= 0 {
+		h.o.nsActive[sess] = slices.Delete(h.o.nsActive[sess], i, i+1)
+	}
 }
 
 func newOrigin() *origin {
@@ -253,14 +325,19 @@ func (o *origin) HandleRequest(r *session.Request) {
 	case *message.TrackStatus:
 		o.status(r, m)
 	case *message.SubscribeNamespace:
+		if m.Options == message.SubscribeOptionPublish && o.trackAsks != nil {
+			o.subscribeTracks(r)
+			return
+		}
 		o.nsAsks.Add(1)
-		r.SetHandlers(&originReq{o: o}, nil)
-		if o.namespaces == nil {
+		o.subscribeNamespace(r, m)
+	case *message.SubscribeTracks:
+		if o.trackAsks == nil {
+			r.SetHandlers(&originReq{o: o}, nil)
 			_ = r.Reject(message.RequestNotSupported, "", 0)
 			return
 		}
-		_ = r.Send(&message.RequestOK{})
-		o.namespaces <- r
+		o.subscribeTracks(r)
 	default:
 		r.SetHandlers(&originReq{o: o}, nil)
 		_ = r.Reject(message.RequestNotSupported, "", 0)
@@ -269,6 +346,9 @@ func (o *origin) HandleRequest(r *session.Request) {
 
 func (o *origin) subscribe(r *session.Request, m *message.Subscribe) {
 	o.subscribes.Add(1)
+	if o.subscribeAsks != nil {
+		o.subscribeAsks <- m
+	}
 	if o.hold != nil {
 		<-o.hold
 	}
@@ -282,6 +362,9 @@ func (o *origin) subscribe(r *session.Request, m *message.Subscribe) {
 	}
 	pt := o.trackLocked(name)
 	ok := &message.SubscribeOK{TrackAlias: r.Session().NewTrackAlias(), TrackProperties: o.props}
+	if o.subExpires > 0 {
+		ok.Params.SetExpires(o.subExpires)
+	}
 	if pt.has {
 		ok.Params.SetLargestObject(pt.largest)
 	}
@@ -401,7 +484,11 @@ func (h *originReq) HandleMessage(r *session.Request, m message.Message) {
 		h.o.mu.Unlock()
 	}
 	h.o.updates <- u
-	_ = r.Send(&message.RequestOK{})
+	answer := &message.RequestOK{}
+	if h.o.subExpires > 0 {
+		answer.Params.SetExpires(h.o.subExpires)
+	}
+	_ = r.Send(answer)
 }
 
 func (h *originReq) HandleClose(r *session.Request, _ error) {
@@ -420,6 +507,7 @@ func (h *originReq) HandleClose(r *session.Request, _ error) {
 
 type upstream struct {
 	o        *origin
+	relay    *relay.Relay
 	draft    int
 	mu       sync.Mutex
 	sess     *session.Session
@@ -466,7 +554,7 @@ func (u *upstream) dial(ctx context.Context) (*session.Session, error) {
 	codec, _ := codec.ForDraft(draft)
 	server, _ := session.New(sc, session.Options{Role: session.RoleServer, Codec: codec, Handler: u.o})
 	client, _ := session.New(cc, session.Options{
-		Role: session.RoleClient, Codec: codec,
+		Role: session.RoleClient, Codec: codec, Handler: originAdapter{u.relay},
 		Setup: message.Setup{Implementation: "relay"},
 	})
 	errs := make(chan error, 2)
@@ -578,6 +666,7 @@ func newHarness(t testing.TB, opts relay.Options, c cache.Cache) *harness {
 		cp = cacheProvider{c}
 	}
 	h.relay = relay.New(opts, h.up, cp)
+	h.up.relay = h.relay
 	t.Cleanup(func() {
 		h.relay.Close()
 		h.up.close()
@@ -842,3 +931,34 @@ func waitLargest(t testing.TB, c *session.Session, name string, group, object ui
 		return err == nil && isOK && ok.Params.Has(message.ParamLargestObject) && !ok.Params.LargestObject.Less(want)
 	})
 }
+
+type originAdapter struct {
+	r *relay.Relay
+}
+
+func (a originAdapter) HandleGoAway(*session.Session, *message.GoAway) {}
+
+func (a originAdapter) HandleRequest(r *session.Request) {
+	// serves the origin's requests on the relay's upstream session, as the moq backend's dialer does
+	switch m := r.Message().(type) {
+	case *message.PublishNamespace:
+		withdraw := a.r.OriginNamespace(m.Prefix)
+		r.SetHandlers(&closeFunc{fn: withdraw}, nil)
+		_ = r.Send(&message.RequestOK{})
+	case *message.Publish:
+		if !a.r.OriginPublish(r, m) {
+			r.SetHandlers(newRec(), nil)
+			_ = r.Reject(message.RequestUninterested, "", 0)
+		}
+	default:
+		r.SetHandlers(newRec(), nil)
+		_ = r.Reject(message.RequestNotSupported, "", 0)
+	}
+}
+
+type closeFunc struct {
+	fn func()
+}
+
+func (c *closeFunc) HandleMessage(*session.Request, message.Message) {}
+func (c *closeFunc) HandleClose(*session.Request, error)             { c.fn() }

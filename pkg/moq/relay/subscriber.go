@@ -442,6 +442,9 @@ func (s *subscriber) applyUpdate(u *message.RequestUpdate) {
 	if err := s.req.Send(ok); err != nil {
 		return
 	}
+	if p.Has(message.ParamNewGroupRequest) {
+		go t.newGroupRequest(p.NewGroupRequest)
+	}
 	if p.Fill != nil && s.forward.Load() {
 		s.startFill(u.RequestID, p.Fill, largest)
 	}

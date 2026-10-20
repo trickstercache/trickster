@@ -30,6 +30,7 @@ import (
 
 const (
 	publishOpenTimeout = time.Second
+	publishPullTimeout = 5 * time.Second
 
 	reasonUnauthorized  = "not authorized"
 	reasonNoPublishing  = "publishing is not allowed here"
@@ -117,29 +118,84 @@ func (d *downstream) publish(req *session.Request, m *message.Publish) {
 	if !d.mayPublish(req, kindPublish, m.Track.Namespace, &m.Params) {
 		return
 	}
+	d.r.attachPublisher(d.scope, req, m, false)
+}
+
+func (r *Relay) attachPublisher(scope Scope, req *session.Request, m *message.Publish, origin bool) {
 	if _, mandatory := m.TrackProperties.Mandatory(); mandatory {
 		// §3.7: a track with a required property the relay does not understand is neither processed nor forwarded
-		d.refuse(req, kindPublish, message.RequestUnsupportedExtension, reasonMandatory)
+		req.SetHandlers(nopRequestHandler{}, nil)
+		_ = req.Reject(message.RequestUnsupportedExtension, reasonMandatory, 0)
+		r.m.request(kindPublish, resultRefused)
 		return
 	}
-	t := d.r.tracks.acquire(d.r, d.scope, m.Track)
+	t := r.tracks.acquire(r, scope, m.Track)
 	u := &upstreamSub{t: t, pushed: true, req: req, up: true}
 	req.SetHandlers(u, u)
 	if err := t.addPublisher(u, m); err != nil {
 		code, reason := refusalFor(err)
 		_ = req.Reject(code, reason, 0)
-		d.r.m.request(kindPublish, resultRefused)
-		d.r.tracks.release(t)
+		r.m.request(kindPublish, resultRefused)
+		r.tracks.release(t)
 		return
 	}
-	d.r.m.publishers(1)
+	if origin {
+		t.mu.Lock()
+		t.fromOrigin = true
+		t.mu.Unlock()
+	}
+	r.m.publishers(1)
 	if err := req.Send(&message.RequestOK{}); err != nil {
 		t.upstreamEnded(u, err)
 		return
 	}
-	d.r.m.request(kindPublish, resultOK)
+	r.m.request(kindPublish, resultOK)
 	go t.syncForward()
-	d.r.offerTrack(t)
+	r.offerTrack(t)
+}
+
+// OriginPublish takes a PUBLISH the origin sent on an upstream session, in answer to the relay's SUBSCRIBE_TRACKS,
+// reporting false when no subscription of the relay's on that session covers the track, or none downstream wants it
+func (r *Relay) OriginPublish(req *session.Request, m *message.Publish) bool {
+	sess := req.Session()
+	n := &r.ns
+	n.mu.Lock()
+	covered := false
+	for _, u := range n.upstreams[prefixTracks] {
+		if u.covers(sess, m.Track.Namespace) {
+			covered = true
+			break
+		}
+	}
+	var scope Scope
+	wanted := false
+	for _, l := range n.trackers {
+		if m.Track.Namespace.HasPrefix(l.prefix) {
+			scope, wanted = l.scope, true
+			break
+		}
+	}
+	n.mu.Unlock()
+	if !covered || !wanted {
+		return false
+	}
+	r.attachPublisher(scope, req, m, true)
+	return true
+}
+
+func (t *track) originPublished() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.fromOrigin && t.publisherCountLocked() > 0
+}
+
+func (t *track) lingerIdle() {
+	// a pull nobody came to use ends after the linger, as one whose last subscriber left does
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if len(t.subs) == 0 && t.held == 0 && t.hasPullLocked() && t.linger == nil && !t.closed {
+		t.linger = time.AfterFunc(t.r.opts.Linger, t.lingerExpired)
+	}
 }
 
 func (d *downstream) publishNamespace(req *session.Request, m *message.PublishNamespace) {
@@ -341,9 +397,30 @@ func (r *Relay) publishTo(l *trackListener, name message.FullTrackName) {
 	l.mu.Unlock()
 	s := newSubscriber(t, nil, &params)
 	t.mu.Lock()
+	live := t.liveSourceLocked()
+	t.mu.Unlock()
+	if !live {
+		// a track offered from another scope has no source here yet, so it is pulled from the origin first
+		ctx, cancel := context.WithTimeout(r.ctx, publishPullTimeout)
+		t.hold(s)
+		err := t.ensureUpstream(ctx, s.forward.Load())
+		cancel()
+		if err != nil {
+			t.mu.Lock()
+			t.unholdLocked(s)
+			t.mu.Unlock()
+			t.lingerIdle()
+			s.releaseTrack()
+			l.skipped(name)
+			r.m.request(kindPublish, resultRefused)
+			return
+		}
+	}
+	t.mu.Lock()
 	largest, props, malformed := t.largestLocked(), t.props, t.malformed
 	t.mu.Unlock()
 	if malformed {
+		t.lingerIdle()
 		s.releaseTrack()
 		return
 	}
@@ -354,6 +431,7 @@ func (r *Relay) publishTo(l *trackListener, name message.FullTrackName) {
 	cancel()
 	if err != nil {
 		// §3.6.3: a subscription that cannot be created is reported, and never offered again
+		t.lingerIdle()
 		s.releaseTrack()
 		l.skipped(name)
 		r.m.request(kindPublish, resultRefused)

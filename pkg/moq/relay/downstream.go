@@ -73,6 +73,9 @@ func (d *downstream) subscribe(req *session.Request, m *message.Subscribe) {
 		return
 	}
 	t.hold(s)
+	if m.Params.Has(message.ParamNewGroupRequest) {
+		t.newGroupRequest(m.Params.NewGroupRequest)
+	}
 	if err := d.await(req, t, s.forward.Load(), &m.Params); err != nil {
 		code, reason := refusalFor(err)
 		s.refuse(code, reason)

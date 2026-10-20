@@ -30,12 +30,11 @@ type namespaces struct {
 	pubs      []*nsPublisher
 	listeners []*nsListener
 	trackers  []*trackListener
-	upstreams map[string]*nsUpstream
+	upstreams [prefixKinds][]*upPrefix
 }
 
-// nsPublisher is one registration of a namespace: by a publisher's session, or by the origin when sess is nil;
-// one the origin published on an upstream session covers every scope
 type nsPublisher struct {
+	// a registration by the origin has no session, and covers every scope
 	scope    Scope
 	prefix   wire.Namespace
 	key      string
@@ -56,7 +55,7 @@ type nsListener struct {
 	scope  Scope
 	prefix wire.Namespace
 	req    *session.Request
-	up     *nsUpstream
+	up     *upPrefix
 
 	mu      sync.Mutex
 	events  []nsEvent
@@ -66,6 +65,10 @@ type nsListener struct {
 
 func namespaceKey(ns wire.Namespace) string {
 	return string(wire.AppendNamespace(nil, ns))
+}
+
+func trackNameKey(name message.FullTrackName) string {
+	return string(wire.AppendBytes(wire.AppendNamespace(nil, name.Namespace), name.Name))
 }
 
 func (r *Relay) publishersFor(scope Scope, ns wire.Namespace) []*session.Session {
@@ -147,7 +150,7 @@ func (r *Relay) addNamespaceListener(l *nsListener) {
 	}
 	n.listeners = append(n.listeners, l)
 	if r.up != nil {
-		l.up = r.acquireUpstreamLocked(l.scope, l.prefix)
+		l.up = r.acquireUpstreamLocked(prefixNamespaces, l.scope, l.prefix)
 	}
 	n.mu.Unlock()
 }
@@ -213,6 +216,7 @@ type trackListener struct {
 	prefix wire.Namespace
 	req    *session.Request
 	params message.Params
+	up     *upPrefix
 
 	mu      sync.Mutex
 	offered map[string]struct{}
@@ -223,9 +227,15 @@ func (r *Relay) addTrackListener(l *trackListener) {
 	n := &r.ns
 	n.mu.Lock()
 	n.trackers = append(n.trackers, l)
+	if r.up != nil {
+		l.up = r.acquireUpstreamLocked(prefixTracks, l.scope, l.prefix)
+	}
 	n.mu.Unlock()
 	r.tracks.each(func(t *track) {
-		if t.scope == l.scope && t.name.Namespace.HasPrefix(l.prefix) && t.hasPublisher() {
+		if !t.name.Namespace.HasPrefix(l.prefix) {
+			return
+		}
+		if (t.scope == l.scope && t.hasPublisher()) || t.originPublished() {
 			l.offer(t)
 		}
 	})
@@ -236,6 +246,10 @@ func (r *Relay) removeTrackListener(l *trackListener) {
 	n.mu.Lock()
 	if i := slices.Index(n.trackers, l); i >= 0 {
 		n.trackers = slices.Delete(n.trackers, i, i+1)
+		if l.up != nil {
+			r.releaseUpstreamLocked(l.up)
+			l.up = nil
+		}
 	}
 	n.mu.Unlock()
 	l.mu.Lock()
@@ -248,8 +262,11 @@ func (r *Relay) offerTrack(t *track) {
 	n := &r.ns
 	n.mu.Lock()
 	var ls []*trackListener
+	// a track the origin published is backend-wide, offered to every scope; another scope's listener is served
+	// a track pulled from the origin
+	origin := t.originPublished()
 	for _, l := range n.trackers {
-		if l.scope == t.scope && t.name.Namespace.HasPrefix(l.prefix) {
+		if (origin || l.scope == t.scope) && t.name.Namespace.HasPrefix(l.prefix) {
 			ls = append(ls, l)
 		}
 	}
@@ -271,11 +288,12 @@ func (l *trackListener) offer(t *track) {
 		l.mu.Unlock()
 		return
 	}
-	if _, done := l.offered[t.key]; done {
+	key := trackNameKey(t.name)
+	if _, done := l.offered[key]; done {
 		l.mu.Unlock()
 		return
 	}
-	l.offered[t.key] = struct{}{}
+	l.offered[key] = struct{}{}
 	l.mu.Unlock()
 	go l.r.publishTo(l, t.name)
 }

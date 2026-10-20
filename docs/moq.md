@@ -179,6 +179,14 @@ WebTransport sessions take the `moq` listener defaults for their limits. Chrome 
 and Safari 26.4 send `WT-Available-Protocols` through the WebTransport `protocols` option; a
 browser needs a certificate it trusts.
 
+Toward an `https://` origin, backends that reach the same host and port with the same `tls`
+settings and drafts carry their WebTransport sessions on one QUIC connection, each backend with
+its own session for its own path. The connection offers WebTransport flow control, which an
+origin must also enable to take several sessions on one connection. An origin that refuses a
+second session is dialed one connection per session from then on. The connection closes with
+its last session. Native `moqt://` origins get a connection per backend, since a native
+connection is a single session.
+
 ## Caching
 
 Each track's newest `live_edge.groups` groups stay in memory, within a backend-wide
@@ -216,6 +224,18 @@ attempts, while the downstream subscriptions stay open. Only when that fails do 
 `PUBLISH_DONE`. An upstream subscription lingers for `upstream.linger` after its last subscriber
 leaves, so a returning viewer finds it warm.
 
+When the upstream gives an `EXPIRES`, the relay asks to extend the subscription before it
+elapses, with an empty `REQUEST_UPDATE` at three quarters of the time given. A new `EXPIRES` in
+the answer schedules the next renewal. The relay never ends a downstream subscription on a
+timer, so it sends no `EXPIRES` downstream.
+
+`NEW_GROUP_REQUEST` reaches the publisher as the spec requires of relays:
+
+- with the upstream `SUBSCRIBE` while the track has no established subscription;
+- afterwards, as a `REQUEST_UPDATE` to every source, but only for a value of 0 or one past the
+  Largest Group, on a track whose `DYNAMIC_GROUPS` is 1, and only while no request at least as
+  large is outstanding. A request is outstanding until the Largest Group increases.
+
 ## Publishing
 
 With `moq.publish.enabled`, a backend accepts `PUBLISH` and `PUBLISH_NAMESPACE` and becomes the
@@ -240,16 +260,25 @@ published.
 they come and go. A backend with an origin also learns the origin's namespaces, in either of two
 ways, and announces a namespace once however many sources report it:
 
-- It forwards the request: one upstream `SUBSCRIBE_NAMESPACE` per prefix, shared by every
-  subscriber of that prefix. A lost one withdraws what it reported and is sent again, one the
-  origin refuses is not retried, and one whose last subscriber leaves lingers for
-  `upstream.linger`. With an `alb` pool, it goes to one member.
+- It forwards the request to the origin. What an origin reports is backend-wide, so every scope
+  shares the upstream requests, and their prefixes never overlap, as one session requires: a
+  prefix that an upstream request covers shares it, and a wider one replaces the narrower
+  requests it covers. A replaced request's namespaces stay announced while the wider one
+  reports them again, so subscribers see no flap. A lost request withdraws what it reported and
+  is sent again. One the origin refuses is not retried, except a `PREFIX_OVERLAP` refusal,
+  which the replacement can race. One whose last subscriber leaves lingers for
+  `upstream.linger`.
 - It accepts `PUBLISH_NAMESPACE` from the origin on its upstream session, as moq-dev's relay
-  sends, and reports those namespaces until the origin withdraws them or the session ends. With
-  an `alb` pool, these reach the member backends, not the pool's.
+  sends, and reports those namespaces until the origin withdraws them or the session ends.
 
-`SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay
-`PUBLISH`. A `SUBSCRIBE` naming a `RENDEZVOUS_TIMEOUT` waits up to that long (at most 30
+`SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay `PUBLISH`. A
+backend with an origin forwards it the same way, shared by prefix (as `SUBSCRIBE_NAMESPACE` with
+the PUBLISH option on draft -17). Each `PUBLISH` the origin sends in answer becomes a source of
+its track and is offered to every matching subscriber, in every scope. A subscriber in another
+scope is served the track pulled from the origin with `SUBSCRIBE`. An origin `PUBLISH` that no
+subscription covers is refused with `UNINTERESTED`.
+
+A `SUBSCRIBE` naming a `RENDEZVOUS_TIMEOUT` waits up to that long (at most 30
 seconds) for a publisher to arrive; without one, a track nobody publishes is refused with
 `DOES_NOT_EXIST`. Publishers are refused with:
 
@@ -309,6 +338,11 @@ or `lc`. When a track's origin fails, its upstream subscription moves to another
 subscribers see no `PUBLISH_DONE`. A member that fails its health check is passed over until it
 recovers, and `stream.passive_health` on the alb ejects members whose origins cannot be dialed.
 Pool members must be `moq` backends with origins; nested albs and discovery are refused.
+
+The routed backend dials each member on a session of its own, apart from the member backend's
+own relay, so the two never share a Track Alias. A `SUBSCRIBE_NAMESPACE` or `SUBSCRIBE_TRACKS`
+it forwards goes to the member the prefix places, and what that member's origin publishes on the
+session reaches the routed backend's subscribers.
 
 ## Priorities
 
@@ -471,15 +505,10 @@ go -C hack/diagstreamer run ./cmd/diagstreamer -out fmp4 | moq --connect moqt://
 
 - No TCP fallback: WebTransport over HTTP/2 is not served, so clients need UDP.
 - No packaging: Trickster does not convert between MoQT and HLS, DASH or other formats.
-- `SUBSCRIBE_TRACKS`, and the PUBLISH form of draft -17's `SUBSCRIBE_NAMESPACE`, are answered
-  from publishers only, and not forwarded to the origin.
-- With an `alb` pool, the namespaces an origin publishes on its upstream session reach the
-  member backends, and not the pool's subscribers.
-- `EXPIRES` is neither sent nor acted on.
-- `NEW_GROUP_REQUEST` is not forwarded upstream, and upstream subscriptions are never filtered,
-  so `MAX_FILTER_RANGES` is not used toward origins.
-- Each backend keeps its own session toward a WebTransport origin; backends that share an origin
-  do not share its QUIC connection.
+- Upstream subscriptions are never filtered, so `MAX_FILTER_RANGES` is not used toward origins.
+- On a draft -17 origin, `SUBSCRIBE_NAMESPACE` asks for namespaces and for PUBLISHes alike, so a
+  forwarded namespace request and a forwarded track request with overlapping prefixes conflict.
+  The second is refused with `PREFIX_OVERLAP`, and given up after the retries.
 - moq-dev's relay cannot be a WebTransport origin, because it does not support the
   `reset_stream_at` extension that WebTransport over HTTP/3 needs.
 - Stream priorities and reliable reset boundaries are not available over WebTransport (see

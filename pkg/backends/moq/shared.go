@@ -18,6 +18,8 @@ package moq
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +40,8 @@ type shared struct {
 	pool   *poolUpstream
 	cache  atomic.Pointer[Client]
 
+	unwatch []func()
+
 	wtActive atomic.Int64
 
 	mu       sync.Mutex
@@ -55,11 +59,7 @@ var (
 func relayKey(o *bo.Options) string {
 	// a reload keeps a backend's relay, its live edge and upstream subscriptions, unless one of these changed
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s|%d|", o.OriginURL, o.MaxTTL)
-	if t := o.TLS; t != nil {
-		fmt.Fprintf(&b, "%t|%s|%s|%s|%s|%t|%s|", t.InsecureSkipVerify, strings.Join(t.CertificateAuthorityPaths, ","),
-			t.ClientCertPath, t.ClientKeyPath, t.ServerName, t.ExcludeSystemRoots, checksum.Checksum(t.CertificateAuthorityPEM))
-	}
+	fmt.Fprintf(&b, "%s|%d|%s", o.OriginURL, o.MaxTTL, tlsKey(o))
 	m := o.MoQ
 	if m == nil {
 		m = mo.New()
@@ -72,6 +72,27 @@ func relayKey(o *bo.Options) string {
 		fmt.Fprintf(&b, "|%d", m.WebTransport.DefaultDraft)
 	}
 	return b.String()
+}
+
+func tlsKey(o *bo.Options) string {
+	t := o.TLS
+	if t == nil {
+		return ""
+	}
+	return fmt.Sprintf("%t|%s|%s|%s|%s|%t|%s|", t.InsecureSkipVerify, strings.Join(t.CertificateAuthorityPaths, ","),
+		t.ClientCertPath, t.ClientKeyPath, t.ServerName, t.ExcludeSystemRoots, checksum.Checksum(t.CertificateAuthorityPEM))
+}
+
+func connKey(origin *url.URL, o *bo.Options, drafts []int) string {
+	// WebTransport sessions to one host and port, under the same TLS settings and drafts, share a QUIC connection
+	if origin.Scheme != SchemeHTTPS {
+		return ""
+	}
+	port := origin.Port()
+	if port == "" {
+		port = defaultPort
+	}
+	return fmt.Sprintf("%s|%s|%v", net.JoinHostPort(origin.Hostname(), port), tlsKey(o), drafts)
 }
 
 func sharedFor(name, key string, build func() (*shared, error)) (*shared, error) {
@@ -168,6 +189,12 @@ func (sh *shared) shutdown() {
 		}
 	}
 	sharedMu.Unlock()
+	for _, u := range sh.unwatch {
+		u()
+	}
+	if sh.pool != nil {
+		sh.pool.close()
+	}
 	if sh.relay != nil {
 		sh.relay.Close()
 	}
