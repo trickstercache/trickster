@@ -238,21 +238,24 @@ func (t *track) setForward(s *subscriber, forward bool) {
 	go t.syncForward()
 }
 
-func (t *track) resume(ctx context.Context) {
+func (t *track) resume(ctx context.Context) bool {
 	// a subscriber answered while the upstream is still paused, or about to pause, would miss what is published
-	// before the upstream forwards again, so every FORWARD update in flight is answered first
+	// before the upstream forwards again, so every FORWARD update in flight is answered first; false if none is left
 	t.syncForward()
 	t.mu.Lock()
 	ack := t.fwdAck
 	t.mu.Unlock()
 	if ack == nil {
-		return
+		return true
 	}
 	select {
 	case <-ack:
 	case <-ctx.Done():
 	case <-time.After(finishWait):
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.upState == upEstablished
 }
 
 func (t *track) markMalformed() {

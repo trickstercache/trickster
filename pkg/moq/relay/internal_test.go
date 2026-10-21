@@ -90,6 +90,11 @@ func TestRanges(t *testing.T) {
 			f(message.ParamSubgroupFilter, 200, 2, 2),
 		}, true},
 		{"track filters ignored", []message.RangeFilter{f(message.ParamTrackPropertyFilter, 0, 1, 1)}, true},
+		{"a failed set skips its other filters", []message.RangeFilter{
+			f(message.ParamSubgroupFilter, 1, 3, 3),
+			f(message.ParamObjectIDFilter, 1, 5, 5),
+		}, false},
+		{"unknown filter type admits", []message.RangeFilter{f(0x7e, 0, 1, 1)}, true},
 	}
 	for _, tc := range tests {
 		if got := newRanges(tc.rs).pass(o, 128); got != tc.want {
@@ -118,6 +123,12 @@ func TestRanges(t *testing.T) {
 	})
 	if len(rs) != 1 || rs[0].Ranges[0].Start != 5 {
 		t.Errorf("updated ranges %+v", rs)
+	}
+}
+
+func TestMillis(t *testing.T) {
+	if millis(1500) != 1500*time.Millisecond || millis(math.MaxUint64) != math.MaxInt64 {
+		t.Error("a wire millisecond count converts, and a hostile one clamps")
 	}
 }
 
@@ -203,6 +214,9 @@ func TestCachedGroupEncoding(t *testing.T) {
 	}
 	if _, err = decodeGroup(cg.encode()[:20], "track"); err == nil {
 		t.Error("a truncated group is refused")
+	}
+	if _, err = decodeGroup(cg.encode()[:11], "track"); !errors.Is(err, errSpillFormat) {
+		t.Error("a group cut off before its object count is refused")
 	}
 	if cg.Size() <= 3 || !cg.covers(0, math.MaxUint64) {
 		t.Error("size and coverage")

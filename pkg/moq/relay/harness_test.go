@@ -135,6 +135,7 @@ type origin struct {
 	nsExpires     uint64
 	nsRenewals    atomic.Int32
 	subExpires    uint64
+	endOnUpdate   atomic.Bool
 	subscribeAsks chan *message.Subscribe
 	trackAsks     chan *session.Request
 }
@@ -476,6 +477,13 @@ type originReq struct {
 func (h *originReq) HandleMessage(r *session.Request, m message.Message) {
 	u, ok := m.(*message.RequestUpdate)
 	if !ok {
+		return
+	}
+	if h.o.endOnUpdate.Load() {
+		// the update fails, and the subscription ends before any answer reaches the relay
+		h.o.updates <- u
+		_ = r.Send(&message.PublishDone{Code: message.DoneUpdateFailed, StreamCount: r.StreamCount()})
+		_ = r.CloseSend()
 		return
 	}
 	if u.Params.Has(message.ParamForward) {

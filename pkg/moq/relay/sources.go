@@ -29,6 +29,19 @@ import (
 func (t *track) ensureUpstream(ctx context.Context, forward bool) error {
 	// a source is a SUBSCRIBE the relay opened toward a namespace publisher or the origin, or a publisher's PUBLISH;
 	// this returns once one is established, subscribing upstream if needed
+	for attempt := 0; ; attempt++ {
+		err := t.awaitUpstream(ctx, forward)
+		if err != nil || !forward || t.resume(ctx) {
+			return err
+		}
+		// the source ended while its resume was in flight, as one that refuses the update does (§9.5.1)
+		if attempt > 0 {
+			return errUpstream
+		}
+	}
+}
+
+func (t *track) awaitUpstream(ctx context.Context, forward bool) error {
 	t.mu.Lock()
 	if t.malformed {
 		t.mu.Unlock()
@@ -37,9 +50,6 @@ func (t *track) ensureUpstream(ctx context.Context, forward bool) error {
 	switch t.upState {
 	case upEstablished:
 		t.mu.Unlock()
-		if forward {
-			t.resume(ctx)
-		}
 		return nil
 	case upIdle:
 		if err := t.startPullLocked(forward || t.wantForwardLocked()); err != nil {
@@ -58,9 +68,6 @@ func (t *track) ensureUpstream(ctx context.Context, forward bool) error {
 	state, err := t.upState, t.upErr
 	t.mu.Unlock()
 	if state == upEstablished {
-		if forward {
-			t.resume(ctx)
-		}
 		return nil
 	}
 	if err == nil {
