@@ -70,17 +70,18 @@ type TrackSink interface {
 
 // Encoder turns raw yuv420p frames and s16le stereo samples into encoded media
 type Encoder interface {
-	WriteFrame(yuv []byte) error
+	// WriteFrame takes the next frame of one rendition, by its index in the ladder
+	WriteFrame(rendition int, yuv []byte) error
 	WriteAudio(pcm []byte) error
 	// Close ends the input and waits for the encoder to deliver everything it has
 	Close() error
 }
 
-// ffmpeg is an Encoder running one ffmpeg process: frames on stdin and samples on fd 3, and either one muxed
-// fragmented MP4 on stdout or one track per output on fds 4 and 5
+// ffmpeg is an Encoder running one ffmpeg process: the top rendition's frames on stdin, samples on fd 3 and the
+// other renditions' frames after it, then either one muxed fragmented MP4 on stdout or one output per track
 type ffmpeg struct {
 	cmd     *exec.Cmd
-	video   *feed
+	video   []*feed
 	audio   *feed
 	wg      sync.WaitGroup
 	errMu   sync.Mutex
@@ -88,6 +89,7 @@ type ffmpeg struct {
 	stderr  limitedWriter
 	stdin   io.WriteCloser
 	audioIn io.WriteCloser
+	videoIn []io.WriteCloser
 }
 
 // feed writes one input from its own goroutine, through a short queue of reused buffers; ffmpeg reads its inputs
@@ -196,42 +198,78 @@ func audioArgs(cfg *Config) []string {
 	}
 }
 
-func inputArgs(cfg *Config) []string {
-	args := []string{
-		"-hide_banner", "-loglevel", "error",
-		"-f", "rawvideo", "-pix_fmt", "yuv420p", "-video_size", fmt.Sprintf("%dx%d", cfg.Width, cfg.Height),
-		"-framerate", strconv.Itoa(cfg.FPS), "-i", "pipe:0",
-	}
-	if cfg.Audio {
-		args = append(args, "-f", "s16le", "-ar", strconv.Itoa(SampleRate), "-ac", strconv.Itoa(audioChannels),
-			"-i", "pipe:3")
-	}
-	return args
+// fds places the pipes: fd 3 carries samples, the lower renditions' frames follow, then one output per rendition
+// and the audio output; with one rendition, video goes out on fd 4 and audio on fd 5
+type fds struct {
+	rungs int
 }
 
-// muxedArgs makes one fragmented MP4 holding both tracks, written to stdout
-func muxedArgs(cfg *Config) []string {
-	args := append(inputArgs(cfg), "-map", "0:v")
-	args = append(args, videoArgs(cfg)...)
+func (f fds) videoIn(i int) int  { return 3 + i }
+func (f fds) videoOut(i int) int { return 3 + f.rungs + i }
+func (f fds) audioOut() int      { return 3 + 2*f.rungs }
+
+func pipe(fd int) string {
+	return "pipe:" + strconv.Itoa(fd)
+}
+
+func rawVideoInput(cfg *Config, r Rendition, fd int) []string {
+	return []string{
+		"-f", "rawvideo", "-pix_fmt", "yuv420p", "-video_size", fmt.Sprintf("%dx%d", r.Width, r.Height),
+		"-framerate", strconv.Itoa(cfg.FPS), "-i", pipe(fd),
+	}
+}
+
+func inputArgs(cfg *Config, ladder []Rendition) (args []string, video []int, audio int) {
+	// inputs are numbered in order: the top rendition, the samples, then the lower renditions
+	args = append([]string{"-hide_banner", "-loglevel", "error"}, rawVideoInput(cfg, ladder[0], 0)...)
+	video = []int{0}
+	next := 1
 	if cfg.Audio {
-		args = append(args, "-map", "1:a")
+		args = append(args, "-f", "s16le", "-ar", strconv.Itoa(SampleRate), "-ac", strconv.Itoa(audioChannels),
+			"-i", pipe(3))
+		audio, next = next, next+1
+	}
+	f := fds{rungs: len(ladder)}
+	for i := 1; i < len(ladder); i++ {
+		args = append(args, rawVideoInput(cfg, ladder[i], f.videoIn(i))...)
+		video = append(video, next)
+		next++
+	}
+	return args, video, audio
+}
+
+// muxedArgs makes one fragmented MP4 holding the top rendition and the audio, written to stdout
+func muxedArgs(cfg *Config) []string {
+	ladder := cfg.Ladder()[:1]
+	args, video, audio := inputArgs(cfg, ladder)
+	args = append(args, "-map", strconv.Itoa(video[0])+":v")
+	top := cfg.forRendition(ladder[0])
+	args = append(args, videoArgs(&top)...)
+	if cfg.Audio {
+		args = append(args, "-map", strconv.Itoa(audio)+":a")
 		args = append(args, audioArgs(cfg)...)
 	}
 	args = append(args, movflags(cfg, true)...)
 	return append(args, "-f", "mp4", "pipe:1")
 }
 
-// trackArgs makes one fragmented MP4 per track: video on fd 4, audio on fd 5
+// trackArgs makes one fragmented MP4 per track: each rendition's video, then the audio
 func trackArgs(cfg *Config) []string {
-	args := append(inputArgs(cfg), "-map", "0:v")
-	args = append(args, videoArgs(cfg)...)
-	args = append(args, movflags(cfg, false)...)
-	args = append(args, "-f", "mp4", "pipe:4")
+	ladder := cfg.Ladder()
+	f := fds{rungs: len(ladder)}
+	args, video, audio := inputArgs(cfg, ladder)
+	for i, r := range ladder {
+		rc := cfg.forRendition(r)
+		args = append(args, "-map", strconv.Itoa(video[i])+":v")
+		args = append(args, videoArgs(&rc)...)
+		args = append(args, movflags(cfg, false)...)
+		args = append(args, "-f", "mp4", pipe(f.videoOut(i)))
+	}
 	if cfg.Audio {
-		args = append(args, "-map", "1:a")
+		args = append(args, "-map", strconv.Itoa(audio)+":a")
 		args = append(args, audioArgs(cfg)...)
 		args = append(args, movflags(cfg, false)...)
-		args = append(args, "-f", "mp4", "pipe:5")
+		args = append(args, "-f", "mp4", pipe(f.audioOut()))
 	}
 	return args
 }
@@ -241,18 +279,26 @@ func NewMuxedEncoder(ctx context.Context, cfg Config, w io.Writer) (Encoder, err
 	e := &ffmpeg{}
 	e.cmd = exec.CommandContext(ctx, cfg.FFmpeg, muxedArgs(&cfg)...) //nolint:gosec // the operator names ffmpeg
 	e.cmd.Stdout = w
-	return e, e.start(&cfg, nil)
+	return e, e.start(&cfg, 1, nil)
 }
 
-// NewTrackEncoder starts an ffmpeg encoder that delivers the video track to video and the audio track to audio
-func NewTrackEncoder(ctx context.Context, cfg Config, video, audio TrackSink) (Encoder, error) {
+// NewTrackEncoder starts an ffmpeg encoder that delivers each rendition's video track to its sink in video, in
+// ladder order, and the audio track to audio
+func NewTrackEncoder(ctx context.Context, cfg Config, video []TrackSink, audio TrackSink) (Encoder, error) {
+	cfg = cfg.normalized()
+	if len(video) != len(cfg.Ladder()) {
+		return nil, fmt.Errorf("%d video sinks for %d renditions", len(video), len(cfg.Ladder()))
+	}
 	e := &ffmpeg{}
 	e.cmd = exec.CommandContext(ctx, cfg.FFmpeg, trackArgs(&cfg)...) //nolint:gosec // the operator names ffmpeg
-	outs := []trackOut{{KindVideo, video}}
+	outs := make([]trackOut, 0, len(video)+1)
+	for _, v := range video {
+		outs = append(outs, trackOut{KindVideo, v})
+	}
 	if cfg.Audio {
 		outs = append(outs, trackOut{KindAudio, audio})
 	}
-	return e, e.start(&cfg, outs)
+	return e, e.start(&cfg, len(video), outs)
 }
 
 type trackOut struct {
@@ -260,7 +306,7 @@ type trackOut struct {
 	sink TrackSink
 }
 
-func (e *ffmpeg) start(cfg *Config, outs []trackOut) error {
+func (e *ffmpeg) start(cfg *Config, rungs int, outs []trackOut) error {
 	var err error
 	if e.stdin, err = e.cmd.StdinPipe(); err != nil {
 		return err
@@ -277,13 +323,22 @@ func (e *ffmpeg) start(cfg *Config, outs []trackOut) error {
 		e.audioIn = w
 		closeAfterStart = append(closeAfterStart, r)
 	} else if len(outs) > 0 {
-		// fds 4 and 5 must stay where the arguments name them, so fd 3 is held by an unused pipe
+		// the later fds must stay where the arguments name them, so fd 3 is held by an unused pipe
 		r, w, err := os.Pipe()
 		if err != nil {
 			return err
 		}
 		_ = w.Close()
 		e.cmd.ExtraFiles = append(e.cmd.ExtraFiles, r)
+		closeAfterStart = append(closeAfterStart, r)
+	}
+	for range rungs - 1 {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return err
+		}
+		e.cmd.ExtraFiles = append(e.cmd.ExtraFiles, r)
+		e.videoIn = append(e.videoIn, w)
 		closeAfterStart = append(closeAfterStart, r)
 	}
 	readers := make([]*os.File, 0, len(outs))
@@ -303,12 +358,18 @@ func (e *ffmpeg) start(cfg *Config, outs []trackOut) error {
 		if e.audioIn != nil {
 			_ = e.audioIn.Close()
 		}
+		for _, w := range e.videoIn {
+			_ = w.Close()
+		}
 		return fmt.Errorf("starting %s: %w", cfg.FFmpeg, err)
 	}
 	for _, f := range closeAfterStart {
 		_ = f.Close()
 	}
-	e.video = newFeed(e.stdin)
+	e.video = append(e.video, newFeed(e.stdin))
+	for _, w := range e.videoIn {
+		e.video = append(e.video, newFeed(w))
+	}
 	if e.audioIn != nil {
 		e.audio = newFeed(e.audioIn)
 	}
@@ -331,8 +392,11 @@ func (e *ffmpeg) fail(err error) {
 	}
 }
 
-func (e *ffmpeg) WriteFrame(yuv []byte) error {
-	return e.writeErr(e.video.write(yuv))
+func (e *ffmpeg) WriteFrame(rendition int, yuv []byte) error {
+	if rendition < 0 || rendition >= len(e.video) {
+		return fmt.Errorf("ffmpeg: no rendition %d", rendition)
+	}
+	return e.writeErr(e.video[rendition].write(yuv))
 }
 
 func (e *ffmpeg) WriteAudio(pcm []byte) error {
@@ -355,7 +419,9 @@ func (e *ffmpeg) writeErr(err error) error {
 func (e *ffmpeg) Close() error {
 	// both inputs close together, since ffmpeg may wait on either before it finishes
 	var wg sync.WaitGroup
-	wg.Go(func() { _ = e.video.close() })
+	for _, v := range e.video {
+		wg.Go(func() { _ = v.close() })
+	}
 	if e.audio != nil {
 		wg.Go(func() { _ = e.audio.close() })
 	}

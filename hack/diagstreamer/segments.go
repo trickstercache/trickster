@@ -27,20 +27,20 @@ import (
 // still fetch what it listed
 const retainFactor = 2
 
-// segment is one track's media for one segment number: the chunks in order, and their bytes once complete
+// segment is one track's media for one segment number: its chunks in order, which are written out one by one
 type segment struct {
 	number   int64
 	start    time.Time
 	chunks   []Chunk
-	data     []byte
+	size     int
 	duration time.Duration
 	complete bool
-	ready    chan struct{}
 }
 
 // track collects one encoded track into numbered segments; segment numbers count segments from the Unix epoch
 type track struct {
 	kind      string
+	rendition Rendition
 	segDur    time.Duration
 	start     time.Time
 	startSeg  int64
@@ -48,6 +48,7 @@ type track struct {
 	infoReady chan struct{}
 
 	mu       sync.Mutex
+	changed  chan struct{}
 	info     TrackInfo
 	segs     map[int64]*segment
 	cur      *segment
@@ -61,6 +62,7 @@ func newTrack(kind string, cfg *Config, start time.Time, startSeg int64) *track 
 	return &track{
 		kind: kind, segDur: cfg.Segment, start: start, startSeg: startSeg, retain: cfg.Window * retainFactor,
 		infoReady: make(chan struct{}), segs: make(map[int64]*segment), newest: startSeg - 1, oldest: startSeg,
+		changed: make(chan struct{}),
 	}
 }
 
@@ -87,13 +89,12 @@ func (t *track) Chunk(c Chunk) {
 		if t.kind == KindVideo && !c.Key {
 			slog.Warn("a video segment does not begin with a keyframe", "segment", number)
 		}
-		t.cur = &segment{
-			number: number, start: t.start.Add(time.Duration(number-t.startSeg) * t.segDur),
-			ready: make(chan struct{}),
-		}
+		t.cur = &segment{number: number, start: t.start.Add(time.Duration(number-t.startSeg) * t.segDur)}
 		t.segs[number] = t.cur
 	}
 	t.cur.chunks = append(t.cur.chunks, c)
+	t.cur.size += len(c.Data)
+	t.notifyLocked()
 	t.cur.duration += time.Duration(float64(c.Duration) / float64(t.info.Timescale) * float64(time.Second))
 	if t.onChunk != nil {
 		t.onChunk(t.cur, c)
@@ -106,22 +107,21 @@ func (t *track) completeLocked() {
 	if s == nil {
 		return
 	}
-	size := 0
-	for _, c := range s.chunks {
-		size += len(c.Data)
-	}
-	s.data = make([]byte, 0, size)
-	for _, c := range s.chunks {
-		s.data = append(s.data, c.Data...)
-	}
 	s.complete = true
-	close(s.ready)
 	t.cur = nil
 	t.newest = s.number
+	t.notifyLocked()
 	for t.newest-t.oldest >= int64(t.retain) {
 		delete(t.segs, t.oldest)
 		t.oldest++
 	}
+}
+
+func (t *track) notifyLocked() {
+	// wakes everyone waiting on the track: a chunk arrived, a segment completed, or the track finished; a part of
+	// a segment in progress can be written out as it arrives from the same signal
+	close(t.changed)
+	t.changed = make(chan struct{})
 }
 
 // finish completes the last segment once the encoder has delivered everything
@@ -130,6 +130,7 @@ func (t *track) finish() {
 	defer t.mu.Unlock()
 	t.completeLocked()
 	t.finished = true
+	t.notifyLocked()
 }
 
 // window returns up to n of the newest complete segments, oldest first
@@ -149,39 +150,28 @@ func (t *track) window(n int) []*segment {
 // segment returns segment number, waiting up to wait for it to complete when it is the next one or two due
 func (t *track) segment(ctx context.Context, number int64, wait time.Duration) *segment {
 	t.mu.Lock()
-	s := t.segs[number]
-	done := s != nil && s.complete
 	soon := number > t.newest && number <= t.newest+2 && !t.finished
 	t.mu.Unlock()
-	if done {
-		return s
-	}
-	if !soon {
-		return nil
-	}
 	deadline := time.NewTimer(wait)
 	defer deadline.Stop()
 	for {
-		if s != nil {
-			select {
-			case <-s.ready:
-				return s
-			case <-ctx.Done():
-				return nil
-			case <-deadline.C:
-				return nil
-			}
+		t.mu.Lock()
+		s, changed := t.segs[number], t.changed
+		if s != nil && s.complete {
+			t.mu.Unlock()
+			return s
 		}
-		// the segment has not begun; look again once a chunk might have started it
+		finished := t.finished
+		t.mu.Unlock()
+		if !soon || finished {
+			return nil
+		}
 		select {
+		case <-changed:
 		case <-ctx.Done():
 			return nil
 		case <-deadline.C:
 			return nil
-		case <-time.After(t.segDur / 20):
 		}
-		t.mu.Lock()
-		s = t.segs[number]
-		t.mu.Unlock()
 	}
 }

@@ -45,10 +45,25 @@ func (s *Streamer) multivariantPlaylist() string {
 			"AUTOSELECT=YES,FORCED=NO,URI=\"subtitles.m3u8\"\n", subtitlesGroup)
 		attrs += fmt.Sprintf(",SUBTITLES=%q", subtitlesGroup)
 	}
-	fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AVERAGE-BANDWIDTH=%d,CODECS=%q,RESOLUTION=%dx%d,FRAME-RATE=%d.000%s\n",
-		s.bandwidth(), s.bandwidth(), s.codecs(), s.cfg.Width, s.cfg.Height, s.cfg.FPS, attrs)
-	b.WriteString("video.m3u8\n")
+	for _, t := range s.videos {
+		r := t.rendition
+		fmt.Fprintf(&b, "#EXT-X-STREAM-INF:BANDWIDTH=%d,AVERAGE-BANDWIDTH=%d,CODECS=%q,RESOLUTION=%dx%d,"+
+			"FRAME-RATE=%d.000%s\n", s.bandwidth(t), s.bandwidth(t), s.codecs(t), r.Width, r.Height, s.cfg.FPS, attrs)
+		b.WriteString(videoPlaylist(r) + "\n")
+	}
 	return b.String()
+}
+
+func videoPlaylist(r Rendition) string {
+	return KindVideo + "-" + r.Name() + playlistExt
+}
+
+// trackPath is where a track's media sits below the stream: a video rendition has a directory of its own
+func trackPath(t *track) string {
+	if t.kind == KindVideo {
+		return t.kind + "/" + t.rendition.Name()
+	}
+	return t.kind
 }
 
 // targetDuration is the HLS target duration: every segment's duration, rounded, is at most this
@@ -65,10 +80,10 @@ func (s *Streamer) mediaPlaylist(t *track) string {
 	if len(segs) > 0 {
 		first = segs[0].number
 	}
-	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n#EXT-X-MAP:URI=\"%s\"\n", first, s.mediaPath(t.kind, initName))
+	fmt.Fprintf(&b, "#EXT-X-MEDIA-SEQUENCE:%d\n#EXT-X-MAP:URI=\"%s\"\n", first, s.mediaPath(trackPath(t), initName))
 	for _, seg := range segs {
 		fmt.Fprintf(&b, "#EXT-X-PROGRAM-DATE-TIME:%s\n#EXTINF:%s,\n%s\n", seg.start.UTC().Format(pdtLayout),
-			seconds(seg.duration), s.mediaPath(t.kind, segmentName(seg.number)))
+			seconds(seg.duration), s.mediaPath(trackPath(t), segmentName(seg.number)))
 	}
 	return b.String()
 }
@@ -96,24 +111,33 @@ func (s *Streamer) mpd(now time.Time) string {
 		now.UTC().Format(time.RFC3339), isoDuration(segDur), isoDuration(segDur), isoDuration(depth),
 		isoDuration(3*segDur), isoDuration(segDur))
 	fmt.Fprintf(&b, `  <Period id="%s" start="%s">`+"\n", s.streamID, isoDuration(periodStart))
-	for _, t := range s.tracks() {
-		ts := uint64(t.info.Timescale)
-		dur := uint64(segDur.Seconds() * float64(ts))
-		fmt.Fprintf(&b, `    <AdaptationSet id="%d" contentType="%s" mimeType="%s/mp4" segmentAlignment="true" `+
-			`startWithSAP="1">`+"\n", adaptationID(t.kind), t.kind, t.kind)
-		fmt.Fprintf(&b, `      <SegmentTemplate timescale="%d" duration="%d" startNumber="%d" `+
-			`initialization="%s" media="%s"/>`+"\n", ts, dur, t.startSeg, s.mediaPath(t.kind, initName),
-			s.mediaPath(t.kind, "$Number$"+segmentExt))
-		switch t.kind {
-		case KindVideo:
-			fmt.Fprintf(&b, `      <Representation id="video" codecs="%s" bandwidth="%d" width="%d" height="%d" `+
-				`frameRate="%d" sar="1:1"/>`+"\n", t.info.Codec, s.cfg.VideoBitrate, s.cfg.Width, s.cfg.Height, s.cfg.FPS)
-		case KindAudio:
-			fmt.Fprintf(&b, `      <Representation id="audio" codecs="%s" bandwidth="%d" audioSamplingRate="%d">`+
-				"\n"+`        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" `+
-				`value="%d"/>`+"\n      </Representation>\n", t.info.Codec, s.cfg.AudioBitrate, SampleRate, audioChannels)
-		}
-		b.WriteString("    </AdaptationSet>\n")
+	// the renditions share one adaptation set, aligned on segment boundaries, so a player switches between them
+	top := s.video
+	vts := uint64(top.info.Timescale)
+	fmt.Fprintf(&b, `    <AdaptationSet id="%d" contentType="video" mimeType="video/mp4" segmentAlignment="true" `+
+		`startWithSAP="1" maxWidth="%d" maxHeight="%d" frameRate="%d" par="%d:%d">`+"\n", adaptationID(KindVideo),
+		top.rendition.Width, top.rendition.Height, s.cfg.FPS, top.rendition.Width, top.rendition.Height)
+	fmt.Fprintf(&b, `      <SegmentTemplate timescale="%d" duration="%d" startNumber="%d" initialization="%s" `+
+		`media="%s"/>`+"\n", vts, uint64(segDur.Seconds()*float64(vts)), top.startSeg,
+		s.mediaPath(KindVideo+"/$RepresentationID$", initName),
+		s.mediaPath(KindVideo+"/$RepresentationID$", "$Number$"+segmentExt))
+	for _, t := range s.videos {
+		r := t.rendition
+		fmt.Fprintf(&b, `      <Representation id="%s" codecs="%s" bandwidth="%d" width="%d" height="%d" sar="1:1"/>`+
+			"\n", r.Name(), t.info.Codec, r.Bitrate, r.Width, r.Height)
+	}
+	b.WriteString("    </AdaptationSet>\n")
+	if a := s.audio; a != nil {
+		ats := uint64(a.info.Timescale)
+		fmt.Fprintf(&b, `    <AdaptationSet id="%d" contentType="audio" mimeType="audio/mp4" segmentAlignment="true" `+
+			`startWithSAP="1">`+"\n", adaptationID(KindAudio))
+		fmt.Fprintf(&b, `      <SegmentTemplate timescale="%d" duration="%d" startNumber="%d" initialization="%s" `+
+			`media="%s"/>`+"\n", ats, uint64(segDur.Seconds()*float64(ats)), a.startSeg, s.mediaPath(KindAudio, initName),
+			s.mediaPath(KindAudio, "$Number$"+segmentExt))
+		fmt.Fprintf(&b, `      <Representation id="audio" codecs="%s" bandwidth="%d" audioSamplingRate="%d">`+
+			"\n"+`        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" `+
+			`value="%d"/>`+"\n      </Representation>\n    </AdaptationSet>\n", a.info.Codec, s.cfg.AudioBitrate,
+			SampleRate, audioChannels)
 	}
 	if s.cfg.Captions {
 		fmt.Fprintf(&b, `    <AdaptationSet id="%d" contentType="text" mimeType="application/mp4" lang="en">`+"\n"+

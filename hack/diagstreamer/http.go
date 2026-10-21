@@ -28,6 +28,7 @@ const (
 	mediaDir    = "media"
 	initName    = "init.mp4"
 	segmentExt  = ".m4s"
+	playlistExt = ".m3u8"
 	timeLayout  = "2006-01-02T15:04:05.000Z"
 	headerCC    = "Cache-Control"
 	headerCT    = "Content-Type"
@@ -68,6 +69,7 @@ func (s *Streamer) Handler() http.Handler {
 		s.manifest(w, ctDASH, s.mpd(time.Now()))
 	})
 	mux.HandleFunc("GET /"+mediaDir+"/{stream}/{kind}/{name}", s.serveMedia)
+	mux.HandleFunc("GET /"+mediaDir+"/{stream}/"+KindVideo+"/{rendition}/{name}", s.serveMedia)
 	return mux
 }
 
@@ -91,6 +93,7 @@ func (s *Streamer) serveHLS(w http.ResponseWriter, r *http.Request) {
 	case "master.m3u8":
 		s.manifest(w, ctHLS, s.multivariantPlaylist())
 	case "video.m3u8":
+		// the top rendition, as a stream of one rendition is played without the multivariant playlist
 		s.manifest(w, ctHLS, s.mediaPlaylist(s.video))
 	case "audio.m3u8":
 		if s.audio == nil {
@@ -105,15 +108,21 @@ func (s *Streamer) serveHLS(w http.ResponseWriter, r *http.Request) {
 		}
 		s.manifest(w, ctHLS, s.subtitlesPlaylist())
 	default:
+		name, ok := strings.CutPrefix(strings.TrimSuffix(r.PathValue("playlist"), playlistExt), KindVideo+"-")
+		if t := s.rendition(name); ok && t != nil {
+			s.manifest(w, ctHLS, s.mediaPlaylist(t))
+			return
+		}
 		http.NotFound(w, r)
 	}
 }
 
-func (s *Streamer) trackFor(kind string) *track {
-	switch kind {
-	case KindVideo:
-		return s.video
-	case KindAudio:
+func (s *Streamer) trackFor(r *http.Request) *track {
+	// a video rendition is named in its own path segment; audio has one track
+	if rendition := r.PathValue("rendition"); rendition != "" {
+		return s.rendition(rendition)
+	}
+	if r.PathValue("kind") == KindAudio {
 		return s.audio
 	}
 	return nil
@@ -128,7 +137,7 @@ func (s *Streamer) serveMedia(w http.ResponseWriter, r *http.Request) {
 		s.serveText(w, r)
 		return
 	}
-	t := s.trackFor(r.PathValue("kind"))
+	t := s.trackFor(r)
 	if t == nil {
 		http.NotFound(w, r)
 		return
@@ -153,7 +162,19 @@ func (s *Streamer) serveMedia(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.media(w, t.kind+mp4Suffix, seg.data)
+	s.segmentMedia(w, t.kind+mp4Suffix, seg)
+}
+
+func (s *Streamer) segmentMedia(w http.ResponseWriter, contentType string, seg *segment) {
+	// a segment is written chunk by chunk, as a segment still in progress would be
+	w.Header().Set(headerCT, contentType)
+	w.Header().Set(headerCC, ccImmutable)
+	w.Header().Set("Content-Length", strconv.Itoa(seg.size))
+	for _, c := range seg.chunks {
+		if _, err := w.Write(c.Data); err != nil {
+			return
+		}
+	}
 }
 
 func (s *Streamer) media(w http.ResponseWriter, contentType string, b []byte) {

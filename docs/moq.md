@@ -479,10 +479,12 @@ For real media, publish a fragmented MP4 with moq-dev's CLI into the dev relay, 
 backend that accepts publishers, and play it in moq-dev's web player through Trickster's
 WebTransport endpoint with a certificate the browser trusts.
 [`hack/diagstreamer`](../hack/diagstreamer/README.md) generates a live feed with a clock and a
-timing strip in the picture:
+timing strip in the picture, as an ABR ladder of CMAF tracks with MSF and hang catalogs, and
+publishes it itself:
 
 ```bash
-go -C hack/diagstreamer run ./cmd/diagstreamer -out fmp4 | moq --connect moqt://localhost:8490/ --broadcast demo import fmp4
+go -C hack/diagstreamer run ./cmd/diagstreamer -out moq -moq-url moqt://localhost:8490/ -moq-insecure
+moq --connect moqt://localhost:8490/ --broadcast diagstreamer.msf export --catalog-format hang fmp4 > out.mp4
 ```
 
 ## Troubleshooting

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -29,6 +30,7 @@ type Streamer struct {
 	cfg      Config
 	p        *producer
 	video    *track
+	videos   []*track
 	audio    *track
 	streamID string
 	textInit []byte
@@ -41,7 +43,9 @@ func New(cfg Config) (*Streamer, error) {
 }
 
 func newStreamer(cfg Config, now func() time.Time) (*Streamer, error) {
-	p, err := newProducer(cfg, now)
+	cfg = cfg.normalized()
+	ladder := cfg.Ladder()
+	p, err := newProducer(cfg, ladder, now)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +54,13 @@ func newStreamer(cfg Config, now func() time.Time) (*Streamer, error) {
 		cfg: cfg, p: p, streamID: "s" + strconv.FormatInt(startSeg, 10), ctx: context.Background(),
 		textInit: wvttInit(),
 	}
-	s.video = newTrack(KindVideo, &cfg, p.startTime(), startSeg)
+	for _, rn := range ladder {
+		t := newTrack(KindVideo, &cfg, p.startTime(), startSeg)
+		t.rendition = rn
+		s.videos = append(s.videos, t)
+	}
+	// the top rendition's track sets the timeline the captions and subtitles follow
+	s.video = s.videos[0]
 	if cfg.Audio {
 		s.audio = newTrack(KindAudio, &cfg, p.startTime(), startSeg)
 	}
@@ -60,12 +70,18 @@ func newStreamer(cfg Config, now func() time.Time) (*Streamer, error) {
 // Run renders and encodes until ctx ends
 func (s *Streamer) Run(ctx context.Context) error {
 	s.ctx = ctx
-	enc, err := NewTrackEncoder(context.WithoutCancel(ctx), s.cfg, s.video, s.audio)
+	sinks := make([]TrackSink, len(s.videos))
+	for i, t := range s.videos {
+		sinks[i] = t
+	}
+	enc, err := NewTrackEncoder(context.WithoutCancel(ctx), s.cfg, sinks, s.audio)
 	if err != nil {
 		return err
 	}
 	err = errors.Join(s.p.run(ctx, enc, 0), enc.Close())
-	s.video.finish()
+	for _, t := range s.videos {
+		t.finish()
+	}
 	if s.audio != nil {
 		s.audio.finish()
 	}
@@ -75,9 +91,18 @@ func (s *Streamer) Run(ctx context.Context) error {
 // tracks lists the media tracks in manifest order
 func (s *Streamer) tracks() []*track {
 	if s.audio == nil {
-		return []*track{s.video}
+		return s.videos
 	}
-	return []*track{s.video, s.audio}
+	return append(slices.Clip(s.videos), s.audio)
+}
+
+func (s *Streamer) rendition(name string) *track {
+	for _, t := range s.videos {
+		if t.rendition.Name() == name {
+			return t
+		}
+	}
+	return nil
 }
 
 // ready waits until every track has its initialization segment
@@ -96,16 +121,17 @@ func (s *Streamer) ready(ctx context.Context) bool {
 	return true
 }
 
-func (s *Streamer) codecs() string {
-	out := s.video.info.Codec
+func (s *Streamer) codecs(video *track) string {
+	out := video.info.Codec
 	if s.audio != nil {
 		out += "," + s.audio.info.Codec
 	}
 	return out
 }
 
-func (s *Streamer) bandwidth() int {
-	bw := s.cfg.VideoBitrate
+func (s *Streamer) bandwidth(video *track) int {
+	// the encoder's cap, the audio's, and a tenth for the containers
+	bw := video.rendition.Bitrate
 	if s.cfg.Audio {
 		bw += s.cfg.AudioBitrate
 	}

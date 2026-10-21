@@ -405,6 +405,34 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
+# hack/diagstreamer generates a live diagnostic stream (it needs ffmpeg). DIAG_ARGS passes extra flags, such as
+# DIAG_ARGS="-renditions 1280x720@3M -title Lab", and the DIAG_* environment variables it reads also apply.
+DIAG_ARGS ?=
+DIAG_MOQ_URL ?= moqt://localhost:8490/
+DIAG_SNAPSHOT ?= diagstreamer.png
+DIAG_IMAGE ?= trickster-diagstreamer
+
+# serves live HLS and DASH, with a player page, at http://127.0.0.1:8496/
+.PHONY: diagstreamer
+diagstreamer:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer $(DIAG_ARGS)
+
+# publishes to the MoQ relay at DIAG_MOQ_URL, by default the developer Trickster's moq listener
+.PHONY: diagstreamer-moq
+diagstreamer-moq:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer -out moq -moq-url $(DIAG_MOQ_URL) -moq-insecure $(DIAG_ARGS)
+
+# writes the current frame to DIAG_SNAPSHOT and exits
+.PHONY: diagstreamer-snapshot
+diagstreamer-snapshot:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer -snapshot $(abspath $(DIAG_SNAPSHOT)) $(DIAG_ARGS)
+
+# serves the HTTP stream from the Docker image, which needs no local ffmpeg
+.PHONY: diagstreamer-docker
+diagstreamer-docker:
+	@docker build -q -t $(DIAG_IMAGE) hack/diagstreamer >/dev/null
+	@docker run --rm -it -p 127.0.0.1:8496:8496 -v "$(CURDIR)":/repo:ro $(DIAG_IMAGE) $(DIAG_ARGS)
+
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."

@@ -62,6 +62,26 @@ func (f *fieldList) Set(v string) error {
 	return nil
 }
 
+type ladder struct {
+	r *[]ds.Rendition
+}
+
+func (l ladder) String() string {
+	if l.r == nil {
+		return ""
+	}
+	parts := make([]string, 0, len(*l.r))
+	for _, r := range *l.r {
+		parts = append(parts, r.String())
+	}
+	return strings.Join(parts, ",")
+}
+
+func (l ladder) Set(s string) (err error) {
+	*l.r, err = ds.ParseRenditions(s)
+	return err
+}
+
 type bitrate struct {
 	v *int
 }
@@ -105,13 +125,22 @@ func run() error {
 	fs.BoolVar(&cfg.Captions, "captions", cfg.Captions, "add caption tracks and a burned-in caption ("+ds.EnvCaptions+")")
 	fs.DurationVar(&cfg.ColorPeriod, "color-period", cfg.ColorPeriod, "background color period, 0 to keep one ("+
 		ds.EnvColorPeriod+")")
-	fs.IntVar(&cfg.LogoSpeed, "logo-speed", cfg.LogoSpeed, "logo speed in pixels per second at 720 lines ("+
-		ds.EnvLogoSpeed+")")
 	fs.IntVar(&cfg.Window, "window", cfg.Window, "segments listed in a live manifest ("+ds.EnvWindow+")")
 	fs.StringVar(&cfg.Listen, "listen", cfg.Listen, "address the http output serves on ("+ds.EnvListen+")")
 	fs.StringVar(&cfg.Output, "out", cfg.Output, "http, fmp4 (to stdout) or moq ("+ds.EnvOutput+")")
-	fs.StringVar(&cfg.MoQURL, "moq-url", cfg.MoQURL, "relay the moq output publishes to ("+ds.EnvMoQURL+")")
+	fs.StringVar(&cfg.MoQURL, "moq-url", cfg.MoQURL, "relay the moq output publishes to, moqt:// or https:// ("+
+		ds.EnvMoQURL+")")
+	fs.StringVar(&cfg.MoQCatalog, "moq-catalog", cfg.MoQCatalog, "catalog format of the moq output: "+ds.CatalogMSF+
+		" or "+ds.CatalogHang+" ("+ds.EnvMoQCatalog+")")
+	fs.StringVar(&cfg.MoQBroadcast, "moq-broadcast", cfg.MoQBroadcast, "broadcast name of the moq output ("+
+		ds.EnvMoQBroadcast+")")
+	fs.BoolVar(&cfg.MoQInsecure, "moq-insecure", cfg.MoQInsecure, "skip verifying the relay's certificate ("+
+		ds.EnvMoQInsecure+")")
+	fs.StringVar(&cfg.MoQCA, "moq-ca", cfg.MoQCA, "PEM bundle trusted for the relay's certificate ("+ds.EnvMoQCA+")")
 	fs.StringVar(&cfg.FFmpeg, "ffmpeg", cfg.FFmpeg, "path of the ffmpeg binary ("+ds.EnvFFmpeg+")")
+	fs.Var(ladder{&cfg.Renditions}, "renditions", "the whole video ladder, largest first, such as "+
+		"1920x1080@6M,1280x720@3M; unset, -width, -height and -video-bitrate are the top rung over the default "+
+		"720p, 480p and 360p rungs below it ("+ds.EnvRenditions+")")
 	snapshot := fs.String("snapshot", "", "write the current frame to this PNG file and exit")
 	if err = fs.Parse(os.Args[1:]); err != nil {
 		return err

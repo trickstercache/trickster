@@ -19,7 +19,6 @@ package diagstreamer
 import (
 	"fmt"
 	"image"
-	"math"
 	"time"
 )
 
@@ -36,9 +35,14 @@ const (
 	panelKeep      = 96 // of 256: how much of the background shows through a panel
 	sweepPx        = 6
 	gapPx          = 6
-	flashShare     = 10 // the flash and the beep last 1/flashShare of a second
-	logoAspectY    = 0.71
-	speedLines     = 720.0
+	flashShare     = 10  // the flash and the beep last 1/flashShare of a second
+	rowTopPx       = 150 // the logo and the test bars sit side by side in a row this far down, this tall
+	rowPx          = 300
+	rowGapPx       = 24
+	clockTopPx     = 480 // the clock block starts this far down, below the row
+	barsWide       = 16  // the test bars are barsWide by barsHigh
+	barsHigh       = 9
+	barsStripShare = 8 // the reverse bars along the bottom are 1/barsStripShare of the bars' height
 	clockLayout    = "15:04:05.000"
 	dateLayout     = "Mon 2006-01-02 MST"
 	secondsPerDay  = 86400
@@ -68,10 +72,29 @@ func (t timeline) segment(n int64) int64 {
 	return n / t.perSegment
 }
 
+// swatch is a named background color
+type swatch struct {
+	name    string
+	r, g, b uint8
+}
+
+// label names the color with its RGB value and the BT.709 limited-range codes the encoder is given, so equipment
+// downstream can be checked against them
+func (s swatch) label() string {
+	c := rgb(s.r, s.g, s.b)
+	return fmt.Sprintf("Background: %s #%02X%02X%02X  Y %d Cb %d Cr %d", s.name, s.r, s.g, s.b, c.y, c.cb, c.cr)
+}
+
 // palette is the backgrounds the stream cycles through: dark enough for white text, distinct from each other
-var palette = []ycc{
-	rgb(0x1b, 0x2a, 0x41), rgb(0x3d, 0x1e, 0x6d), rgb(0x0b, 0x5d, 0x5e), rgb(0x6d, 0x1a, 0x36),
-	rgb(0x1f, 0x51, 0x30), rgb(0x2e, 0x2e, 0x2e), rgb(0x7a, 0x3b, 0x0c), rgb(0x4a, 0x14, 0x5c),
+var palette = []swatch{
+	{"Navy", 0x1b, 0x2a, 0x41},
+	{"Indigo", 0x3d, 0x1e, 0x6d},
+	{"Teal", 0x0b, 0x5d, 0x5e},
+	{"Maroon", 0x6d, 0x1a, 0x36},
+	{"Forest", 0x1f, 0x51, 0x30},
+	{"Charcoal", 0x2e, 0x2e, 0x2e},
+	{"Rust", 0x7a, 0x3b, 0x0c},
+	{"Plum", 0x4a, 0x14, 0x5c},
 }
 
 func unitFor(height int) int {
@@ -87,28 +110,36 @@ type Renderer struct {
 	unit         int
 	scale        int
 	segsPerColor int64
-	vx, vy       float64
+	logoX, rowY  int
+	barsX, barsW int
+	rowH         int
 	stream       string
 }
 
 // NewRenderer prepares the frame buffer, the logo and the layout for cfg
 func NewRenderer(cfg Config) (*Renderer, error) {
+	// a ladder renders its top rung
+	cfg = cfg.normalized()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	logo, err := logoSprite(cfg.Width)
+	r := &Renderer{
+		cfg: cfg, tl: newTimeline(&cfg), c: newCanvas(cfg.Width, cfg.Height), unit: unitFor(cfg.Height),
+		scale: cfg.Height,
+	}
+	// the static logo and the test bars form one row, centered across the frame
+	r.rowH, r.rowY = r.px(rowPx), r.px(rowTopPx)
+	logo, err := logoSprite(r.rowH)
 	if err != nil {
 		return nil, err
 	}
-	r := &Renderer{
-		cfg: cfg, tl: newTimeline(&cfg), c: newCanvas(cfg.Width, cfg.Height), logo: logo,
-		unit: unitFor(cfg.Height), scale: cfg.Height,
-	}
+	r.logo, r.barsW = logo, r.rowH*barsWide/barsHigh
+	gap := r.px(rowGapPx)
+	r.logoX = (cfg.Width - (logo.w + gap + r.barsW)) / 2
+	r.barsX = r.logoX + logo.w + gap
 	if cfg.ColorPeriod > 0 {
 		r.segsPerColor = int64((cfg.ColorPeriod + cfg.Segment - 1) / cfg.Segment)
 	}
-	r.vx = float64(cfg.LogoSpeed) * float64(cfg.Height) / speedLines
-	r.vy = r.vx * logoAspectY
 	audio := "no audio"
 	if cfg.Audio {
 		audio = "AAC " + formatBitrate(cfg.AudioBitrate)
@@ -128,15 +159,6 @@ func formatBitrate(bps int) string {
 // px scales a size in pixels at 720 lines to the frame's height, never below one pixel
 func (r *Renderer) px(v int) int {
 	return max(v*r.scale/layoutLines, 1)
-}
-
-// triangle folds v into [0, span] as a point bouncing between both ends would travel
-func triangle(v, span float64) float64 {
-	if span <= 0 {
-		return 0
-	}
-	m := math.Mod(v, 2*span)
-	return span - math.Abs(m-span)
 }
 
 // Frame is the yuv420p bytes of the last frame rendered
@@ -163,21 +185,17 @@ func (r *Renderer) Render(n int64) []byte {
 	if r.segsPerColor > 0 {
 		bg = palette[(seg/r.segsPerColor)%int64(len(palette))]
 	}
-	c.fill(bg)
+	c.fill(rgb(bg.r, bg.g, bg.b))
 
 	_, _, _, stripHeight := stripGeometry(w, h, u)
-	t := float64(n) / float64(r.tl.fps)
-	lx := triangle(r.vx*t, float64(w-r.logo.w))
-	ly := triangle(r.vy*t, float64(h-stripHeight-r.logo.h))
-
-	r.panel()
+	r.panel(bg)
+	c.draw(r.logo, r.logoX, r.rowY)
+	r.testBars()
 	r.clock(n, at, seg)
 	r.flash(n)
 	if r.cfg.Captions {
 		r.caption(at, h-stripHeight)
 	}
-	// the logo travels over everything but the timing strip, which it never reaches
-	c.draw(r.logo, int(lx), int(ly))
 	c.timingStrip(Timing{Frame: uint32(n), At: at}, u) //nolint:gosec // the strip carries the low 32 bits
 	return c.buf
 }
@@ -189,15 +207,16 @@ func (r *Renderer) fit(s string, scale, width int) string {
 	return s
 }
 
-func (r *Renderer) panel() {
+func (r *Renderer) panel(bg swatch) {
 	c, w := r.c, r.cfg.Width
 	m, ts, is, sh := r.px(marginPx), r.px(titlePx), r.px(infoPx), r.px(shadowPx)
 	room := w - 2*m - r.px(flashPx) - m
-	lines := make([]string, 0, len(r.cfg.Fields)+1)
+	lines := make([]string, 0, len(r.cfg.Fields)+2)
 	lines = append(lines, r.fit(r.stream, is, room))
 	for _, f := range r.cfg.Fields {
 		lines = append(lines, r.fit(f.Key+": "+f.Value, is, room))
 	}
+	lines = append(lines, r.fit(bg.label(), is, room))
 	title := r.fit(r.cfg.Title, ts, room)
 	width := textWidth(title, ts)
 	for _, line := range lines {
@@ -214,7 +233,7 @@ func (r *Renderer) panel() {
 }
 
 func (r *Renderer) clock(n int64, at time.Time, seg int64) {
-	c, w, h := r.c, r.cfg.Width, r.cfg.Height
+	c, w := r.c, r.cfg.Width
 	cs, is, sh, gap := r.px(clockPx), r.px(infoPx), r.px(shadowPx), r.px(gapPx)
 	clock := at.Format(clockLayout)
 	for cs > 1 && textWidth(clock, cs) > w-2*r.px(marginPx) {
@@ -222,8 +241,8 @@ func (r *Renderer) clock(n int64, at time.Time, seg int64) {
 	}
 	date := at.Format(dateLayout)
 	info := fmt.Sprintf("FRAME %d  SEGMENT %d  TC %s", n, seg, r.timecode(n))
-	cy := h/2 - glyphHeight*cs/2
-	top := cy - glyphHeight*is - gap
+	top := r.px(clockTopPx)
+	cy := top + glyphHeight*is + gap
 	bottom := cy + glyphHeight*cs + gap
 	sweepTop := bottom + glyphHeight*is + gap
 	pad := r.px(panelPadPx)
@@ -279,4 +298,32 @@ func captionText(title string, at time.Time) string {
 // FrameAt is the number of the frame showing at at
 func (r *Renderer) FrameAt(at time.Time) int64 {
 	return r.tl.frameAt(at)
+}
+
+// barLevel makes 75% color bars, as in SMPTE EG 1: each component is 0 or 191 of 255
+const barLevel = 191
+
+var (
+	topBars = []ycc{
+		rgb(barLevel, barLevel, barLevel), rgb(barLevel, barLevel, 0), rgb(0, barLevel, barLevel), rgb(0, barLevel, 0),
+		rgb(barLevel, 0, barLevel), rgb(barLevel, 0, 0), rgb(0, 0, barLevel),
+	}
+	// the reverse bars under them: blue, black, magenta, black, cyan, black, gray
+	stripBars = []ycc{
+		rgb(0, 0, barLevel), black, rgb(barLevel, 0, barLevel), black, rgb(0, barLevel, barLevel), black,
+		rgb(barLevel, barLevel, barLevel),
+	}
+)
+
+// testBars draws the classic color bars: seven 75% bars over a strip of the reverse bars, which show a hue,
+// saturation or level error downstream at a glance
+func (r *Renderer) testBars() {
+	strip := max(r.rowH/barsStripShare, 2)
+	main := r.rowH - strip
+	for i := range topBars {
+		x0 := r.barsX + r.barsW*i/len(topBars)
+		x1 := r.barsX + r.barsW*(i+1)/len(topBars)
+		r.c.rect(x0, r.rowY, x1, r.rowY+main, topBars[i])
+		r.c.rect(x0, r.rowY+main, x1, r.rowY+r.rowH, stripBars[i])
+	}
 }

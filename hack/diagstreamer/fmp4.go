@@ -256,3 +256,104 @@ func fragmentTiming(moof []byte) (decodeTime, duration uint64, key bool, err err
 	}
 	return decodeTime, duration, firstFlags&sampleIsNonSync == 0, nil
 }
+
+const (
+	visualSampleFields = 78
+	audioSampleFields  = 28
+	boxEsds            = "esds"
+	tagESDescriptor    = 0x03
+	tagDecoderConfig   = 0x04
+	tagDecoderSpecific = 0x05
+	decoderConfigBytes = 13
+	esFlagDependsOn    = 0x80
+	esFlagURL          = 0x40
+	esFlagOCR          = 0x20
+)
+
+func sampleEntry(init []byte) []byte {
+	// the first sample entry of the single track an init segment describes
+	moov := find(init, boxMoov)
+	if moov == nil {
+		return nil
+	}
+	stsd := find(moov[boxHeader:], boxTrak, boxMdia, boxMinf, boxStbl, boxStsd)
+	if len(stsd) < boxHeader+8+boxHeader {
+		return nil
+	}
+	return stsd[boxHeader+8:]
+}
+
+func avcConfig(init []byte) ([]byte, error) {
+	// the body of an H.264 init segment's avcC box: its AVCDecoderConfigurationRecord
+	entry := sampleEntry(init)
+	if len(entry) < boxHeader+visualSampleFields || string(entry[4:8]) != codecAVC1 {
+		return nil, fmt.Errorf("%w: no avc1 sample entry", errBoxFormat)
+	}
+	avcC := find(entry[boxHeader+visualSampleFields:], boxAvcC)
+	if len(avcC) <= boxHeader {
+		return nil, fmt.Errorf("%w: no avcC", errBoxFormat)
+	}
+	return avcC[boxHeader:], nil
+}
+
+func audioSpecificConfig(init []byte) ([]byte, error) {
+	// an AAC init segment's AudioSpecificConfig: the esds decoder-specific info
+	entry := sampleEntry(init)
+	if len(entry) < boxHeader+audioSampleFields || string(entry[4:8]) != codecMP4A {
+		return nil, fmt.Errorf("%w: no mp4a sample entry", errBoxFormat)
+	}
+	esds := find(entry[boxHeader+audioSampleFields:], boxEsds)
+	if len(esds) < boxHeader+4 {
+		return nil, fmt.Errorf("%w: no esds", errBoxFormat)
+	}
+	tag, es, _, ok := descriptor(esds[boxHeader+4:])
+	if !ok || tag != tagESDescriptor || len(es) < 3 {
+		return nil, fmt.Errorf("%w: no ES descriptor", errBoxFormat)
+	}
+	flags := es[2]
+	es = es[3:]
+	if flags&esFlagDependsOn != 0 {
+		es = es[min(2, len(es)):]
+	}
+	if flags&esFlagURL != 0 && len(es) > 0 {
+		es = es[min(1+int(es[0]), len(es)):]
+	}
+	if flags&esFlagOCR != 0 {
+		es = es[min(2, len(es)):]
+	}
+	tag, dc, _, ok := descriptor(es)
+	if !ok || tag != tagDecoderConfig || len(dc) < decoderConfigBytes {
+		return nil, fmt.Errorf("%w: no decoder config", errBoxFormat)
+	}
+	tag, asc, _, ok := descriptor(dc[decoderConfigBytes:])
+	if !ok || tag != tagDecoderSpecific {
+		return nil, fmt.Errorf("%w: no decoder-specific info", errBoxFormat)
+	}
+	return asc, nil
+}
+
+func descriptor(b []byte) (tag byte, body, rest []byte, ok bool) {
+	// one MPEG-4 descriptor (ISO/IEC 14496-1): a tag, a size of up to four 7-bit bytes, and its body
+	if len(b) < 2 {
+		return 0, nil, nil, false
+	}
+	tag, b = b[0], b[1:]
+	size := 0
+	for i := range 4 {
+		if i >= len(b) {
+			return 0, nil, nil, false
+		}
+		size = size<<7 | int(b[i]&0x7f)
+		if b[i]&0x80 == 0 {
+			b = b[i+1:]
+			break
+		}
+		if i == 3 {
+			return 0, nil, nil, false
+		}
+	}
+	if size > len(b) {
+		return 0, nil, nil, false
+	}
+	return tag, b[:size], b[size:], true
+}

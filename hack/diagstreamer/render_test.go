@@ -18,8 +18,10 @@ package diagstreamer
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -87,16 +89,16 @@ func TestCanvas(t *testing.T) {
 }
 
 func TestSprite(t *testing.T) {
-	logo, err := logoSprite(640)
+	logo, err := logoSprite(300)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logo.w < 100 || logo.h < 20 || logo.w%2 != 0 {
+	if logo.w != 300 || logo.h != 300 {
 		t.Fatalf("logo %dx%d", logo.w, logo.h)
 	}
-	// the plate's corners are transparent and its middle opaque
-	if logo.ya[0] != 0 || logo.ya[(logo.h/2)*logo.w+logo.w/2] != 0xff {
-		t.Error("rounded plate alpha")
+	// the vertical logo is drawn straight on the background: transparent at its corners, opaque in its mark
+	if logo.ya[0] != 0 || logo.ya[(logo.h/3)*logo.w+logo.w/2] == 0 {
+		t.Error("logo alpha")
 	}
 	c := newCanvas(64, 64)
 	c.fill(black)
@@ -105,8 +107,26 @@ func TestSprite(t *testing.T) {
 	if bytes.Count(c.y, []byte{lumaBlack}) == len(c.y) {
 		t.Error("the logo was drawn")
 	}
-	if roundedAlpha(5, 5, 10, 10, 2) != 0xff || roundedAlpha(0.1, 0.1, 10, 10, 4) != 0 {
-		t.Error("rounded coverage")
+}
+
+func TestTestBars(t *testing.T) {
+	r, err := NewRenderer(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Render(r.FrameAt(time.Now()))
+	// each bar holds its 75% color, and the reverse strip under it its own
+	at := func(i, y int) uint8 { return r.c.y[y*r.cfg.Width+r.barsX+r.barsW*(2*i+1)/(2*len(topBars))] }
+	for i := range topBars {
+		if at(i, r.rowY+1) != topBars[i].y || at(i, r.rowY+r.rowH-1) != stripBars[i].y {
+			t.Errorf("bar %d", i)
+		}
+	}
+	if topBars[0].y != rgb(barLevel, barLevel, barLevel).y || topBars[6] == stripBars[6] {
+		t.Error("bar colors")
+	}
+	if r.barsX <= r.logoX || r.barsX+r.barsW > r.cfg.Width {
+		t.Errorf("the row sits in the frame: logo at %d, bars at %d+%d", r.logoX, r.barsX, r.barsW)
 	}
 }
 
@@ -165,9 +185,6 @@ func TestRendererLayout(t *testing.T) {
 	}
 	if got := r.timecode(base + 25); got != "00:00:02:05" {
 		t.Errorf("timecode %s", got)
-	}
-	if triangle(5, 10) != 5 || triangle(15, 10) != 5 || triangle(20, 10) != 0 || triangle(3, 0) != 0 {
-		t.Error("triangle wave")
 	}
 	if formatBitrate(3_000_000) != "3.0 Mb/s" || formatBitrate(64_000) != "64 kb/s" {
 		t.Error("bit rate formatting")
@@ -231,5 +248,36 @@ func TestTone(t *testing.T) {
 	}
 	if minute, second := crossings(start), crossings(start+SampleRate); minute <= second {
 		t.Errorf("the minute beep is higher: %d vs %d crossings", minute, second)
+	}
+}
+
+func BenchmarkRenderDefaultLadder(b *testing.B) {
+	cfg := DefaultConfig()
+	p, err := newProducer(cfg, cfg.Ladder(), time.Now)
+	if err != nil {
+		b.Fatal(err)
+	}
+	n := p.start
+	for b.Loop() {
+		p.render(n)
+		n++
+	}
+}
+
+func TestBackgroundLabels(t *testing.T) {
+	names := map[string]bool{}
+	for _, s := range palette {
+		if names[s.name] {
+			t.Errorf("%s names two colors", s.name)
+		}
+		names[s.name] = true
+	}
+	navy := palette[0]
+	if got := navy.label(); got != "Background: Navy #1B2A41  Y 51 Cb 140 Cr 120" {
+		t.Errorf("label %q", got)
+	}
+	c := rgb(navy.r, navy.g, navy.b)
+	if !strings.Contains(navy.label(), fmt.Sprintf("Y %d Cb %d Cr %d", c.y, c.cb, c.cr)) {
+		t.Error("the label carries the codes the frame is filled with")
 	}
 }

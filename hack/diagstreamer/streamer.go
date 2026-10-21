@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -37,19 +38,24 @@ const (
 type producer struct {
 	cfg   Config
 	tl    timeline
-	r     *Renderer
+	rs    []*Renderer
 	tone  Tone
 	start int64
 	now   func() time.Time
 	sleep func(context.Context, time.Duration) error
 }
 
-func newProducer(cfg Config, now func() time.Time) (*producer, error) {
-	r, err := NewRenderer(cfg)
-	if err != nil {
-		return nil, err
+func newProducer(cfg Config, ladder []Rendition, now func() time.Time) (*producer, error) {
+	// each rendition is rendered at its own size, so its picture names its own resolution and bit rate
+	cfg = cfg.normalized()
+	p := &producer{cfg: cfg, tl: newTimeline(&cfg), now: now, sleep: sleepContext}
+	for _, rn := range ladder {
+		r, err := NewRenderer(cfg.forRendition(rn))
+		if err != nil {
+			return nil, err
+		}
+		p.rs = append(p.rs, r)
 	}
-	p := &producer{cfg: cfg, tl: newTimeline(&cfg), r: r, now: now, sleep: sleepContext}
 	// encoding starts on a segment boundary, so the first keyframe begins a whole segment
 	p.start = (p.tl.frameAt(p.now())/p.tl.perSegment + 1) * p.tl.perSegment
 	return p, nil
@@ -86,8 +92,11 @@ func (p *producer) run(ctx context.Context, enc Encoder, frames int64) error {
 			slog.Warn("rendering is behind the clock; the stream will lag", "behind", lag.Round(time.Millisecond))
 			lagged = true
 		}
-		if err := enc.WriteFrame(p.r.Render(n)); err != nil {
-			return err
+		p.render(n)
+		for i, r := range p.rs {
+			if err := enc.WriteFrame(i, r.Frame()); err != nil {
+				return err
+			}
 		}
 		if p.cfg.Audio {
 			from := p.tl.sampleAt(n)
@@ -99,13 +108,26 @@ func (p *producer) run(ctx context.Context, enc Encoder, frames int64) error {
 	return nil
 }
 
-// StreamEncoder writes the stream as one muxed fragmented MP4 to w until ctx ends
+func (p *producer) render(n int64) {
+	if len(p.rs) == 1 {
+		p.rs[0].Render(n)
+		return
+	}
+	var wg sync.WaitGroup
+	for _, r := range p.rs {
+		wg.Go(func() { r.Render(n) })
+	}
+	wg.Wait()
+}
+
+// StreamEncoder writes the stream's top rendition and audio as one muxed fragmented MP4 to w until ctx ends
 func StreamEncoder(ctx context.Context, cfg Config, w io.Writer) error {
 	return streamEncoder(ctx, cfg, w, 0)
 }
 
 func streamEncoder(ctx context.Context, cfg Config, w io.Writer, frames int64) error {
-	p, err := newProducer(cfg, time.Now)
+	top := cfg.normalized()
+	p, err := newProducer(cfg, top.Ladder()[:1], time.Now)
 	if err != nil {
 		return err
 	}
@@ -148,10 +170,10 @@ func Run(ctx context.Context, cfg Config) error {
 	switch cfg.Output {
 	case OutputFMP4:
 		return StreamEncoder(ctx, cfg, os.Stdout)
-	case OutputHTTP:
-		return serveHTTP(ctx, cfg)
+	case OutputMoQ:
+		return StreamMoQ(ctx, cfg)
 	}
-	return errors.New("output " + cfg.Output + " is not built yet")
+	return serveHTTP(ctx, cfg)
 }
 
 func serveHTTP(ctx context.Context, cfg Config) error {

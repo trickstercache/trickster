@@ -19,11 +19,20 @@ package diagstreamer
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"image"
 	"os/exec"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
+	"github.com/trickstercache/trickster/v2/pkg/moq/message"
+	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
+	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+
+	"github.com/quic-go/quic-go"
 )
 
 func needFFmpeg(t *testing.T) string {
@@ -123,17 +132,168 @@ func TestEncoderFailure(t *testing.T) {
 	cfg.FFmpeg = ffmpegPath
 	cfg.VideoBitrate = -1 // ffmpeg refuses a negative bit rate
 	var r recorder
-	enc, err := NewTrackEncoder(context.Background(), cfg, &r, &r)
+	enc, err := NewTrackEncoder(context.Background(), cfg, []TrackSink{&r}, &r)
 	if err != nil {
 		t.Fatal(err)
 	}
 	frame := make([]byte, cfg.Width*cfg.Height*3/2)
 	for range 100 {
-		if err = enc.WriteFrame(frame); err != nil {
+		if err = enc.WriteFrame(0, frame); err != nil {
 			break
 		}
 	}
 	if err = enc.Close(); err == nil || !strings.Contains(err.Error(), "ffmpeg") {
 		t.Errorf("ffmpeg's failure is reported: %v", err)
+	}
+}
+
+func TestLadderEndToEnd(t *testing.T) {
+	ffmpegPath := needFFmpeg(t)
+	t.Parallel()
+	cfg := testConfig()
+	cfg.FFmpeg = ffmpegPath
+	cfg.Renditions, _ = ParseRenditions("320x180@300k,256x144@100k")
+	s, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	wait, waitCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer waitCancel()
+	segs := make([]*segment, len(s.videos))
+	for i, v := range s.videos {
+		segs[i] = v.segment(wait, v.startSeg, 10*time.Second)
+	}
+	cancel()
+	if err = <-done; err != nil {
+		t.Fatal(err)
+	}
+	// every rung's first segment starts on a keyframe at the same frame, so a player can switch at its boundary
+	var frames []uint32
+	for i, seg := range segs {
+		if seg == nil || len(seg.chunks) != int(cfg.FramesPerSegment()) || !seg.chunks[0].Key {
+			t.Fatalf("rung %d segment %+v", i, seg)
+		}
+		r := s.videos[i].rendition
+		mp4 := bytes.Clone(s.videos[i].info.Init)
+		for _, c := range seg.chunks {
+			mp4 = append(mp4, c.Data...)
+		}
+		raw := decodeFirstFrame(t, ffmpegPath, mp4, r)
+		got, ok := DecodeTiming(raw)
+		if !ok {
+			t.Fatalf("rung %s timing strip", r.Name())
+		}
+		frames = append(frames, got.Frame)
+	}
+	if frames[0] != frames[1] {
+		t.Errorf("rungs start at frames %v", frames)
+	}
+}
+
+func decodeFirstFrame(t *testing.T, ffmpegPath string, mp4 []byte, r Rendition) *image.YCbCr {
+	t.Helper()
+	cmd := exec.Command(ffmpegPath, "-v", "error", "-i", "pipe:0", "-frames:v", "1", "-f", "rawvideo", "-pix_fmt",
+		"yuv420p", "pipe:1")
+	cmd.Stdin = bytes.NewReader(mp4)
+	raw, err := cmd.Output()
+	if err != nil || len(raw) != r.Width*r.Height*3/2 {
+		t.Fatalf("decoding %d bytes: %v", len(raw), err)
+	}
+	ys, cs := r.Width*r.Height, r.Width*r.Height/4
+	return &image.YCbCr{Y: raw[:ys], Cb: raw[ys : ys+cs], Cr: raw[ys+cs:], YStride: r.Width, CStride: r.Width / 2,
+		SubsampleRatio: image.YCbCrSubsampleRatio420, Rect: image.Rect(0, 0, r.Width, r.Height)}
+}
+
+func startTestRelay(t *testing.T) string {
+	t.Helper()
+	// a Trickster relay that accepts publishers, on a QUIC listener with a certificate for localhost
+	key, cert, err := testtls.GetTestKeyAndCertWithNames("localhost")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kp, err := tls.X509KeyPair(cert, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := quic.ListenAddr("127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{kp}, NextProtos: codec.ALPNs(codec.ServerPreference), MinVersion: tls.VersionTLS13,
+	}, &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := relay.New(relay.Options{}, nil, nil)
+	r.SetAccess(relay.Access{Publish: true})
+	t.Cleanup(func() {
+		_ = ln.Close()
+		r.Close()
+	})
+	go func() {
+		for {
+			conn, err := ln.Accept(context.Background())
+			if err != nil {
+				return
+			}
+			c, _ := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
+			s, _ := session.New(session.FromQUIC(conn), session.Options{
+				Role: session.RoleServer, Codec: c, Handler: r.Handler(relay.Scope{Authority: "localhost", Path: "/"}),
+			})
+			go func() { _ = s.Start(context.Background()) }()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestStreamMoQThroughRelay(t *testing.T) {
+	ffmpegPath := needFFmpeg(t)
+	addr := startTestRelay(t)
+	cfg := testConfig()
+	cfg.FFmpeg, cfg.Output, cfg.MoQInsecure = ffmpegPath, OutputMoQ, true
+	cfg.MoQURL = "moqt://" + addr + "/"
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- Run(ctx, cfg) }()
+	// a viewer of the relay reads the catalog the generator published, once the namespace is announced
+	viewer, closeViewer, err := dialMoQ(context.Background(), &cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeViewer()
+	track := message.FullTrackName{Namespace: moqNamespace(cfg.Broadcast()), Name: []byte(msfCatalogTrack)}
+	var cat *relaySide
+	deadline := time.Now().Add(10 * time.Second)
+	for cat == nil || cat.groups() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the catalog never arrived through the relay")
+		}
+		rs := newRelaySide()
+		req, err := viewer.Open(context.Background(), &message.Subscribe{Track: track}, rs, rs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rctx, rcancel := context.WithTimeout(context.Background(), time.Second)
+		resp, err := req.Response(rctx)
+		rcancel()
+		if err == nil && resp.Kind() == message.KindSubscribeOK {
+			cat = rs
+			until(t, "the catalog object", func() bool { return rs.groups() == 1 })
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	cat.mu.Lock()
+	var body string
+	for p := range cat.payload {
+		body = p
+	}
+	cat.mu.Unlock()
+	if !strings.Contains(body, `"packaging":"cmaf"`) || !strings.Contains(body, `"name":"video-180p"`) {
+		t.Errorf("catalog %s", body)
+	}
+	cancel()
+	if err = <-done; err != nil {
+		t.Errorf("the output ends cleanly: %v", err)
 	}
 }

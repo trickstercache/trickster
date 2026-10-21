@@ -22,71 +22,21 @@ import (
 	"image"
 	"image/color"
 	"image/png"
-	"math"
 )
 
-//go:embed assets/trickster-horizontal.png
+//go:embed assets/trickster-vertical.png
 var logoPNG []byte
 
-const (
-	logoWidthShare = 0.28 // of the frame width
-	platePadShare  = 0.18 // of the scaled logo's height, on every side
-	plateRadius    = 0.5  // of the padding
-)
-
-// logoSprite scales the Trickster horizontal logo to the frame and sets it on a rounded white plate, which keeps
-// its blue legible over every background color
-func logoSprite(frameWidth int) (*sprite, error) {
+// logoSprite scales the Trickster vertical logo, mark over wordmark, to height pixels tall
+func logoSprite(height int) (*sprite, error) {
 	src, err := png.Decode(bytes.NewReader(logoPNG))
 	if err != nil {
 		return nil, err
 	}
 	b := src.Bounds()
-	lw := max(int(float64(frameWidth)*logoWidthShare), 32)
-	lh := max(lw*b.Dy()/b.Dx(), 8)
-	logo := downscale(src, lw, lh)
-	pad := max(int(float64(lh)*platePadShare), 2)
-	pw, ph := lw+2*pad, lh+2*pad
-	plate := image.NewRGBA(image.Rect(0, 0, pw, ph))
-	radius := float64(pad) * plateRadius * 2
-	for y := range ph {
-		for x := range pw {
-			a := roundedAlpha(float64(x)+0.5, float64(y)+0.5, float64(pw), float64(ph), radius)
-			plate.SetRGBA(x, y, color.RGBA{a, a, a, a})
-		}
-	}
-	for y := range lh {
-		for x := range lw {
-			over(plate, x+pad, y+pad, logo.RGBAAt(x, y))
-		}
-	}
-	return newSprite(plate), nil
-}
-
-// roundedAlpha is the coverage of a rectangle of w by h with corners of radius r at the point x, y
-func roundedAlpha(x, y, w, h, r float64) uint8 {
-	cx := math.Max(r-x, math.Max(x-(w-r), 0))
-	cy := math.Max(r-y, math.Max(y-(h-r), 0))
-	d := math.Hypot(cx, cy) - r
-	switch {
-	case d <= -0.5:
-		return 0xff
-	case d >= 0.5:
-		return 0
-	}
-	return uint8((0.5 - d) * 0xff)
-}
-
-// over composites the premultiplied color c onto dst at x, y
-//
-//nolint:gosec // premultiplied source over destination stays within a byte
-func over(dst *image.RGBA, x, y int, c color.RGBA) {
-	d := dst.RGBAAt(x, y)
-	inv := 255 - int(c.A)
-	dst.SetRGBA(x, y, color.RGBA{
-		uint8(int(c.R) + int(d.R)*inv/255), uint8(int(c.G) + int(d.G)*inv/255), //nolint:gosec // see above
-		uint8(int(c.B) + int(d.B)*inv/255), uint8(int(c.A) + int(d.A)*inv/255), //nolint:gosec // see above
-	})
+	lh := max(height, 8)
+	lw := max(lh*b.Dx()/b.Dy(), 8)
+	return newSprite(downscale(src, lw, lh)), nil
 }
 
 // downscale resizes src to w by h by averaging the premultiplied samples each output pixel covers
