@@ -27,11 +27,17 @@ alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
 it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
 failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
 running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. So does
-`TestMoQInterop` when moq-dev's relay (the `moq_relay` service) isn't
-answering on UDP port 10443, and CI sets `TRICKSTER_MOQ_INTEROP_TEST=1` to
-require it. `TestMoQInteropCLI` runs moq-dev's `moq` CLI in Docker against
+`TestMoQInterop` and `TestMoQNamespaceDiscovery` when moq-dev's relay (the
+`moq_relay` service) isn't answering on UDP port 10443, and CI sets
+`TRICKSTER_MOQ_INTEROP_TEST=1` to require it. `TestMoQNamespaceDiscovery`
+checks that a broadcast published into moq-relay is reported to a
+`SUBSCRIBE_NAMESPACE` sent to Trickster in front of it, and withdrawn when its
+publisher leaves, on every draft. `TestMoQInteropCLI` runs moq-dev's `moq` CLI in Docker against
 Trickster only when `TRICKSTER_MOQ_CLI_TEST=1` is set; it pulls the pinned
-image on first use and reaches Trickster through `host.docker.internal`. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+image on first use and reaches Trickster through `host.docker.internal`.
+`TestMoQExportThroughRelayCLI`, under the same variable and also needing
+`ffmpeg`, imports a live test pattern into moq-relay with the CLI and exports
+it through Trickster, as a moq-dev player finds a broadcast. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
 `TestALBTSMGlobalEvaluation` is **run by hand rather than by CI**: it needs

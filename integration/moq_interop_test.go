@@ -348,8 +348,7 @@ func TestMoQInteropCLI(t *testing.T) {
 }
 
 func stderrOf(err error) string {
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		return string(ee.Stderr)
 	}
 	return fmt.Sprint(err)
