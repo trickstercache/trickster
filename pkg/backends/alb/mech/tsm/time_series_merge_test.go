@@ -19,6 +19,7 @@ package tsm
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -282,4 +285,88 @@ func TestLimitQueryRangeALB(t *testing.T) {
 			t.Errorf("expected 400, got %d", w.Code)
 		}
 	})
+}
+
+func TestTSMNon2xxMemberDoesNotAttemptDecode(t *testing.T) {
+	// Member 1: returns 200 OK with valid dataset
+	h200 := stubMergeHandler("shard1", http.StatusOK)
+	// Member 2: returns 400 Bad Request with error body
+	h400 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.MergeFunc = mergeFn
+			rsc.BatchMergeFunc = batchMergeFn
+			rsc.MergeRespondFunc = markerRespondFunc
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameTricksterResult, "engine=none")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}`))
+	})
+
+	p, _, _ := albpool.NewHealthy([]http.Handler{h200, h400})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
+
+	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
+	rsc.IsMergeMember = true
+	rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		if string(b) == `{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}` {
+			t.Errorf("TSUnmarshaler should NOT be called for non-2xx responses")
+		}
+		return nil, nil
+	}
+	r := request.SetResources(albpool.NewParentGET(t), rsc)
+
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	// One member succeeded, one failed with 400 -> aggregated status should be partial hit (200 OK)
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 got %d", w.Code)
+	}
+	tr := w.Header().Get(headers.NameTricksterResult)
+	if !strings.Contains(tr, "status=phit") {
+		t.Errorf("expected phit status in header, got %s", tr)
+	}
+}
+
+func TestTSMAllMembers400DoesNotAttemptDecode(t *testing.T) {
+	h400 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.MergeFunc = func(accum *merge.Accumulator, data any, idx int) error {
+				return nil
+			}
+			rsc.MergeRespondFunc = markerRespondFunc
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameTricksterResult, "engine=none")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}`))
+	})
+
+	p, _, _ := albpool.NewHealthy([]http.Handler{h400, h400})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 2)
+
+	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
+	rsc.IsMergeMember = true
+	rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		t.Errorf("TSUnmarshaler should NOT be called when all members return 400")
+		return nil, nil
+	}
+	r := request.SetResources(albpool.NewParentGET(t), rsc)
+
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	// All members returned 400 -> aggregated status should be 400
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 got %d", w.Code)
+	}
 }

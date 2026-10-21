@@ -575,13 +575,13 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 }
 
 func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body []byte, member int,
-	stripKeys []string,
+	stripKeys []string, is2xx bool,
 ) *gatherContribution {
 	if ctx.Err() != nil || rsc == nil || rsc.MergeFunc == nil {
 		return nil
 	}
 	ts := rsc.TS
-	if ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
+	if is2xx && ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
 		var err error
 		ts, err = rsc.TSUnmarshaler(body, rsc.TimeRangeQuery)
 		if err != nil {
@@ -758,10 +758,16 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
+			sc := fr.Capture.StatusCode()
+			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
+				sc = rsc2.Response.StatusCode
+			}
+			is2xx := sc >= http.StatusOK && sc < http.StatusMultipleChoices
+
 			var contribution *gatherContribution
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys, is2xx)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -775,13 +781,9 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
+						contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys, is2xx)
 					}
 				}
-			}
-			sc := fr.Capture.StatusCode()
-			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
-				sc = rsc2.Response.StatusCode
 			}
 			results[i] = gatherResult{
 				statusCode: sc,

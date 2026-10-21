@@ -342,9 +342,10 @@ func (h *handler) collectPlanResult(
 		return
 	}
 
+	is2xx := result.statusCode >= http.StatusOK && result.statusCode < http.StatusMultipleChoices
 	var contribution *gatherContribution
 	if rsc.TS != nil {
-		contribution = prepareGatherContribution(ctx, rsc, nil, member, stripKeys)
+		contribution = prepareGatherContribution(ctx, rsc, nil, member, stripKeys, is2xx)
 	} else {
 		body, err := encoding.DecompressResponseBody(
 			fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -359,7 +360,7 @@ func (h *handler) collectPlanResult(
 			return
 		}
 		if len(body) > 0 {
-			contribution = prepareGatherContribution(ctx, rsc, body, member, stripKeys)
+			contribution = prepareGatherContribution(ctx, rsc, body, member, stripKeys, is2xx)
 		}
 	}
 	result.contrib = contribution
