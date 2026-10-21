@@ -159,7 +159,9 @@ func retryable(cause error) bool {
 	if pd, ok := errors.AsType[*publishDone](cause); ok {
 		switch pd.code {
 		case message.DoneGoingAway, message.DoneTooFarBehind, message.DoneExpired, message.DoneInternalError,
-			message.DoneExcessiveLoad:
+			message.DoneExcessiveLoad, message.DoneUpdateFailed:
+			// the relay answers its subscribers' updates itself, so a failed update upstream was its own, which a
+			// fresh subscription recovers from
 			return true
 		}
 		return false
@@ -169,6 +171,10 @@ func retryable(cause error) bool {
 
 func doneFor(cause error) (message.DoneCode, string) {
 	if pd, ok := errors.AsType[*publishDone](cause); ok {
+		if pd.code == message.DoneUpdateFailed {
+			// the update that failed was the relay's own, not the subscriber's
+			return message.DoneInternalError, "upstream subscription lost"
+		}
 		return pd.code, pd.reason
 	}
 	var re *requestError

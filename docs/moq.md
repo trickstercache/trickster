@@ -242,7 +242,9 @@ a fill; the relay delivers it either way. `SUBSCRIBE_OK` waits until the upstrea
 subscription is established. Forwarding follows the subscribers: the upstream subscription
 forwards while any subscriber does, and pauses otherwise unless `upstream.prewarm` keeps it
 forwarding. A lost upstream subscription is re-subscribed with doubling backoff, up to five
-attempts, while the downstream subscriptions stay open. Only when that fails do they end with
+attempts, while the downstream subscriptions stay open. That includes one the origin ends with
+`UPDATE_FAILED` for refusing the relay's own update, such as a resume or an `EXPIRES` renewal;
+should the retries fail, its subscribers see `INTERNAL_ERROR`, since the update was never theirs. Only when that fails do they end with
 `PUBLISH_DONE`. An upstream subscription lingers for `upstream.linger` after its last subscriber
 leaves, so a returning viewer finds it warm.
 

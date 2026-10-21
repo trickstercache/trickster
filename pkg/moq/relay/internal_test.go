@@ -239,6 +239,9 @@ func TestErrorMapping(t *testing.T) {
 	if c, _ := doneFor(re); c != message.DoneUnauthorized {
 		t.Error("an authorization failure ends as unauthorized")
 	}
+	if c, _ := doneFor(&publishDone{code: message.DoneUpdateFailed}); c != message.DoneInternalError {
+		t.Error("an upstream update failure, the relay's own, ends subscribers as internal")
+	}
 	if c, _ := doneFor(errMalformed); c != message.DoneMalformedTrack {
 		t.Error("malformed")
 	}
@@ -251,6 +254,7 @@ func TestErrorMapping(t *testing.T) {
 	for cause, want := range map[error]bool{
 		pd: false, re: false, errMalformed: false, context.Canceled: false, errors.New("reset"): true,
 		&publishDone{code: message.DoneGoingAway}:         true,
+		&publishDone{code: message.DoneUpdateFailed}:      true,
 		&requestError{code: message.RequestInternalError}: true,
 	} {
 		if retryable(cause) != want {

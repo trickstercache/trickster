@@ -340,25 +340,48 @@ func TestUnrelatedPrefixKept(t *testing.T) {
 }
 
 func TestSourceEndsDuringResume(t *testing.T) {
-	h := newHarness(t, relay.Options{}, nil)
+	h := newHarness(t, relay.Options{ReconnectBackoff: 5 * time.Millisecond}, nil)
 	h.o.endOnUpdate.Store(true)
 	var paused message.Params
 	paused.SetForward(false)
 	preq, pr := subscribe(t, h.client(), "video", paused)
 	subscribed(t, preq)
-	// the active subscriber waits on the resume, whose failure ends the only source; it subscribes upstream again
-	// rather than being answered on a track with no source
+	// the resume's failure ends the only source: the relay subscribes again, the waiting subscriber is answered on
+	// the new subscription, and the paused one never sees the failure
 	areq, ar := subscribe(t, h.client(), "video", message.Params{})
 	recv(t, h.o.updates, "the resume")
 	subscribed(t, areq)
-	if d, ok := recv(t, pr.messages, "PUBLISH_DONE").(*message.PublishDone); !ok || d.Code != message.DoneUpdateFailed {
-		t.Errorf("the paused subscriber ends with the source: %+v", d)
-	}
+	eventually(t, "the upstream subscription again", func() bool { return len(h.o.subscriptions("video")) == 1 })
 	if n := h.o.subscribes.Load(); n != 2 {
 		t.Errorf("upstream subscribes = %d", n)
 	}
 	h.o.publish(t, "video", 0, objs("a")...)
 	eventually(t, "the active subscriber's object", func() bool { return ar.count() == 1 })
+	select {
+	case m := <-pr.messages:
+		t.Errorf("the paused subscriber saw %+v", m)
+	default:
+	}
+}
+
+func TestRenewalRefusedResubscribes(t *testing.T) {
+	h := newHarness(t, relay.Options{ReconnectBackoff: 5 * time.Millisecond}, nil)
+	h.o.subExpires = 40
+	h.o.endOnUpdate.Store(true)
+	req, r := subscribe(t, h.client(), "video", message.Params{})
+	subscribed(t, req)
+	// the origin ends the subscription when the relay renews it; the relay subscribes again, unseen downstream
+	recv(t, h.o.updates, "the renewal")
+	h.o.endOnUpdate.Store(false)
+	eventually(t, "the upstream subscription again", func() bool { return h.o.subscribes.Load() == 2 })
+	eventually(t, "forwarding upstream", func() bool { return len(h.o.subscriptions("video")) == 1 })
+	h.o.publish(t, "video", 0, objs("a")...)
+	eventually(t, "the object after the re-subscribe", func() bool { return r.count() == 1 })
+	select {
+	case m := <-r.messages:
+		t.Errorf("the subscriber saw %+v", m)
+	default:
+	}
 }
 
 func TestPublisherServesFetchGap(t *testing.T) {
