@@ -779,8 +779,8 @@ services:
     restart: always
 
   # diagstreamer (hack/diagstreamer) generates a live diagnostic stream, a
-  # rendered clock, moving logo and timing strip with a beeping tone, served as
-  # HLS and DASH at http://127.0.0.1:8496/ for Trickster to front. It builds
+  # rendered clock, logo, color bars and timing strip with a beeping tone, served
+  # as HLS and DASH at http://127.0.0.1:8496/ for Trickster to front. It builds
   # the Go image with ffmpeg added and runs the tool from the repository.
   diagstreamer:
     profiles: [moq]
@@ -791,6 +791,19 @@ services:
       - diagstreamer-gomod:/go/pkg/mod
     ports:
       - 127.0.0.1:8496:8496
+    restart: always
+
+  # diagstreamer_moq publishes the same stream into moq_relay as the broadcast
+  # diagstreamer.hang, which serves both the hang and the MSF catalog; make
+  # developer-moq plays it through Trickster
+  diagstreamer_moq:
+    profiles: [moq]
+    build: ../../../hack/diagstreamer
+    command: [-out, moq, -moq-url, "moqt://moq_relay:443/", -moq-insecure, -moq-catalog, hang]
+    volumes:
+      - ../../..:/repo:ro
+      - diagstreamer-gocache:/root/.cache/go-build
+      - diagstreamer-gomod:/go/pkg/mod
     restart: always
 
   # Mocks

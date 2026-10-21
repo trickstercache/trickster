@@ -11,6 +11,24 @@ MoQT is a live-media transport: a track is a sequence of groups (for video, typi
 per GOP), each a sequence of objects, delivered over QUIC streams or datagrams. Trickster never
 parses the media inside objects; it caches and forwards them as opaque payloads.
 
+## Where Trickster fits
+
+<img src="./images/moq-relay.png" width="800">
+
+A publisher packages media into tracks and publishes them to an origin relay. A mid-tier
+Trickster subscribes to the origin and serves everything below it: viewers directly, or an
+optional edge tier of more Trickster nodes nearer the viewers. An edge node is a `moq` backend
+whose `origin_url` names a mid-tier node's `moq` listener. Each tier holds one upstream
+subscription per track for all of its subscribers, with a live edge and a cache of its own, so a
+tier adds capacity near the viewers while the tier above it sees one subscriber per node.
+
+Two variations each change one part of this picture, and combine with it and with each other:
+
+- [Publishing](#publishing): publishers send tracks straight to Trickster, which takes the
+  origin relay's place.
+- [Origin pools](#origin-pools): a Trickster reaches several origins through an alb, which
+  places each track on one of them and fails over between them.
+
 ## Compatibility
 
 MoQT is still an Internet-Draft, and implementations in the field speak different drafts.
@@ -215,8 +233,12 @@ FETCH, on drafts through -19, is served the same way.
 ## Subscriptions
 
 One upstream subscription per track carries every downstream subscription to it, each filtered
-at the relay by its own location window and range filters. A subscription forwards what arrives
-after it begins; earlier objects come by fill or FETCH. `SUBSCRIBE_OK` waits until the upstream
+at the relay by its own location window and range filters. A new subscription first gets the
+newest group the relay holds, from the start of its window, and then what arrives. A player
+joining at the current group, as moq-dev's does with a Relative Start of 1, so gets a catalog
+that was published once, and a subscription starting at the Next Object gets only what arrives.
+Older groups come by fill or FETCH. Draft -22 §3.5 has a joiner ask for the current group with
+a fill; the relay delivers it either way. `SUBSCRIBE_OK` waits until the upstream
 subscription is established. Forwarding follows the subscribers: the upstream subscription
 forwards while any subscriber does, and pauses otherwise unless `upstream.prewarm` keeps it
 forwarding. A lost upstream subscription is re-subscribed with doubling backoff, up to five
@@ -241,6 +263,11 @@ timer, so it sends no `EXPIRES` downstream.
 With `moq.publish.enabled`, a backend accepts `PUBLISH` and `PUBLISH_NAMESPACE` and becomes the
 origin of what publishers send. Open ingest belongs behind a network boundary or
 [authorization](#authorization).
+
+<img src="./images/moq-ingest.png" width="800">
+
+Here Trickster takes the origin relay's place in [Where Trickster fits](#where-trickster-fits).
+Its subscribers, and any tiers below it, are served as they would be from a pulled track.
 
 | Option | Default | Description |
 | --- | --- | --- |
@@ -333,6 +360,12 @@ backends:
     origin_url: moqt://origin-b.example.com/
 ```
 
+<img src="./images/moq-origin-pools.png" width="800">
+
+The diagram shows this configuration, all in one Trickster process: viewers subscribe to `live`,
+whose relay reaches Origin A and Origin B through the `origins` alb. In
+[Where Trickster fits](#where-trickster-fits), it replaces the mid-tier's single origin.
+
 The mechanism must pick a single member: `rr`, `p2c`, `hrw` (each track placed by its full name)
 or `lc`. When a track's origin fails, its upstream subscription moves to another member and its
 subscribers see no `PUBLISH_DONE`. A member that fails its health check is passed over until it
@@ -420,6 +453,21 @@ The Kubernetes controller serves MoQT through a Gateway listener with the protoc
 [kubernetes-gateway.md](./kubernetes-gateway.md#moq-relays).
 
 ## Trying it locally
+
+One command runs a harness: moq-dev's relay as the origin, `hack/diagstreamer` publishing a live
+test pattern into it, and Trickster in the foreground with
+`docs/developer/environment/trickster-config/moq.yaml`. A second opens a player page, which
+Trickster serves at `https://localhost:8483/player/`, in a Chrome profile that trusts the
+development certificate. The page lists the broadcasts the relay announces and plays the selected
+one with moq-dev's `<moq-watch>` element, loaded from a CDN:
+
+```bash
+make developer-moq
+make developer-moq-browser
+```
+
+`ARGS` passes flags to Trickster, as in `make developer-moq ARGS="-log-level debug"`. The
+integration stack's relay publishes the same UDP port, so stop it first if it is running.
 
 The developer environment's `moq` profile runs moq-dev's relay on UDP 10443, which serves as an
 origin, and `make dev-certs` writes a self-signed certificate for `localhost`:

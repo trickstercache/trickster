@@ -1,0 +1,37 @@
+# The MoQ harness's Trickster, run by make developer-moq from the root of the repo. moq-dev's relay
+# (moq_relay in the compose file) is the origin, and diagstreamer_moq publishes diagstreamer.hang into it.
+#
+#   native QUIC:   moqt://localhost:8490/
+#   WebTransport:  https://localhost:8483/demo/
+#   player:        https://localhost:8483/player/ (make developer-moq-browser opens it)
+
+listeners:
+  moq1:
+    protocol: moq
+    port: 8490
+  default:
+    port: 8480
+    tls_port: 8483
+    http3:
+      enabled: true
+
+backends:
+  demo:
+    provider: moq
+    origin_url: moqt://127.0.0.1:10443/
+    listener_names: [moq1, default]
+    tls:
+      full_chain_cert_path: docs/developer/environment/certs/trickster-dev.crt
+      private_key_path: docs/developer/environment/certs/trickster-dev.key
+      # the relay generates its own certificate at each start
+      insecure_skip_verify: true
+
+  # the player page, on the same origin as the WebTransport endpoint, so its sessions need no allowed_origins
+  player:
+    provider: static
+    static:
+      root: docs/developer/environment/moq-player
+      # cross-origin isolation lets the player's audio use a SharedArrayBuffer
+      response_headers:
+        Cross-Origin-Opener-Policy: same-origin
+        Cross-Origin-Embedder-Policy: require-corp

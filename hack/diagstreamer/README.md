@@ -90,7 +90,8 @@ docker run --rm -p 8496:8496 -v "$PWD":/repo:ro -e DIAG_TITLE="Edge 3" -e DIAG_F
 ```
 
 The developer environment's `moq` profile runs it as the `diagstreamer` service on
-`127.0.0.1:8496` (`make developer-start-moq`).
+`127.0.0.1:8496` (`make developer-start-moq`), and as `diagstreamer_moq`, which publishes
+`diagstreamer.hang` into moq-dev's relay for `make developer-moq` to play through Trickster.
 
 ### MoQ
 

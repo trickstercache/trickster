@@ -283,7 +283,7 @@ func TestTrackOfferedOnce(t *testing.T) {
 	}
 }
 
-func TestLateJoinerSubgroupHeader(t *testing.T) {
+func TestMidSubgroupJoinHeader(t *testing.T) {
 	h := newHarness(t, relay.Options{}, nil)
 	cl := h.client()
 	req, r := subscribe(t, cl, "video", message.Params{})
@@ -301,18 +301,26 @@ func TestLateJoinerSubgroupHeader(t *testing.T) {
 	if err = writeObject(out, pubObj{id: 0, payload: []byte("a"), props: timeouts}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the first object", func() bool { return r.count() == 1 })
-	late, lr := subscribe(t, cl, "video", message.Params{})
-	subscribed(t, late)
 	if err = writeObject(out, pubObj{id: 1, payload: []byte("b")}); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the late joiner's object", func() bool { return lr.count() == 1 })
-	// the late joiner's stream does not begin the subgroup, so it names the subgroup and claims no first object
+	eventually(t, "the first objects", func() bool { return r.count() == 2 })
+	var p message.Params
+	p.SetLocationFilter(message.LocationFilter{Type: message.FilterAbsoluteStart, StartGroup: 0, StartObject: 1})
+	late, lr := subscribe(t, cl, "video", p)
+	subscribed(t, late)
+	if err = writeObject(out, pubObj{id: 2, payload: []byte("c")}); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the joiner's objects", func() bool { return lr.count() == 2 })
+	// the joiner's stream starts after the subgroup's first object, so it names the subgroup and claims no first object
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 	if hd := lr.headers[0]; hd.Mode != message.SubgroupIDExplicit || hd.FirstObject || !hd.DefaultPriority {
-		t.Errorf("late joiner's header %+v", hd)
+		t.Errorf("joiner's header %+v", hd)
+	}
+	if got := payloads(lr.objects); !slices.Equal(got, []string{"b", "c"}) {
+		t.Errorf("joiner received %v", got)
 	}
 }
 

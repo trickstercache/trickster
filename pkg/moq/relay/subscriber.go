@@ -19,6 +19,7 @@ package relay
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,7 +127,8 @@ func (s *subscriber) refuse(code message.RequestCode, reason string) {
 }
 
 func (s *subscriber) register() (*wire.Location, message.Properties, message.RequestCode, string) {
-	// the track has a source; the subscriber joins it and forwards what arrives from now on
+	// the track has a source; the subscriber joins it, replays the newest group within its window, and forwards
+	// what arrives from now on
 	t := s.t
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -147,7 +149,7 @@ func (s *subscriber) register() (*wire.Location, message.Properties, message.Req
 	}
 	s.mu.Unlock()
 	t.addSubscriber(s)
-	t.startOpenRunsLocked(s)
+	t.startJoinRunsLocked(s, props)
 	return largest, props, 0, ""
 }
 
@@ -254,6 +256,39 @@ func includeProperties(m message.Message) bool {
 		return v.Params.IncludePropertiesOr(true)
 	}
 	return true
+}
+
+func (t *track) startJoinRunsLocked(s *subscriber, props message.Properties) {
+	// a joining subscription replays the newest group the relay holds from the subscription's start, as a subscriber
+	// joining at the current group expects; older groups are a fill's or a FETCH's, and other open runs start next
+	for _, g := range t.groups {
+		replay := g == t.newest
+		for _, rn := range g.runs {
+			if replay {
+				s.startRun(rn, 0)
+			} else if _, done := rn.ended(); !done {
+				s.startRun(rn, len(rn.objects()))
+			}
+		}
+	}
+	if t.newest != nil && len(t.newest.datagrams) > 0 {
+		s.replayDatagrams(slices.Clone(t.newest.datagrams), props)
+	}
+}
+
+func (s *subscriber) replayDatagrams(objs []*object, props message.Properties) {
+	// the datagrams wait for the subscription to be answered, as its streams do
+	s.wg.Go(func() {
+		select {
+		case <-s.ready:
+		case <-s.ctx.Done():
+			return
+		}
+		defaultPrio := props.PublisherPriority()
+		for _, o := range objs {
+			s.sendDatagram(o, props, defaultPrio)
+		}
+	})
 }
 
 func (t *track) startOpenRunsLocked(s *subscriber) {
