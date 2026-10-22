@@ -18,6 +18,12 @@ spec:
       labels:
         app: moq-relay
     spec:
+      # Numeric IDs and strict groups avoid resolving the Nix image's absolute
+      # /etc/passwd symlink, which containerd rejects.
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        supplementalGroupsPolicy: Strict
       containers:
         - name: moq-relay
           image: moqdev/moq-relay:0.17.5@sha256:a14382211dc588da7345802a49ff52ef5bcea16ca83608a9ff01be9801532d5f
