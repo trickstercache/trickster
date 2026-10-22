@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"context"
+	"errors"
 	"maps"
 	"slices"
 
@@ -98,7 +100,13 @@ func sessionGateFor(c *config.Config, listenerName string) backends.SessionGate 
 	if c == nil {
 		return nil
 	}
-	for _, b := range c.Backends {
+	if lo := c.Listeners[listenerName]; lo != nil && lo.Protocol == listenerconfig.ProtocolMoQ {
+		// a moq listener routes sessions among several backends, so each is judged by its own backend's acls once
+		// its SETUP names one; one backend's here would judge them all
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		b := c.Backends[name]
 		if b == nil || b.IsTemplate || !b.UsesListener(listenerName) {
 			continue
 		}
@@ -149,6 +157,27 @@ func (g *geoStreamAdmission) admission(table *l4.Table) l4.Admission {
 		return geostream.ForRoutes(table, g.acls)
 	}
 	return nil
+}
+
+var errUngatedListener = errors.New("native listener not started: its server cannot judge sessions by a geo ACL")
+
+func setPacketSessionGate(member listener.PacketMember, gate backends.SessionGate) bool {
+	// a member of a shared QUIC endpoint holds the protocol server that judges its sessions
+	var target any = member
+	if h, ok := member.(interface{ ProtocolHandler() any }); ok {
+		target = h.ProtocolHandler()
+	}
+	if u, ok := target.(listener.SessionGateUpdater); ok {
+		u.UpdateSessionGate(gate)
+		return true
+	}
+	return gate == nil
+}
+
+func closedContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
 func setSessionGate(svr listener.ProtocolServer, gate backends.SessionGate) bool {

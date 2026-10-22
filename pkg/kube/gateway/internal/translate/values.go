@@ -156,12 +156,15 @@ func StepAlignment(v string) (string, error) {
 	return mode.String(), nil
 }
 
-// Provider parses a time series provider name: one reached over HTTP, whose API paths the
-// proxy accelerates rather than caches as opaque objects
+// Provider parses a provider name: a time series provider reached over HTTP, whose API paths the
+// proxy accelerates rather than caches as opaque objects, or moq, a MoQ Transport relay
 func Provider(v string) (string, error) {
+	if v == providers.MoQ {
+		return v, nil
+	}
 	if !providers.IsSupportedHTTPTimeSeriesProvider(v) {
-		return "", fmt.Errorf("must be a time series provider: %s",
-			strings.Join(providers.HTTPTimeSeriesProviderNames(), ", "))
+		return "", fmt.Errorf("must be a time series provider (%s) or %s",
+			strings.Join(providers.HTTPTimeSeriesProviderNames(), ", "), providers.MoQ)
 	}
 	return v, nil
 }

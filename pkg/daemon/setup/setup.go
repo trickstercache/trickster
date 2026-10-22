@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/moq"
 	bp "github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -182,6 +183,7 @@ func Shutdown(si *instance.ServerInstance) {
 		alb.StopPools(si.Backends)
 		static.StopClients(si.Backends)
 		graphite.StopClients(si.Backends)
+		moq.StopClients()
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
@@ -381,6 +383,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		// retired only once the reload commits, since a rolled-back reload serves the old clients again
 		graphite.StopClients(si.Backends)
 	}
+	moq.RetireClients(clients)
 	si.Backends = clients
 	// as are the geo locators this configuration no longer keeps
 	si.GeoLocators.CloseExcept(geoLocators)

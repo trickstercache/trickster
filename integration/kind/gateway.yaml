@@ -376,6 +376,11 @@ spec:
     - name: web
       port: 9090
       nodePort: 30088
+    # the MoQ Gateway scenario's moq listener (gateway-moq.yaml)
+    - name: moq
+      port: 9444
+      protocol: UDP
+      nodePort: 30089
     # the ports the conformance suite's Gateways declare, reached through the
     # Service's externalIPs rather than NodePorts
     - name: conformance-http

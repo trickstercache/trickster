@@ -2,6 +2,8 @@ listeners:
     kgw--listener-https-443:
         tls_port: 443
         tls_runtime_certs: true
+        http3:
+            enabled: true
 backends:
     kgw--httproute.shop.web_r0:
         provider: rp

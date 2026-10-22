@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trickster Diagnostic Stream</title>
+<style>
+  body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  h1 { font-size: 1.2rem; margin: 0 0 12px; }
+  .players { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+  video { width: 100%; background: #000; }
+  a { color: #8cf; }
+  code { color: #ccc; }
+</style>
+</head>
+<body>
+<h1>Trickster Diagnostic Stream</h1>
+<div class="players">
+  <section><h2>HLS <code>hls/master.m3u8</code></h2><video id="hls" controls muted autoplay playsinline></video></section>
+  <section><h2>DASH <code>dash/manifest.mpd</code></h2><video id="dash" controls muted autoplay playsinline></video></section>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dashjs@4/dist/dash.all.min.js"></script>
+<script>
+  // URLs are relative, so the page also works behind a proxy that serves it under a path prefix
+  const hlsVideo = document.getElementById('hls');
+  if (window.Hls && Hls.isSupported()) {
+    const hls = new Hls({ lowLatencyMode: false });
+    hls.loadSource('hls/master.m3u8');
+    hls.attachMedia(hlsVideo);
+  } else {
+    hlsVideo.src = 'hls/master.m3u8';
+  }
+  if (window.dashjs) {
+    dashjs.MediaPlayer().create().initialize(document.getElementById('dash'), 'dash/manifest.mpd', true);
+  }
+</script>
+</body>
+</html>

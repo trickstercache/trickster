@@ -2,7 +2,11 @@
 # Gateway and Ingress status (kubernetes.published_service). Ports forward by
 # number: 80 and 443 to the listeners Gateways declare, 8080 and 8443 to the
 # Ingress listeners the ConfigMap configures. A Gateway declaring another
-# port needs an entry here as well.
+# port needs an entry here as well. UDP 443 carries HTTP/3 (and WebTransport)
+# for an HTTPS listener on 443 and MoQ for a trickstercache.org/moq listener
+# there; a load balancer mixing TCP and UDP ports needs Kubernetes 1.26 or
+# later and a cloud load balancer that supports it, so drop the entry if yours
+# does not.
 apiVersion: v1
 kind: Service
 metadata:
@@ -25,6 +29,10 @@ spec:
     - name: https
       port: 443
       targetPort: 443
+    - name: https-udp
+      port: 443
+      targetPort: 443
+      protocol: UDP
     - name: web
       port: 8080
       targetPort: 8080

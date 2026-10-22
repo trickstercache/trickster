@@ -1,0 +1,173 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+# a moq listener serves MoQ Transport sessions over QUIC on its UDP port, terminating TLS with its
+# certificates and routing each session by the authority it names; UDPRoutes attach to it
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: live
+      port: 443
+      protocol: trickstercache.org/moq
+      hostname: live.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+    # a wildcard hostname shares the port, and is served for any depth beneath it
+    - name: vod
+      port: 443
+      protocol: trickstercache.org/moq
+      hostname: "*.vod.example.com"
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+    - name: any
+      port: 4443
+      protocol: trickstercache.org/moq
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+    # a moq listener terminates TLS, so it needs certificates and refuses passthrough
+    - name: no-tls
+      port: 5443
+      protocol: trickstercache.org/moq
+    - name: passthrough
+      port: 5444
+      protocol: trickstercache.org/moq
+      tls:
+        mode: Passthrough
+    # a moq listener and a udp one cannot share a port
+    - name: udp-clash
+      port: 4443
+      protocol: UDP
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: media-tls
+  namespace: infra
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJMVENCMWFBREFnRUNBZ0VCTUFvR0NDcUdTTTQ5QkFNQ01CSXhFREFPQmdOVkJBTVRCMlpwZUhSMWNtVXcKSUJjTk1qQXdNVEF4TURBd01EQXdXaGdQTWpFd01EQXhNREV3TURBd01EQmFNQkl4RURBT0JnTlZCQU1UQjJacAplSFIxY21Vd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFSeFl6LzJreUdLaEs1MWtqcjFwSUJ3CnArWkxHanJZWVgvOEplYUxveHhEOEVzNGV0MTZlRG9kUk96ZVp1ZVNTUGwyQjR0cFFUeFJmRWFSMmc4MkVzbTYKb3hvd0dEQVdCZ05WSFJFRUR6QU5nZ3RsZUdGdGNHeGxMbU52YlRBS0JnZ3Foa2pPUFFRREFnTkhBREJFQWlBUApmMW5LZnp0WTlXcDdzVVltclZLQzFYUlpGN2FyOTIwbmtXeVJua3dlNWdJZ052UmdFVHE2SWsvVEprb2RNL0NJClZzS0ZDL2t1bmhpM3dvNG5uckczZTZvPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUVTc0g1RWRtc0x1bzdsdEJld2c4emt2TXRoeDMxV3FEcGd1NHV0d2RDNmpvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFY1dNLzlwTWhpb1N1ZFpJNjlhU0FjS2ZtU3hvNjJHRi8vQ1htaTZNY1EvQkxPSHJkZW5nNgpIVVRzM21ibmtrajVkZ2VMYVVFOFVYeEdrZG9QTmhMSnVnPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origin-a
+  namespace: media
+spec:
+  ports:
+    - name: moq
+      port: 4443
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origin-b
+  namespace: media
+spec:
+  ports:
+    - name: moq
+      port: 4443
+      protocol: UDP
+---
+# a MoQ origin is reached over UDP, so a Service with only a TCP port cannot be one
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: media
+spec:
+  ports:
+    - name: http
+      port: 4443
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: live
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: live
+  rules:
+    - backendRefs:
+        - name: origin-a
+          port: 4443
+---
+# several backendRefs reach their origins through an alb picking one per track, by weight
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: vod
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:01Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: vod
+  rules:
+    - backendRefs:
+        - name: origin-a
+          port: 4443
+          weight: 3
+        - name: origin-b
+          port: 4443
+          weight: 1
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: any
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:02Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: any
+  rules:
+    - backendRefs:
+        - name: web
+          port: 4443
+---
+# a younger route on a host another already serves is refused there
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: late
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:03Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: live
+  rules:
+    - backendRefs:
+        - name: origin-b
+          port: 4443

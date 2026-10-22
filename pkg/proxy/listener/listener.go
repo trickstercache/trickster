@@ -261,6 +261,10 @@ func (lg *Group) SetIPACL(name string, list *ipacl.List, aclName string) {
 		l.ipacl.Store(list)
 		l.ipaclDecisions.Store(slot)
 		delete(lg.pendingACL, name)
+		// a protocol with no accept of its own, such as one served on a shared QUIC endpoint, judges peers itself
+		if u, ok := protocolTarget(l).(ipaclUpdater); ok {
+			u.UpdateIPACL(list)
+		}
 		return
 	}
 	if lg.pendingACL == nil {
@@ -535,7 +539,8 @@ func (lg *Group) DrainAndCloseContext(ctx context.Context, listenerName string) 
 	lg.listenersLock.Unlock()
 	defer l.setState(StateStopped)
 
-	if l.Listener == nil && l.packetConn == nil {
+	// a member of a shared datagram endpoint owns no socket of its own, only its server
+	if l.Listener == nil && l.packetConn == nil && l.server == nil {
 		return trerr.ErrNilListener
 	}
 	if l.server == nil {

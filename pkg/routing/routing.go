@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
@@ -751,20 +752,11 @@ func newAccessLogger(conf *config.Config, o *bo.Options) *accesslog.Logger {
 	if o == nil {
 		return nil
 	}
-	opts := o.AccessLog
-	if opts == nil && conf != nil {
-		opts = conf.AccessLog
+	var fallback *alo.Options
+	if conf != nil {
+		fallback = conf.AccessLog
 	}
-	if !opts.IsEnabled() {
-		return nil
-	}
-	al, err := accesslog.NewLogger(opts, instanceID(conf), o.Name, o.Provider)
-	if err != nil {
-		logger.Error("access logger creation failed; access logging disabled",
-			logging.Pairs{keys.BackendName: o.Name, keys.Error: err.Error()})
-		return nil
-	}
-	return al
+	return accesslog.ForBackend(o.AccessLog, fallback, instanceID(conf), o.Name, o.Provider)
 }
 
 // RouterAccessLogger returns a logger for requests no backend route handles,

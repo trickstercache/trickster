@@ -79,7 +79,7 @@ func TestPoliciesMerge(t *testing.T) {
 }
 
 func TestPolicyValueParsers(t *testing.T) {
-	for _, v := range []string{"prometheus", "influxdb", "clickhouse", "graphite"} {
+	for _, v := range []string{"prometheus", "influxdb", "clickhouse", "graphite", "moq"} {
 		p, err := Provider(v)
 		require.NoError(t, err)
 		require.Equal(t, v, p)
@@ -206,8 +206,15 @@ func TestPoliciesBind(t *testing.T) {
 	require.Equal(t, "TricksterCachePolicy/shop/svc", m.BindMember(src, 0, plain, target))
 	require.Empty(t, m.BindMember(src, 0, plain, ir.ServiceTarget{Namespace: "shop", Name: "none"}))
 
+	// a provider is read without adding the policy to the model
+	before := len(model.Policies)
+	require.Equal(t, "prometheus", m.Provider(TargetHTTPRoute, "shop", "web", ""))
+	require.Empty(t, m.Provider(TargetService, "shop", "none", ""))
+	require.Len(t, model.Policies, before)
+
 	// nothing binds without a source, and nothing is reported without a collector
 	none := NewPolicies(&ir.IR{}, nil, nil)
+	require.Empty(t, none.Provider(TargetHTTPRoute, "shop", "web", ""))
 	require.Empty(t, none.Attach(TargetHTTPRoute, "shop", "web", ""))
 	require.Empty(t, none.Bind(src, 0, clash))
 	quiet := NewPolicies(&ir.IR{}, s, nil)

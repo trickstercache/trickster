@@ -65,15 +65,39 @@ endpoint keeps serving HTTP/1.1 and HTTP/2 for clients that do not upgrade.
 Protocol-upgrade requests (`Connection: Upgrade`) are not advertised, since such
 a request hijacks its connection before response headers matter.
 
+## WebTransport
+
+While a [`moq` backend](./moq.md) uses the listener, its HTTP/3 endpoint also
+serves WebTransport (draft-ietf-webtrans-http3), which browsers use to reach a
+MoQ relay. Each WebTransport session arrives as an Extended CONNECT request and
+is routed like any other request, so the backend's `paths`, `hosts`,
+`authenticator_name` and ACLs apply to it. A reload that binds or unbinds a
+`moq` backend changes how new connections are served, without restarting the
+endpoint or touching the connections already open.
+
+A WebTransport connection cannot carry an HTTP/3 GOAWAY, because WebTransport
+owns its control stream, so draining such an endpoint closes each connection
+once it carries no request. A WebTransport session counts as a request for its
+whole life, and whatever is still open when the drain timeout ends is closed.
+
+## Sharing the UDP port
+
+The HTTP/3 endpoint may share its UDP address and port with a `protocol: moq`
+listener ([moq.md](./moq.md)): each QUIC connection is handed to the listener
+whose protocol it negotiated (`h3` or a `moqt-NN` draft), and each listener
+keeps its own certificates and routes. A `protocol: udp` listener cannot share
+the port.
+
 ## Limitations
 
 - **No protocol upgrades.** HTTP/3 has no equivalent of the HTTP/1.1 `101
   Switching Protocols` handshake; RFC 9114 4.2 makes connection-specific headers
-  malformed. WebSockets over HTTP/3 use Extended CONNECT (RFC 9220), which is
-  not implemented. Send WebSocket traffic over the TCP endpoint, which supports
-  it fully.
+  malformed. WebSockets over HTTP/3 use Extended CONNECT (RFC 9220), which
+  Trickster serves only for WebTransport sessions to a `moq` backend. Send
+  WebSocket traffic over the TCP endpoint, which supports it fully.
 - **Inbound only.** Trickster speaks HTTP/1.1 or HTTP/2 to origins regardless of
-  the protocol a client used to reach it. This matches Traefik; among major
+  the protocol a client used to reach it, except that a `moq` backend reaches a
+  WebTransport origin over HTTP/3. This matches Traefik; among major
   proxies only Envoy implements HTTP/3 to upstreams, and it needs `Alt-Svc`
   caching plus TCP fallback to do so safely.
 - **UDP must reach the listener.** Some networks block or throttle UDP/443.
@@ -100,7 +124,9 @@ sysctls the warning is unactionable and can be silenced with
 
 The HTTP/3 listener participates in the same reload and drain lifecycle as every
 other listener. Route changes are hot-swapped without rebinding the socket;
-changing the bound or advertised port restarts just that endpoint.
+changing the bound or advertised port restarts just that endpoint. A drained or
+removed endpoint releases its UDP port, so a later reload can bind it again;
+before 2.2, the port stayed bound until the process exited.
 
 ## Trying it locally
 

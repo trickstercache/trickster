@@ -218,10 +218,16 @@ func (d *document) rewriter(name string, instructions [][]string) {
 }
 
 type listenerDoc struct {
-	Protocol        string `yaml:"protocol,omitempty"`
-	Port            int    `yaml:"port,omitempty"`
-	TLSListenPort   int    `yaml:"tls_port,omitempty"`
-	TLSRuntimeCerts bool   `yaml:"tls_runtime_certs,omitempty"`
+	Protocol        string    `yaml:"protocol,omitempty"`
+	Port            int       `yaml:"port,omitempty"`
+	TLSListenPort   int       `yaml:"tls_port,omitempty"`
+	TLSRuntimeCerts bool      `yaml:"tls_runtime_certs,omitempty"`
+	HTTP3           *http3Doc `yaml:"http3,omitempty"`
+	IPACLName       string    `yaml:"ip_acl_name,omitempty"`
+}
+
+type http3Doc struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type backendDoc struct {
@@ -253,6 +259,7 @@ type backendDoc struct {
 	PreserveHost         bool         `yaml:"preserve_host,omitempty"`
 	Paths                []*pathDoc   `yaml:"paths,omitempty"`
 	ALB                  *albDoc      `yaml:"alb,omitempty"`
+	MoQ                  *moqDoc      `yaml:"moq,omitempty"`
 }
 
 type pathDoc struct {
@@ -349,6 +356,7 @@ type tlsDoc struct {
 	ServerName              string `yaml:"server_name,omitempty"`
 	CertificateAuthorityPEM string `yaml:"certificate_authority_pem,omitempty"`
 	ExcludeSystemRoots      bool   `yaml:"exclude_system_roots,omitempty"`
+	InsecureSkipVerify      bool   `yaml:"insecure_skip_verify,omitempty"`
 }
 
 type albPoolDoc struct {
@@ -382,8 +390,9 @@ func buildDocument(model *ir.IR, opts *kubecfg.Options, providers ProviderPaths,
 		idx.listeners[l.Name] = CompiledListenerName(l)
 		idx.ports[l.Name] = l.Port
 	}
-	// stream routes are relayed whole rather than planned by path, so they are compiled apart
-	httpRoutes, streamRoutes := splitRoutes(c.Routes)
+	// stream and moq routes are relayed whole rather than planned by path, so they are compiled apart
+	routes, moqRoutes := splitMoQRoutes(c.Routes)
+	httpRoutes, streamRoutes := splitRoutes(routes)
 	planned := *c
 	planned.Routes = httpRoutes
 	if err := compileRoutes(doc, &planned, idx, opts); err != nil {
@@ -392,6 +401,7 @@ func buildDocument(model *ir.IR, opts *kubecfg.Options, providers ProviderPaths,
 	if err := compileStreamRoutes(doc, streamRoutes, idx, opts); err != nil {
 		return nil, err
 	}
+	compileMoQRoutes(doc, moqRoutes, idx, opts)
 	bindUnusedListeners(doc)
 	return doc, nil
 }
@@ -492,10 +502,18 @@ func compileListeners(listeners []ir.Listener) map[string]*listenerDoc {
 			out[name] = &listenerDoc{
 				TLSListenPort: l.Port, TLSRuntimeCerts: true,
 			}
+			if l.HTTP3 {
+				out[name].HTTP3 = &http3Doc{Enabled: true}
+			}
 			continue
 		}
 		if ir.IsStream(l.Protocol) {
 			out[name] = &listenerDoc{Protocol: l.Protocol, Port: l.Port}
+			continue
+		}
+		if l.Protocol == ir.ProtocolMoQ {
+			// as on an https listener, certificates arrive at runtime from Secrets
+			out[name] = &listenerDoc{Protocol: l.Protocol, Port: l.Port, TLSRuntimeCerts: true}
 			continue
 		}
 		out[name] = &listenerDoc{Port: l.Port}

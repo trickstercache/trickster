@@ -19,6 +19,7 @@ package purge
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -131,6 +132,19 @@ func TestPathHandlerValidation(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, pathPrefix+"no-cache/path", nil)
 		PathHandler(pathPrefix, &local)(w, r)
 		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("moq backend", func(t *testing.T) {
+		// a moq backend's groups are keyed by track, which no path names
+		local := backends.Backends{
+			"relay": &fakeBackend{cfg: &bo.Options{Name: "relay", Provider: "moq"}, cache: newMemCache()},
+		}
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, pathPrefix+"relay/live", nil)
+		PathHandler(pathPrefix, &local)(w, r)
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not purged by path") {
 			t.Fatalf("status = %d body=%s", w.Code, w.Body.String())
 		}
 	})

@@ -42,10 +42,8 @@ go-mod-vendor:
 
 .PHONY: go-mod-tidy
 go-mod-tidy:
-	@set -e; for module in . integration integration/conformance; do \
-		if [ -f "$$module/go.mod" ]; then \
-			(cd "$$module" && $(GO) mod tidy); \
-		fi; \
+	@set -e; for mod in $$(git ls-files '*go.mod'); do \
+		(cd "$$(dirname "$$mod")" && $(GO) mod tidy); \
 	done
 
 .PHONY: test-go-mod
@@ -186,7 +184,7 @@ gofix-diff:
 
 LINT_FLAGS ?= 
 # TOOL_MODULES are the separate Go modules of the developer tools, which lint and gotest cover too
-TOOL_MODULES := hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/mimirseed
+TOOL_MODULES := hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/mimirseed hack/diagstreamer
 # tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
 # full set of linters is not run over them
 TEST_LINTERS := forbidigo,depguard,godox,goheader
@@ -407,6 +405,34 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
+# hack/diagstreamer generates a live diagnostic stream (it needs ffmpeg). DIAG_ARGS passes extra flags, such as
+# DIAG_ARGS="-renditions 1280x720@3M -title Lab", and the DIAG_* environment variables it reads also apply.
+DIAG_ARGS ?=
+DIAG_MOQ_URL ?= moqt://localhost:8490/
+DIAG_SNAPSHOT ?= diagstreamer.png
+DIAG_IMAGE ?= trickster-diagstreamer
+
+# serves live HLS and DASH, with a player page, at http://127.0.0.1:8496/
+.PHONY: diagstreamer
+diagstreamer:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer $(DIAG_ARGS)
+
+# publishes to the MoQ relay at DIAG_MOQ_URL, by default the developer Trickster's moq listener
+.PHONY: diagstreamer-moq
+diagstreamer-moq:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer -out moq -moq-url $(DIAG_MOQ_URL) -moq-insecure $(DIAG_ARGS)
+
+# writes the current frame to DIAG_SNAPSHOT and exits
+.PHONY: diagstreamer-snapshot
+diagstreamer-snapshot:
+	@$(GO) -C hack/diagstreamer run ./cmd/diagstreamer -snapshot $(abspath $(DIAG_SNAPSHOT)) $(DIAG_ARGS)
+
+# serves the HTTP stream from the Docker image, which needs no local ffmpeg
+.PHONY: diagstreamer-docker
+diagstreamer-docker:
+	@docker build -q -t $(DIAG_IMAGE) hack/diagstreamer >/dev/null
+	@docker run --rm -it -p 127.0.0.1:8496:8496 -v "$(CURDIR)":/repo:ro $(DIAG_IMAGE) $(DIAG_ARGS)
+
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
@@ -427,7 +453,7 @@ COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
 DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite \
-	mimir thanos
+	mimir thanos moq
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -468,10 +494,20 @@ developer-start: developer-credentials
 	$(call wait_ready,mimir_west,http://127.0.0.1:11081/ready,120)
 	$(call wait_ready,thanos_query,http://127.0.0.1:11903/-/ready,120)
 
-# developer-start-<profile> starts the always-on services plus that one TSDB backend
+# developer-start-<profile> starts the always-on services plus that one backend
 .PHONY: $(DEVELOPER_START_TARGETS)
 $(DEVELOPER_START_TARGETS): developer-start-%:
 	@$(MAKE) developer-start COMPOSE_PROFILES=$*
+
+# developer-moq runs the MoQ harness: moq-dev's relay, diagstreamer publishing into it, and Trickster in the
+# foreground serving the player at https://localhost:8583/player/, which developer-moq-browser opens in Chrome
+.PHONY: developer-moq
+developer-moq: dev-certs
+	@hack/developer-moq.sh up $(ARGS)
+
+.PHONY: developer-moq-browser
+developer-moq-browser: dev-certs
+	@hack/developer-moq.sh browser
 
 .PHONY: developer-stop
 developer-stop:
@@ -593,13 +629,15 @@ kind-integration-gateway:
 	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k "$$crds/config/crd/experimental"
 	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway-moq.yaml
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-annotations.yaml
 	@ip=$$(kubectl --context kind-$(KIND_CLUSTER) get node $(KIND_CLUSTER)-worker \
 		-o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}') && \
 	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it patch service trickster-gateway \
 		-p "{\"spec\":{\"externalIPs\":[\"$$ip\"]}}"
 	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
-		deployment/trickster-gateway deployment/webecho-canary deployment/httpbin --timeout=180s
+		deployment/trickster-gateway deployment/webecho-canary deployment/httpbin \
+		deployment/moq-relay --timeout=180s
 
 # Runs every kind scenario against the running cluster, once all three deploy
 # targets above have been applied

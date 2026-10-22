@@ -1,0 +1,106 @@
+# The MoQ Gateway scenario (TestGatewayMoQKind), applied by
+# `make kind-integration-gateway` after gateway.yaml: a moq-relay origin behind a
+# trickstercache.org/moq listener on port 9444, which a UDPRoute attaches to. The
+# test publishes random objects to the origin directly on NodePort 30090 and
+# subscribes through the Gateway on NodePort 30089, both QUIC over UDP.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: moq-relay
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: moq-relay
+  template:
+    metadata:
+      labels:
+        app: moq-relay
+    spec:
+      # Numeric IDs and strict groups avoid resolving the Nix image's absolute
+      # /etc/passwd symlink, which containerd rejects.
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        supplementalGroupsPolicy: Strict
+      containers:
+        - name: moq-relay
+          image: moqdev/moq-relay:0.17.5@sha256:a14382211dc588da7345802a49ff52ef5bcea16ca83608a9ff01be9801532d5f
+          # a self-signed certificate, which the generated backend accepts since no
+          # BackendTLSPolicy names the Service
+          args:
+            - --listen=[::]:4443
+            - --listen-tls-generate=localhost
+            - --auth-public=**
+          ports:
+            - name: moq
+              containerPort: 4443
+              protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: moq-relay
+  namespace: trickster-it
+spec:
+  selector:
+    app: moq-relay
+  ports:
+    - name: moq
+      port: 4443
+      targetPort: moq
+      protocol: UDP
+---
+# the origin as the host reaches it, for the test's publisher
+apiVersion: v1
+kind: Service
+metadata:
+  name: moq-relay-direct
+  namespace: trickster-it
+spec:
+  type: NodePort
+  selector:
+    app: moq-relay
+  ports:
+    - name: moq
+      port: 4443
+      targetPort: moq
+      protocol: UDP
+      nodePort: 30090
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: media
+  namespace: trickster-it
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: moq
+      port: 9444
+      protocol: trickstercache.org/moq
+      hostname: moq.example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          # created by TestGatewayMoQKind
+          - kind: Secret
+            name: moq-tls
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: live
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: media
+      sectionName: moq
+  rules:
+    - backendRefs:
+        - name: moq-relay
+          port: 4443

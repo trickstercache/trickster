@@ -33,6 +33,7 @@ type PolicySource interface {
 const (
 	TargetGateway   = ir.KindGateway
 	TargetHTTPRoute = ir.KindHTTPRoute
+	TargetUDPRoute  = ir.KindUDPRoute
 	TargetService   = "Service"
 	TargetIngress   = ir.KindIngress
 )
@@ -88,6 +89,17 @@ func (m *Policies) Attach(kind, namespace, name, section string) string {
 		return ""
 	}
 	return m.Add(*p)
+}
+
+// Provider returns the provider of the cache policy governing a target without adding the policy to the model
+func (m *Policies) Provider(kind, namespace, name, section string) string {
+	if m.source == nil {
+		return ""
+	}
+	if p, ok := m.source.Lookup(kind, namespace, name, section); ok {
+		return p.Provider
+	}
+	return ""
 }
 
 // Merge returns the policy combining the named ones, least specific first, minting it the first

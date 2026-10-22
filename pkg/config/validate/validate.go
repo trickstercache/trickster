@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
@@ -390,6 +391,12 @@ func Listeners(c *config.Config) error {
 				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
 			}
 		}
+		if strings.EqualFold(backend.Provider, providers.MoQ) && backend.OriginURL == "" && backend.MoQ != nil &&
+			(backend.MoQ.Upstream == nil || backend.MoQ.Upstream.ALB == "") &&
+			(backend.MoQ.Publish == nil || !backend.MoQ.Publish.Enabled) {
+			addWarning(c, fmt.Sprintf("moq backend %q has no origin_url and does not accept publishers "+
+				"(moq.publish.enabled), so it serves nothing", backendName))
+		}
 		if nativeTargets[backendName] && len(backend.ListenerNames) == 0 {
 			continue
 		}
@@ -432,6 +439,7 @@ func Listeners(c *config.Config) error {
 	}
 
 	ports := make(map[string]string)
+	quicPorts := make(map[string]map[string]string)
 	for name, options := range c.Listeners {
 		if name == "" || options == nil {
 			return stderrors.New("invalid empty listener configuration")
@@ -443,11 +451,19 @@ func Listeners(c *config.Config) error {
 		if options.Protocol != listener.ProtocolHTTP && options.TLSListenPort > 0 {
 			return fmt.Errorf("listener %q cannot configure a TLS port for protocol %q", name, options.Protocol)
 		}
-		if options.Protocol != listener.ProtocolHTTP && options.TLSRuntimeCerts {
+		if options.Protocol != listener.ProtocolHTTP && options.Protocol != listener.ProtocolMoQ &&
+			options.TLSRuntimeCerts {
 			return fmt.Errorf("listener %q cannot use tls_runtime_certs with protocol %q", name, options.Protocol)
 		}
-		if options.Protocol != listener.ProtocolHTTP && !options.IsStream() && mapped[name] > 1 {
+		if options.Protocol != listener.ProtocolHTTP && options.Protocol != listener.ProtocolMoQ &&
+			!options.IsStream() && mapped[name] > 1 {
 			return fmt.Errorf("listener %q with protocol %q can map to only one backend", name, options.Protocol)
+		}
+		if options.Protocol == listener.ProtocolMoQ {
+			if err := moqRoutes(c, name); err != nil {
+				return err
+			}
+			warnMoQListener(c, name, options)
 		}
 		if options.Stream != nil && !options.IsStream() {
 			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
@@ -531,6 +547,11 @@ func Listeners(c *config.Config) error {
 		if !builtIn && mapped[name] == 0 {
 			addWarning(c, fmt.Sprintf("listener %q is unused and will not be started", name))
 		}
+		if options.Protocol == listener.ProtocolMoQ && options.Active && !tlsMapped[name] && !options.TLSRuntimeCerts {
+			return fmt.Errorf("listener %q with protocol %q needs a certificate: a backend it serves must set "+
+				"tls.full_chain_cert_path and tls.private_key_path, or the listener tls_runtime_certs",
+				name, options.Protocol)
+		}
 
 		runtimeCerts := options.TLSRuntimeCerts || acmeOnDemandListener(c, name)
 		if options.TLSListenPort > 0 && !tlsMapped[name] && !runtimeCerts {
@@ -550,10 +571,18 @@ func Listeners(c *config.Config) error {
 				"listener %q HTTP/3 is disabled because it requires an http listener with a TLS port", name))
 			options.HTTP3.Enabled = false
 		}
+		if options.Protocol == listener.ProtocolHTTP && options.Active && !options.HTTP3Enabled() {
+			webTransportWarnings(c, name, mappedProviders[name])
+		}
 
 		// a port is reserved in its transport's space: a udp listener and an HTTP/3 endpoint
 		// bind UDP, everything else TCP, so a tcp and a udp listener may share a port number
-		if options.Active && options.ListenPort > 0 {
+		if options.Active && options.ListenPort > 0 && options.Protocol == listener.ProtocolMoQ {
+			if err := reserveQUICPort(ports, quicPorts, name, options.ListenAddress, options.ListenPort,
+				codec.ALPNs(options.MoQ.Drafts)); err != nil {
+				return err
+			}
+		} else if options.Active && options.ListenPort > 0 {
 			transport := transportTCP
 			if options.Protocol == listener.ProtocolUDP {
 				transport = transportUDP
@@ -570,7 +599,7 @@ func Listeners(c *config.Config) error {
 			}
 		}
 		if h3Address, h3Port, _ := options.HTTP3Endpoint(); options.Active && h3Port > 0 {
-			if err := reserveListenerPort(ports, name, transportUDP, h3Address, h3Port); err != nil {
+			if err := reserveQUICPort(ports, quicPorts, name, h3Address, h3Port, []string{alpnH3}); err != nil {
 				return err
 			}
 		}
@@ -584,10 +613,55 @@ func Listeners(c *config.Config) error {
 	if err := validateIPACLPlacements(c); err != nil {
 		return err
 	}
+	if err := moqUpstreamALBs(c, streamALBs); err != nil {
+		return err
+	}
+	warnMoQBackends(c)
 	if err := validateRateLimitPlacements(c); err != nil {
 		return err
 	}
 	return requestALBs(c, streamALBs)
+}
+
+func moqUpstreamALBs(c *config.Config, streamALBs sets.Set[string]) error {
+	// an alb a moq backend reaches its origins through picks one member per track, from moq backends with origins;
+	// failed connects to them can eject a member, so of the stream options it takes passive_health
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !strings.EqualFold(o.Provider, providers.MoQ) || o.MoQ == nil ||
+			o.MoQ.Upstream == nil || o.MoQ.Upstream.ALB == "" {
+			continue
+		}
+		albName := o.MoQ.Upstream.ALB
+		a := c.Backends[albName]
+		switch {
+		case a == nil:
+			return fmt.Errorf("moq backend %q: moq.upstream.alb names undefined backend %q", name, albName)
+		case a.Provider != providers.ALB || a.ALBOptions == nil:
+			return fmt.Errorf("moq backend %q: moq.upstream.alb %q is not an alb backend", name, albName)
+		case a.ALBOptions.UserRouter != nil || !albregistry.Supports(a.ALBOptions.MechanismName, albtypes.PlaneNative):
+			return fmt.Errorf("moq backend %q: alb backend %q must use a mechanism that picks one member: %s",
+				name, albName, strings.Join(albregistry.Supporting(albtypes.PlaneNative), ", "))
+		case a.ALBOptions.Discovery != nil:
+			return fmt.Errorf("moq backend %q: alb backend %q cannot use discovery for moq origins", name, albName)
+		case len(a.ALBOptions.Pool) == 0:
+			return fmt.Errorf("moq backend %q: alb backend %q has no pool", name, albName)
+		case a.ALBOptions.Stream != nil && (a.ALBOptions.Stream.ConnectRetries != 0 ||
+			a.ALBOptions.Stream.RaceWidth != 0):
+			return fmt.Errorf("alb backend %q: of the stream options, moq origins take only passive_health", albName)
+		}
+		if a.ALBOptions.Stream != nil {
+			streamALBs.Set(albName)
+		}
+		for _, m := range a.ALBOptions.Pool {
+			if member := c.Backends[m.Name]; member == nil || !strings.EqualFold(member.Provider, providers.MoQ) ||
+				member.OriginURL == "" {
+				return fmt.Errorf("moq backend %q: every pool member of alb backend %q must be a moq backend "+
+					"with an origin_url: %q is not", name, albName, m.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // sessionBalancer validates an ALB that a native protocol listener maps to without a user
@@ -898,7 +972,9 @@ func validateIPACLPlacements(c *config.Config) error {
 			return fmt.Errorf("backend %q path %q uses ip acl %q with action drop, which is not valid "+
 				"when the backend is served over http", backendName, path.Path, path.IPACLName)
 		}
-		if backend.IPACL != nil && servesNativeListener(c, backend, nativeListeners) {
+		// a moq listener judges each session by the acl of the backend it is routed to
+		if backend.IPACL != nil && !strings.EqualFold(backend.Provider, providers.MoQ) &&
+			servesNativeListener(c, backend, nativeListeners) {
 			addWarning(c, fmt.Sprintf("backend %q has ip acl %q and is served by a native listener: "+
 				"native sessions are judged by the listener acl only, though a ClickHouse native listener "+
 				"judges each query by this list, from the session's address",
@@ -974,6 +1050,168 @@ const (
 	transportTCP = "tcp"
 	transportUDP = "udp"
 )
+
+const alpnH3 = "h3"
+
+func reserveQUICPort(ports map[string]string, quicPorts map[string]map[string]string, listenerName, address string,
+	port int, alpns []string,
+) error {
+	// QUIC endpoints (HTTP/3 and moq) share an address:port, told apart by ALPN, but never with a plain udp listener
+	key := fmt.Sprintf("%s %s:%d", transportUDP, address, port)
+	claimed := quicPorts[key]
+	if claimed == nil {
+		if existing, ok := ports[key]; ok {
+			return fmt.Errorf("listeners %q and %q both use %s", existing, listenerName, key)
+		}
+		claimed = make(map[string]string)
+		quicPorts[key] = claimed
+		ports[key] = listenerName
+	}
+	for _, alpn := range alpns {
+		if owner, ok := claimed[alpn]; ok && owner != listenerName {
+			return fmt.Errorf("listeners %q and %q both serve %s on %s", owner, listenerName, alpn, key)
+		}
+		claimed[alpn] = listenerName
+	}
+	return nil
+}
+
+func webTransportWarnings(c *config.Config, listenerName string, mapped map[string]string) {
+	// a moq backend on an http listener accepts only WebTransport sessions, which need the listener's HTTP/3; one
+	// that is an alb's pool member may be there only by default, serving as an origin
+	members := c.Backends.PoolMembers()
+	for _, backendName := range slices.Sorted(maps.Keys(mapped)) {
+		if mapped[backendName] == providers.MoQ && !members.Contains(backendName) {
+			addWarning(c, fmt.Sprintf("listener %q has no HTTP/3 endpoint, so WebTransport sessions cannot reach "+
+				"moq backend %q through it; enable http3 on the listener", listenerName, backendName))
+		}
+	}
+}
+
+func warnMoQBackends(c *config.Config) {
+	// a MoQ session has no HTTP response to shape or request to mirror, and only a WebTransport CONNECT is a request
+	// to rewrite; these settings are warned of rather than refused, since none of them widens what a client reaches
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !strings.EqualFold(o.Provider, providers.MoQ) {
+			continue
+		}
+		var sessionless, connectOnly []string
+		if o.CORS != nil {
+			sessionless = append(sessionless, "cors")
+		}
+		if o.ReqRewriterName != "" {
+			connectOnly = append(connectOnly, "req_rewriter_name")
+		}
+		for _, p := range o.Paths {
+			if p == nil || p.HandlerName != providers.MoQ {
+				continue
+			}
+			for _, f := range []struct {
+				field string
+				set   bool
+				only  bool
+			}{
+				{"cors", p.CORS != nil, false},
+				{"response_headers", len(p.ResponseHeaders) > 0, false},
+				{"mirrors", len(p.Mirrors) > 0, false},
+				{"req_rewriter_name", p.ReqRewriterName != "", true},
+				{"request_headers", len(p.RequestHeaders) > 0, true},
+				{"request_params", len(p.RequestParams) > 0, true},
+			} {
+				switch {
+				case !f.set:
+				case f.only:
+					connectOnly = append(connectOnly, fmt.Sprintf("path %q %s", p.Path, f.field))
+				default:
+					sessionless = append(sessionless, fmt.Sprintf("path %q %s", p.Path, f.field))
+				}
+			}
+		}
+		if len(sessionless) > 0 {
+			addWarning(c, fmt.Sprintf("backend %q: %s have no effect on MoQ sessions", name,
+				strings.Join(sessionless, ", ")))
+		}
+		if len(connectOnly) > 0 {
+			addWarning(c, fmt.Sprintf("backend %q: %s apply only to a WebTransport session's CONNECT, and to no "+
+				"MoQT request or native session", name, strings.Join(connectOnly, ", ")))
+		}
+	}
+}
+
+func warnMoQListener(c *config.Config, name string, o *listener.Options) {
+	// these settings shape TCP connections and HTTP requests, which a moq listener has none of; its own moq block
+	// bounds its sessions
+	defaults := listener.New(name)
+	var ignored []string
+	for _, s := range []struct {
+		field string
+		set   bool
+	}{
+		{"connections_limit", o.ConnectionsLimit != 0},
+		{"max_request_body_size_bytes", o.MaxRequestBodySizeBytes != nil &&
+			(defaults.MaxRequestBodySizeBytes == nil || *o.MaxRequestBodySizeBytes != *defaults.MaxRequestBodySizeBytes)},
+		{"truncate_request_body_too_large", o.TruncateRequestBodyTooLarge},
+		{"read_header_timeout", o.ReadHeaderTimeout != defaults.ReadHeaderTimeout},
+		{"read_timeout", o.ReadTimeout != 0},
+		{"idle_timeout", o.IdleTimeout != defaults.IdleTimeout},
+		{"max_header_bytes", o.MaxHeaderBytes != 0},
+		{"proxy_protocol", o.ProxyProtocol},
+		{"trusted_proxies", len(o.TrustedProxies) > 0},
+		{"http3", o.HTTP3 != nil},
+	} {
+		if s.set {
+			ignored = append(ignored, s.field)
+		}
+	}
+	if len(ignored) > 0 {
+		addWarning(c, fmt.Sprintf("listener %q: %s has no effect on a moq listener; its moq block sets session limits "+
+			"and timeouts", name, strings.Join(ignored, ", ")))
+	}
+}
+
+func moqRoutes(c *config.Config, listenerName string) error {
+	// sessions are routed by the AUTHORITY and PATH of their SETUP, so no two backends may claim the same pair
+	claims := make(map[string]string)
+	members := c.Backends.PoolMembers()
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !o.UsesListener(listenerName) || !strings.EqualFold(o.Provider, providers.MoQ) ||
+			members.Contains(name) {
+			continue
+		}
+		if o.AuthenticatorName != "" {
+			// a native session carries no HTTP credentials, so the authenticator would admit it unjudged
+			return fmt.Errorf("backend %q: authenticator_name does not apply to sessions on moq listener %q, "+
+				"which carry no HTTP credentials; authorize them with moq.authorization tokens, or serve the "+
+				"backend over WebTransport only", name, listenerName)
+		}
+		hosts := o.Hosts
+		if len(hosts) == 0 {
+			hosts = []string{""}
+		}
+		paths := []string{"/"}
+		if len(o.Paths) > 0 {
+			paths = paths[:0]
+			for _, p := range o.Paths {
+				if p != nil && p.Path != "" {
+					paths = append(paths, p.Path)
+				}
+			}
+		}
+		for _, h := range hosts {
+			for _, p := range paths {
+				key := strings.ToLower(h) + " " + p
+				if other, ok := claims[key]; ok {
+					return fmt.Errorf("listener %q: backends %q and %q both serve host %q and path %q",
+						listenerName, other, name, h, p)
+				}
+				claims[key] = name
+			}
+		}
+	}
+	return nil
+}
 
 func reserveListenerPort(ports map[string]string, listenerName, transport, address string,
 	port int,

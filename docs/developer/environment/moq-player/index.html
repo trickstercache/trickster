@@ -1,0 +1,128 @@
+<!doctype html>
+<!--
+  A MoQ player for the developer harness (make developer-moq). Trickster's static backend serves it on the
+  same origin as the moq backend's WebTransport endpoint. It lists the broadcasts the relay announces,
+  which exercises SUBSCRIBE_NAMESPACE, and plays the selected one with moq-dev's <moq-watch> element.
+
+  Query parameters: relay (the WebTransport URL, default /demo/ on this origin), name (a broadcast to play
+  without waiting for its announcement), and catalog (hang or msf, default from the broadcast's suffix).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trickster MoQ Player</title>
+<script type="importmap">
+{
+  "imports": {
+    "@moq/watch": "https://esm.sh/@moq/watch@0.6.2?deps=@moq/net@0.4.2,@moq/hang@0.5.2,@moq/json@0.4.2,@moq/msf@0.3.1,@moq/signals@0.2.5,@moq/loc@0.2.4",
+    "@moq/watch/element": "https://esm.sh/@moq/watch@0.6.2/element?deps=@moq/net@0.4.2,@moq/hang@0.5.2,@moq/json@0.4.2,@moq/msf@0.3.1,@moq/signals@0.2.5,@moq/loc@0.2.4",
+    "@moq/watch/ui": "https://esm.sh/@moq/watch@0.6.2/ui?deps=@moq/net@0.4.2,@moq/hang@0.5.2,@moq/json@0.4.2,@moq/msf@0.3.1,@moq/signals@0.2.5,@moq/loc@0.2.4"
+  }
+}
+</script>
+<style>
+  :root { color-scheme: dark; --bg: #111418; --panel: #1b2027; --text: #e6e9ee; --muted: #8b95a3; --accent: #4fa3ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: 260px 1fr; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  section { background: var(--panel); border-radius: 8px; padding: 12px; }
+  ul { list-style: none; margin: 8px 0 0; padding: 0; }
+  li button { width: 100%; text-align: left; background: none; border: 1px solid transparent; color: var(--text);
+    padding: 6px 8px; border-radius: 6px; font: 13px ui-monospace, monospace; cursor: pointer; }
+  li button[aria-pressed="true"] { border-color: var(--accent); }
+  .muted { color: var(--muted); font-size: 12px; }
+  select { background: var(--bg); color: var(--text); border: 1px solid var(--muted); border-radius: 4px; }
+  moq-watch canvas { width: 100%; height: auto; display: block; background: #000; }
+</style>
+</head>
+<body>
+<main>
+  <section>
+    <h1>Broadcasts</h1>
+    <div class="muted">relay <span id="relay"></span></div>
+    <div class="muted">connection <span id="status">loading</span></div>
+    <ul id="broadcasts"></ul>
+    <p class="muted" id="empty">Waiting for announcements.</p>
+    <label class="muted">catalog
+      <select id="catalog">
+        <option value="">from the name</option>
+        <option value="hang">hang</option>
+        <option value="msf">msf</option>
+      </select>
+    </label>
+  </section>
+  <section>
+    <h1 id="playing">Nothing selected</h1>
+    <div id="player"></div>
+    <p class="muted">Click the picture to start audio.</p>
+  </section>
+</main>
+<script type="module">
+import "@moq/watch/element";
+import "@moq/watch/ui";
+import { Net } from "@moq/watch";
+
+const params = new URLSearchParams(location.search);
+const relay = new URL(params.get("relay") ?? "/demo/", location.href);
+const $ = (id) => document.getElementById(id);
+$("relay").textContent = relay.href;
+$("catalog").value = params.get("catalog") ?? "";
+
+let selected = "";
+const live = new Set();
+
+function play(name) {
+  selected = name;
+  $("playing").textContent = name;
+  const watch = document.createElement("moq-watch");
+  watch.setAttribute("url", relay.href);
+  watch.setAttribute("name", name);
+  const catalog = $("catalog").value || (name.endsWith(".msf") ? "msf" : "hang");
+  watch.setAttribute("catalog-format", catalog);
+  watch.appendChild(document.createElement("canvas"));
+  const ui = document.createElement("moq-watch-ui");
+  ui.appendChild(watch);
+  $("player").replaceChildren(ui);
+  render();
+}
+
+function render() {
+  const items = [...live].sort().map((name) => {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.setAttribute("aria-pressed", String(name === selected));
+    b.onclick = () => play(name);
+    const li = document.createElement("li");
+    li.appendChild(b);
+    return li;
+  });
+  $("broadcasts").replaceChildren(...items);
+  $("empty").hidden = live.size > 0;
+}
+
+$("catalog").onchange = () => selected && play(selected);
+
+const connection = new Net.Connection({ url: relay });
+setInterval(() => {
+  const err = connection.error.peek();
+  $("status").textContent = connection.status.peek() + (err ? ` (${err.message})` : "");
+}, 500);
+
+if (params.get("name")) play(params.get("name"));
+
+// every announcement adds its broadcast and a retraction removes it; the first one announced plays
+const announced = connection.announced();
+for (;;) {
+  const update = await announced.next();
+  if (!update) break;
+  if (update.kind === "retracted") live.delete(update.prefix);
+  else live.add(update.prefix);
+  if (!selected && live.size > 0) play([...live].sort()[0]);
+  render();
+}
+</script>
+</body>
+</html>

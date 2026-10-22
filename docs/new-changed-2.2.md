@@ -24,7 +24,11 @@ Trickster 2.2 extends many of the new features introduced in 2.1, while adding s
 
 ## HTTP Reverse Proxy Cache, CDN and Streaming Media
 
-**PLANNED** - **Media over QUIC (MoQ)** -- In Trickster 2.1, we introduced support for HTTP/3 and QUIC. We now offer support for MoQ Relaying through the reverse proxy cache.
+**Media over QUIC (MoQ)** - Building on the HTTP/3 and QUIC support introduced in 2.1, Trickster is now a caching Media over QUIC Transport relay, for drafts -17 through -22. Native QUIC clients connect to a `protocol: moq` listener and browsers connect by WebTransport over HTTP/3. One upstream subscription per track fans out to every subscriber, the newest groups stay in memory and older ones in the cache for FETCH, and publishers can send tracks straight to Trickster. Origin pools, token authorization and the Kubernetes Gateway API are supported too. See [Media over QUIC](./moq.md) for details.
+
+**HTTP/3 on Kubernetes Gateways** - HTTPS listeners the Kubernetes controller generates now also serve HTTP/3, and WebTransport, on the same port number over UDP. Turn it off with `kubernetes.defaults.http3: false` or a GatewayClass's `http3` parameter. See [GatewayClass parameters](./kubernetes-gateway.md#gatewayclass-parameters).
+
+**HTTP/3 Port Release** - A reload that removes or drains an HTTP/3 endpoint now releases its UDP port. In 2.1, the port stayed bound until the process exited, so a later reload could not bind it again.
 
 **HTTP QUERY Method** - Trickster accepts and caches the `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html)), keyed on the request body. Time series query endpoints forward a `QUERY` to their origins as a `POST` and advertise `Accept-Query`. See [The QUERY Method](./paths.md#the-query-method).
 

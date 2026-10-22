@@ -38,8 +38,11 @@ func Decorate(backendName, backendProvider, path string, next http.Handler) http
 		next.ServeHTTP(observer, r)
 		statusClass := observer.StatusClass()
 
-		metrics.FrontendRequestDuration.WithLabelValues(backendName, backendProvider,
-			r.Method, path, statusClass).Observe(time.Since(n).Seconds())
+		// a CONNECT lasts as long as the tunnel or session it opens, which is no request's duration
+		if r.Method != http.MethodConnect {
+			metrics.FrontendRequestDuration.WithLabelValues(backendName, backendProvider,
+				r.Method, path, statusClass).Observe(time.Since(n).Seconds())
+		}
 		metrics.FrontendRequestStatus.WithLabelValues(backendName, backendProvider,
 			r.Method, path, statusClass).Inc()
 		metrics.FrontendRequestWrittenBytes.WithLabelValues(backendName, backendProvider,

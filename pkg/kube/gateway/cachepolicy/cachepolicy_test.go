@@ -225,6 +225,40 @@ func TestIndexLowersEveryField(t *testing.T) {
 		report[0].Ancestors[0].Ref)
 }
 
+func TestIndexMoQ(t *testing.T) {
+	// a relay caches tracks rather than HTTP responses: the fields only those have are reported, and the policy applies
+	p := policy("relay", 1, ref(KindUDPRoute, "native"), ref(KindHTTPRoute, "web"))
+	p.Spec = Spec{
+		TargetRefs: p.Spec.TargetRefs, Provider: "moq", CacheName: "objects", MaxTTL: "30s", LoadBalancing: "p2c",
+		Handler: "proxycache", NegativeCacheName: "api-errors", Timeout: "15s", CollapsedForwarding: "basic",
+		CacheKeyParams: []string{}, CacheKeyHeaders: []string{"X-Tenant"},
+		RequestHeaders: map[string]string{"X-A": "1"}, ResponseHeaders: map[string]string{"X-B": "2"},
+		CORS: &CORS{Mode: "disable"}, HealthMode: "probe", LoadBalancingKey: "client_ip", Sticky: "cookie",
+		ResultHeader: "Hide", StepAlignment: "truncate",
+	}
+	x := New([]*CachePolicy{p}, Config{Known: known()})
+	var ignored []string
+	for _, pr := range x.Problems() {
+		require.Contains(t, pr.Detail, "is ignored for provider moq")
+		ignored = append(ignored, strings.Fields(pr.Detail)[0])
+	}
+	require.Equal(t, []string{
+		"spec.handler", "spec.timeout", "spec.collapsedForwarding", "spec.cacheKeyParams",
+		"spec.cacheKeyHeaders", "spec.requestHeaders", "spec.responseHeaders", "spec.healthMode",
+		"spec.loadBalancingKey", "spec.sticky", "spec.resultHeader", "spec.stepAlignment", "spec.cors",
+	}, ignored)
+	for _, kind := range []string{KindUDPRoute, KindHTTPRoute} {
+		got, ok := x.Lookup(kind, "shop", map[string]string{KindUDPRoute: "native", KindHTTPRoute: "web"}[kind], "")
+		require.True(t, ok, kind)
+		require.Equal(t, "moq", got.Provider)
+		require.Equal(t, int64(30000), got.MaxTTLMS)
+	}
+	for _, a := range x.Report()[0].Ancestors {
+		status, _ := acceptedReason(t, a)
+		require.True(t, status, "%s is a target a moq policy may name", a.Ref.Kind)
+	}
+}
+
 func TestIndexRefusesAnInvalidSpecWhole(t *testing.T) {
 	// nothing of an invalid policy applies, and every target says why
 	cases := map[string]func(*Spec){

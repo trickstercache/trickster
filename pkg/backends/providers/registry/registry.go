@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/greptimedb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/moq"
 	"github.com/trickstercache/trickster/v2/pkg/backends/mysql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/postgres"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
@@ -46,6 +47,7 @@ func SupportedProviders() types.Lookup {
 		providers.Graphite:               graphite.NewClient,
 		providers.GreptimeDB:             greptimedb.NewClient,
 		providers.InfluxDB:               influxdb.NewClient,
+		providers.MoQ:                    moq.NewClient,
 		providers.MySQL:                  mysql.NewClient,
 		providers.Postgres:               postgres.NewClient,
 		providers.TimescaleDB:            postgres.NewClient,
@@ -69,6 +71,7 @@ var nativeListeners = func() native.Registry {
 	mysqlAdapter := mysql.NewNativeListenerAdapter(greptimedb.MySQLEngine())
 	clickhouseAdapter := clickhouse.NativeListenerAdapter()
 	influxdbAdapter := influxdb.NativeListenerAdapter()
+	moqAdapter := moq.NativeListenerAdapter()
 	// Every provider that speaks the PostgreSQL wire protocol shares one
 	// adapter; serving another one is a single engine added to this list.
 	pgwireAdapter := pgwire.NewNativeListenerAdapter(pgwire.NewEngines(
@@ -80,6 +83,7 @@ var nativeListeners = func() native.Registry {
 		mysqlAdapter.Protocol():      mysqlAdapter,
 		clickhouseAdapter.Protocol(): clickhouseAdapter,
 		influxdbAdapter.Protocol():   influxdbAdapter,
+		moqAdapter.Protocol():        moqAdapter,
 		pgwireAdapter.Protocol():     pgwireAdapter,
 	}
 }()

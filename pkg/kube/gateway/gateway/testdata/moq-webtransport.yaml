@@ -1,0 +1,363 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: gateway-params
+    namespace: infra
+---
+# https listeners serve HTTP/3 unless their class turns it off, and WebTransport needs it
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-params
+  namespace: infra
+data:
+  http3: "true"
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: tcp-only
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: no-http3
+    namespace: infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: no-http3
+  namespace: infra
+data:
+  http3: "false"
+---
+# a moq listener shares UDP port 443 with the https listener's HTTP/3 endpoint, each session dispatched by ALPN
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: web
+      port: 443
+      protocol: HTTPS
+      hostname: live.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+    - name: moq
+      port: 443
+      protocol: trickstercache.org/moq
+      hostname: moq.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+    - name: plain
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: legacy
+  namespace: infra
+  creationTimestamp: "2026-01-02T00:00:00Z"
+spec:
+  gatewayClassName: tcp-only
+  listeners:
+    - name: web
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: media-tls
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: media-tls
+  namespace: infra
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJMVENCMWFBREFnRUNBZ0VCTUFvR0NDcUdTTTQ5QkFNQ01CSXhFREFPQmdOVkJBTVRCMlpwZUhSMWNtVXcKSUJjTk1qQXdNVEF4TURBd01EQXdXaGdQTWpFd01EQXhNREV3TURBd01EQmFNQkl4RURBT0JnTlZCQU1UQjJacAplSFIxY21Vd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFSeFl6LzJreUdLaEs1MWtqcjFwSUJ3CnArWkxHanJZWVgvOEplYUxveHhEOEVzNGV0MTZlRG9kUk96ZVp1ZVNTUGwyQjR0cFFUeFJmRWFSMmc4MkVzbTYKb3hvd0dEQVdCZ05WSFJFRUR6QU5nZ3RsZUdGdGNHeGxMbU52YlRBS0JnZ3Foa2pPUFFRREFnTkhBREJFQWlBUApmMW5LZnp0WTlXcDdzVVltclZLQzFYUlpGN2FyOTIwbmtXeVJua3dlNWdJZ052UmdFVHE2SWsvVEprb2RNL0NJClZzS0ZDL2t1bmhpM3dvNG5uckczZTZvPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUVTc0g1RWRtc0x1bzdsdEJld2c4emt2TXRoeDMxV3FEcGd1NHV0d2RDNmpvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFY1dNLzlwTWhpb1N1ZFpJNjlhU0FjS2ZtU3hvNjJHRi8vQ1htaTZNY1EvQkxPSHJkZW5nNgpIVVRzM21ibmtrajVkZ2VMYVVFOFVYeEdrZG9QTmhMSnVnPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+---
+# a MoQ origin serves WebTransport over HTTP/3, so the port a moq rule reaches is a UDP one
+apiVersion: v1
+kind: Service
+metadata:
+  name: origin-a
+  namespace: media
+spec:
+  ports:
+    - name: https
+      port: 443
+    - name: h3
+      port: 443
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origin-b
+  namespace: media
+spec:
+  ports:
+    - name: h3
+      port: 443
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: origin-c
+  namespace: media
+spec:
+  ports:
+    - name: https
+      port: 443
+    - name: h3
+      port: 443
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: media
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+# on the route: each of its rules relays MoQ; a relay has no HTTP timeout, so that field is reported as ignored
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: live-relay
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  targetRefs:
+    - kind: HTTPRoute
+      name: live
+    - kind: HTTPRoute
+      name: tcp-origin
+  provider: moq
+  maxTTL: 30s
+  timeout: 5s
+---
+# on a Service: every rule reaching only it relays MoQ
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: origin-b-relay
+  namespace: media
+  creationTimestamp: "2026-01-02T00:00:00Z"
+spec:
+  targetRefs:
+    - kind: Service
+      name: origin-b
+  provider: moq
+---
+# on one port of a Service: a rule reaching that port number reaches the UDP port the policy names
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: origin-c-relay
+  namespace: media
+  creationTimestamp: "2026-01-03T00:00:00Z"
+spec:
+  targetRefs:
+    - kind: Service
+      name: origin-c
+      sectionName: h3
+  provider: moq
+---
+# two origins: an alb places each track on one of them
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: live
+  namespace: media
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: web
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /live
+      backendRefs:
+        - name: origin-a
+          port: 443
+          weight: 3
+        - name: origin-b
+          port: 443
+          weight: 1
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: vod
+  namespace: media
+  creationTimestamp: "2026-01-02T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: web
+  rules:
+    # a session is one CONNECT, so what shapes HTTP requests is reported and ignored
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /vod
+      filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            add:
+              - name: X-Edge
+                value: kube
+      timeouts:
+        request: 10s
+      backendRefs:
+        - name: origin-b
+          port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: by-port
+  namespace: media
+  creationTimestamp: "2026-01-03T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: web
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /by-port
+      backendRefs:
+        - name: origin-c
+          port: 443
+---
+# refusals: a listener without HTTP/3, a class turning it off, origins of two kinds, an origin with no UDP port
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plain
+  namespace: media
+  creationTimestamp: "2026-01-04T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: plain
+  rules:
+    - backendRefs:
+        - name: origin-b
+          port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: legacy
+  namespace: media
+  creationTimestamp: "2026-01-05T00:00:00Z"
+spec:
+  parentRefs:
+    - name: legacy
+      namespace: infra
+  rules:
+    - backendRefs:
+        - name: origin-b
+          port: 443
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: mixed
+  namespace: media
+  creationTimestamp: "2026-01-06T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: web
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mixed
+      backendRefs:
+        - name: origin-b
+          port: 443
+        - name: web
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tcp-origin
+  namespace: media
+  creationTimestamp: "2026-01-07T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: web
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /tcp
+      backendRefs:
+        - name: web
+          port: 8080
+---
+# the native listener beside it relays from the same origin over native QUIC
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: native
+  namespace: media
+  creationTimestamp: "2026-01-08T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: moq
+  rules:
+    - backendRefs:
+        - name: origin-a
+          port: 443

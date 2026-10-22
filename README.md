@@ -1,9 +1,8 @@
 # <img src="./docs/images/logos/trickster-horizontal.svg" width=550 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/trickstercache.svg?style=social&logo=twitter)](https://twitter.com/trickstercache)
 
-[![License](https://img.shields.io/github/license/trickstercache/trickster)](./LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
 [![build status](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml/badge.svg)](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml)
-[![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/2518/badge)](https://www.bestpractices.dev/projects/2518)
 [![GoDoc](https://godoc.org/github.com/trickstercache/trickster/v2?status.svg)](https://godoc.org/github.com/trickstercache/trickster/v2)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
 [![Slack](https://img.shields.io/badge/chat-on%20slack-green)](https://cloud-native.slack.com/archives/C022B11MMPE)
@@ -33,6 +32,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md)
+* A caching [Media over QUIC (MoQ) relay](./docs/moq.md) for live media, over native QUIC and WebTransport, with FETCH served from cache
 * [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting

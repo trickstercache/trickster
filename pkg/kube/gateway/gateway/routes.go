@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
@@ -60,8 +61,9 @@ type frontage struct {
 	policy    string
 	// hostnames is the union of the attachments' hostnames, or empty when
 	// any of them admitted every hostname
-	hostnames []string
-	anyHost   bool
+	hostnames    []string
+	anyHost      bool
+	webTransport bool
 }
 
 // appProtocolH2C is the Service port appProtocol the Gateway API reserves for cleartext HTTP/2
@@ -75,7 +77,10 @@ func frontages(attachments []attachment) []*frontage {
 			a.gateway.policy
 		f, ok := byKey[key]
 		if !ok {
-			f = &frontage{policy: a.gateway.policy}
+			f = &frontage{
+				policy:       a.gateway.policy,
+				webTransport: a.listener.protocol == ir.ProtocolHTTPS && a.listener.http3,
+			}
 			byKey[key] = f
 			out = append(out, f)
 		}
@@ -529,6 +534,16 @@ func (t *translator) emit(p *routePlan) {
 			rf.rule = t.dropUnreachableMirrors(p.src, rf.rule, mode, p.report)
 			group := t.backendGroup(p.src, ruleIndex, p.hr.Namespace, p.hr.Spec.Rules[k], rf,
 				p.report, matches, governing)
+			moq, refusal := t.moqRule(k, governing, group, u.frontage)
+			if refusal != "" {
+				t.reject(p.src, "%s", refusal)
+				p.report.unresolved(gwapiv1.RouteReasonUnsupportedProtocol, refusal)
+				continue
+			}
+			if moq && rf.shapesRequests() {
+				t.reject(p.src, "rule %d: filters, timeouts, retry and session persistence shape HTTP requests, "+
+					"which a %s relay's sessions are not, and are ignored", k, providers.MoQ)
+			}
 			at := sessionSite{host: u.host}
 			session := t.ruleSession(p.src, k, rf.session, group, mode, at)
 			t.memberSessions(p.src, &group, session != nil, mode, at)
@@ -864,6 +879,7 @@ func (t *translator) backendGroup(src ir.Source, ruleIndex int, namespace string
 		}
 		return g
 	}
+	moq := t.providerOf(governing...) == providers.MoQ
 	for j, ref := range rule.BackendRefs {
 		weight := 1
 		if ref.Weight != nil {
@@ -877,7 +893,8 @@ func (t *translator) backendGroup(src ir.Source, ruleIndex int, namespace string
 		if j < len(rf.refs) {
 			m.Filters = rf.refs[j]
 		}
-		target, tls, reason, why := t.resolveBackendRef(src.Kind, namespace, ref.BackendObjectReference)
+		target, tls, reason, why := t.resolveBackendRef(src.Kind, namespace, ref.BackendObjectReference,
+			t.refTransport(namespace, ref.BackendObjectReference, moq))
 		var policy, mode string
 		if reason == "" {
 			// the member's own policy is the last word on the routing mode, which decides
@@ -912,11 +929,11 @@ func (t *translator) backendGroup(src ir.Source, ruleIndex int, namespace string
 }
 
 func (t *translator) resolveBackendRef(routeKind, routeNS string,
-	ref gwapiv1.BackendObjectReference,
+	ref gwapiv1.BackendObjectReference, transport corev1.Protocol,
 ) (ir.ServiceTarget, *ir.BackendTLS, string, gwapiv1.RouteConditionReason) {
 	// A policy that cannot be honored makes the reference invalid, since
 	// connecting without the verification it asked for is worse.
-	out, reason, why := t.resolveService(routeKind, routeNS, ref, corev1.ProtocolTCP)
+	out, reason, why := t.resolveService(routeKind, routeNS, ref, transport)
 	if reason != "" {
 		return out, nil, reason, why
 	}
@@ -993,6 +1010,76 @@ func (t *translator) geoACLOf(policy string) string {
 		return o.Defaults.GeoACLName
 	}
 	return ""
+}
+
+func (t *translator) authenticatorOf(policy string) string {
+	if p := t.policies.Get(policy); p != nil && p.AuthenticatorName != "" {
+		return p.AuthenticatorName
+	}
+	if o := t.cfg.Options; o != nil && o.Defaults != nil {
+		return o.Defaults.AuthenticatorName
+	}
+	return ""
+}
+
+func (t *translator) providerOf(names ...string) string {
+	// the provider the named policies, least specific first, leave in force
+	var provider string
+	for _, n := range names {
+		if p := t.policies.Get(n); p != nil && p.Provider != "" {
+			provider = p.Provider
+		}
+	}
+	return provider
+}
+
+func (t *translator) refTransport(routeNS string, ref gwapiv1.BackendObjectReference, moq bool) corev1.Protocol {
+	// a MoQ origin serves WebTransport over HTTP/3, so a rule relaying MoQ, or a Service or port whose policy names
+	// the provider, reaches the Service on its UDP port
+	if moq {
+		return corev1.ProtocolUDP
+	}
+	ns, name := translate.NamespaceOf(ref.Namespace, routeNS), string(ref.Name)
+	if t.policies.Provider(translate.TargetService, ns, name, "") == providers.MoQ {
+		return corev1.ProtocolUDP
+	}
+	if svc := t.cfg.Cache.Service(ns, name); svc != nil && ref.Port != nil {
+		port, ok := translate.ServicePort(svc, translate.PortRef{Number: *ref.Port, Protocol: corev1.ProtocolUDP})
+		if ok && port.Name != "" && t.policies.Provider(translate.TargetService, ns, name, port.Name) == providers.MoQ {
+			return corev1.ProtocolUDP
+		}
+	}
+	return corev1.ProtocolTCP
+}
+
+func (t *translator) moqRule(ruleIdx int, governing []string, group ir.BackendGroup, f *frontage) (bool, string) {
+	// a rule relays MoQ when its policies, or those of every Service it reaches, name the provider; its
+	// WebTransport sessions arrive over HTTP/3, which only an https listener serving it carries
+	if len(group.Members) == 0 {
+		return false, ""
+	}
+	ruleMoQ := t.providerOf(governing...) == providers.MoQ
+	var moq, other int
+	for _, m := range group.Members {
+		switch {
+		case m.Invalid:
+		case ruleMoQ || t.providerOf(append(slices.Clone(governing), m.Policy)...) == providers.MoQ:
+			moq++
+		default:
+			other++
+		}
+	}
+	switch {
+	case !ruleMoQ && moq == 0:
+		return false, ""
+	case other > 0:
+		return true, fmt.Sprintf("rule %d: backendRefs mix %s origins with others, which one rule cannot relay",
+			ruleIdx, providers.MoQ)
+	case !f.webTransport:
+		return true, fmt.Sprintf("rule %d: provider %s needs an https listener serving HTTP/3, which its "+
+			"WebTransport sessions arrive over", ruleIdx, providers.MoQ)
+	}
+	return true, ""
 }
 
 // routingModeOf returns the routing mode the named policies, least specific first, leave in force

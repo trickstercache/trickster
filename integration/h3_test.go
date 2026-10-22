@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
@@ -94,7 +95,7 @@ func h3Harness(t *testing.T, originURL string) (tricksterHarness, string, int, *
 }
 
 func h3Client(pool *x509.CertPool) *http.Client {
-	return &http.Client{Transport: &http3.Transport{
+	return &http.Client{Transport: &http3.Transport{Dial: quicdial.DialAddrEarly,
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS13},
 	}}
 }

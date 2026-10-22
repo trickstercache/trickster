@@ -105,7 +105,7 @@ listeners:
     tls_runtime_certs: true
 ```
 
-Such a listener starts with an empty certificate store and fails handshakes until the first certificate is supplied. Certificates supplied at runtime are validated with the same pair-coherence checks as files, participate in SNI selection alongside any file-sourced certificates on the same listener, appear in the certificate inventory with source `memory`, and survive configuration reloads and file rotations: a reload replaces only the config-sourced certificates, and a rotation replaces only the file-sourced ones. `tls_runtime_certs` is valid only on `http` listeners.
+Such a listener starts with an empty certificate store and fails handshakes until the first certificate is supplied. Certificates supplied at runtime are validated with the same pair-coherence checks as files, participate in SNI selection alongside any file-sourced certificates on the same listener, appear in the certificate inventory with source `memory`, and survive configuration reloads and file rotations: a reload replaces only the config-sourced certificates, and a rotation replaces only the file-sourced ones. `tls_runtime_certs` is valid only on `http` and [`moq`](./moq.md) listeners; on a `moq` listener it serves QUIC handshakes with the supplied certificates in place of a backend's file pair.
 
 ## Certificate Inventory (mgmt)
 

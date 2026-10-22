@@ -278,6 +278,9 @@ type DefaultsOptions struct {
 	// StickySecretFile is the file that keys the session tokens generated ALBs issue, mounted
 	// the same on every replica; unset keys them per process, which suits one replica only
 	StickySecretFile string `yaml:"sticky_secret_file,omitempty"`
+	// HTTP3 serves every generated https listener over HTTP/3 too, on the same port number's UDP side,
+	// which WebTransport sessions need; true unless set false
+	HTTP3 *bool `yaml:"http3,omitempty"`
 }
 
 // New returns an Options with default values, as though an empty 'kubernetes:' section had
@@ -329,6 +332,14 @@ func (o *Options) RoutingMode() string {
 		return ""
 	}
 	return o.Defaults.RoutingMode
+}
+
+// HTTP3 reports whether generated https listeners also serve HTTP/3 when no class says otherwise
+func (o *Options) HTTP3() bool {
+	if o == nil || o.Defaults == nil || o.Defaults.HTTP3 == nil {
+		return true
+	}
+	return *o.Defaults.HTTP3
 }
 
 // Initialize applies defaults to a section supplied by configuration

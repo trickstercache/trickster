@@ -74,8 +74,9 @@ data:
 | `sticky_key` | what `table` mode keeps a client's endpoint by, from the `load_balancing_key` vocabulary; `client_ip` unless set, or when the route's listener cannot read it |
 | `sticky_ttl`, `sticky_idle` | a duration of at least `1s`: a session ends that long after it began (`1h` unless set), or once unused that long. A route's `sessionPersistence` does not use them |
 | `sticky_secret` | the name of a Secret, in the ConfigMap's namespace and labeled `trickstercache.org/sticky-key`, whose `key` entry keys every session token the class's ALBs issue; see [The session key](#the-session-key) |
+| `http3` | `true` or `false`: whether the class's `HTTPS` listeners also serve HTTP/3, on the same port number over UDP, which WebTransport sessions need; `kubernetes.defaults.http3` when unset, which is `true` unless set. Gateways of several classes sharing a port take the oldest Gateway's setting, and the others are told by Event |
 
-A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, and stream route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
+A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, stream, and MoQ route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
 
 A non-empty `rate_limiter_name` is copied onto the generated HTTP and gRPC route backends, in both routing modes. It is not copied onto stream route backends, pool members, endpoint templates, mirrors, or generated listeners. An empty value leaves `kubernetes.defaults.rate_limiter_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a limiter a generated HTTP route cannot use, cannot be honored: that class is not served. Another class keeps the parameters it can honor.
 
@@ -100,12 +101,18 @@ with no keys is a class with no overrides, and is served.
 Each Gateway listener becomes a Trickster listener bound to the declared
 port. `HTTP` opens a plaintext port; `HTTPS` opens a TLS port with
 `tls_runtime_certs`, whose certificates arrive from the referenced Secrets at
-runtime; `TCP`, `TLS` and `UDP` open a [stream listener](./configuring.md#stream-listeners)
-of the matching protocol, which relays what it receives without reading it.
+runtime, and serves [HTTP/3](./http3.md) on the same port number over UDP
+unless the class's `http3` parameter turns it off; `TCP`, `TLS` and `UDP` open a
+[stream listener](./configuring.md#stream-listeners) of the matching protocol,
+which relays what it receives without reading it; and the implementation-specific
+`trickstercache.org/moq` opens a MoQ listener (see [MoQ relays](#moq-relays)).
 Listeners on one port — within a Gateway or across Gateways — merge onto one
 Trickster listener, because a port can be bound once; a `UDP` listener binds
 in its own port space, so it may share a port number with a `TCP`, `TLS`,
-`HTTP` or `HTTPS` listener. Two listeners on one port must serve one
+`HTTP` or `HTTPS` listener. A `trickstercache.org/moq` listener binds UDP too,
+so it may not share a port with a `UDP` listener, while it shares one socket
+with the HTTP/3 side of an `HTTPS` listener on the same number, each QUIC
+connection dispatched by the protocol it negotiates. Two listeners on one port must serve one
 protocol; where they do not, the listener of the older Gateway (then the
 earlier listener) keeps the port and the other is reported and not served.
 Listeners of different Gateways on one port may share a hostname, or have
@@ -132,9 +139,10 @@ refuses before it reaches the controller.
 below. A `TCP` or `UDP` listener cannot carry one, since nothing in the
 stream names a host; a listener that declares one is refused with
 `UnsupportedValue`. A `TLS` listener's hostname is matched against the server
-name a client offers.
+name a client offers, and a `trickstercache.org/moq` listener's against the
+authority a session names.
 
-On an `HTTPS` listener `tls.mode` must be `Terminate` (the default). Every
+On an `HTTPS` or `trickstercache.org/moq` listener `tls.mode` must be `Terminate` (the default). Every
 `certificateRefs` entry must name a `kubernetes.io/tls` Secret, in the
 Gateway's namespace or in one whose ReferenceGrant permits it. A listener
 that cannot terminate TLS at all — no `tls` block, no `certificateRefs`, or
@@ -157,7 +165,7 @@ TCP is not served in this release.
 `Selector` against the labels of the route's Namespace. `allowedRoutes.kinds`
 may list the kinds the listener's protocol carries: `HTTPRoute` and
 `GRPCRoute` on `HTTP` and `HTTPS`, `TCPRoute` on `TCP`, `TLSRoute` on `TLS`
-and `UDPRoute` on `UDP`. Any other kind is reported as unsupported on the
+and `UDPRoute` on `UDP` and `trickstercache.org/moq`. Any other kind is reported as unsupported on the
 listener, and a listener admitting no supported kind admits no route.
 
 **Deviation:** `allowedRoutes` decides which routes attach to a listener; it
@@ -653,7 +661,9 @@ reference refuses its share without a lookup, and it is the Service's
 readiness that takes an endpoint out of rotation. The
 `health_mode` parameter does not apply to stream members, which are always
 judged by readiness, since no probe speaks the protocol they carry. A stream
-route caches nothing, and a `TricksterCachePolicy` cannot target one. It
+route caches nothing, and a `TricksterCachePolicy` cannot target a TCPRoute or
+TLSRoute; one on a UDPRoute applies only where a `trickstercache.org/moq`
+listener serves it ([MoQ relays](#moq-relays)), and is reported elsewhere. It
 reads only its routing mode, load balancing and sticky settings, from the
 class's parameters or a TricksterCachePolicy on its Gateway, and its routing
 mode also from `kubernetes.defaults.routing_mode`. A stream route's
@@ -668,6 +678,96 @@ The controller watches the three kinds only in a cluster whose experimental
 Gateway API channel serves them (`gateway.networking.k8s.io/v1alpha2`); see
 [kubernetes-rbac.md](./kubernetes-rbac.md). Their status is written as an
 HTTPRoute's is.
+
+## MoQ relays
+
+Trickster relays [Media over QUIC Transport](./moq.md) (MoQ) through a Gateway
+in two ways, each generating a `moq` backend:
+
+- **Native QUIC.** A `trickstercache.org/moq` listener opens a MoQ listener on
+  the declared UDP port. It terminates TLS as an `HTTPS` listener does, with
+  certificates supplied from the referenced Secrets at runtime, and carries
+  `UDPRoute`s. Each route is served with one rule, and the oldest route naming
+  a hostname on a port serves it, as a TLSRoute serves its server names. A
+  backendRef names a Service port carrying UDP where a native MoQ origin
+  listens, dialed as `moqt://<service>.<namespace>.svc:<port>/`.
+- **WebTransport.** An `HTTPRoute` rule whose `TricksterCachePolicy` names
+  `provider: moq` relays the WebTransport sessions browsers open. The policy
+  may target the route, the rule, or every Service the rule reaches (or one
+  port of each); a rule whose backendRefs mix MoQ origins with other Services
+  is refused. The rule's listener must be an `HTTPS` listener serving HTTP/3;
+  on any other the rule is refused, with `ResolvedRefs` `False` and reason
+  `UnsupportedProtocol`. Each match accepts sessions at and below its path (a
+  `RegularExpression` path as a pattern), and a backendRef names a Service
+  port carrying UDP where a WebTransport origin listens, dialed as
+  `https://<service>.<namespace>.svc:<port>/`. Filters, timeouts, retries and
+  session persistence shape HTTP requests, which a session is not, so they
+  are reported and ignored.
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: media
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: moq
+      port: 443
+      protocol: trickstercache.org/moq
+      hostname: live.example.com
+      tls:
+        certificateRefs:
+          - name: live-tls
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: live
+  namespace: media
+spec:
+  parentRefs:
+    - name: media
+      namespace: infra
+  rules:
+    - backendRefs:
+        - name: origin
+          port: 4443
+```
+
+A rule with several backendRefs relays each track from one of them: the
+generated backend reaches its origins through an ALB named for it with an
+`-origins` suffix, by `hrw` unless the policy's `loadBalancing` names `rr`,
+`p2c` or `lc`, apportioned by the backendRefs' weights. When an origin fails,
+its tracks move to the others, and an unresolved reference keeps its weight
+with an origin that never answers, so its tracks move too.
+
+The relay takes `cacheName` (where groups leaving the live edge are kept),
+`maxTTL` and `loadBalancing` from the class's parameters and the policies
+governing the route and its Services; the policy fields only HTTP responses
+have are reported as ignored when set (see
+[kubernetes-cache-policy.md](./kubernetes-cache-policy.md#moq-relays)).
+QUIC is always encrypted: without a BackendTLSPolicy on the Service, the
+origin's certificate is not verified, trusting the cluster network as a
+plaintext HTTP backend does, and with one it is verified against the
+policy's CA certificates and hostname. A relay always addresses the
+Service's cluster IP, whatever the routing mode, since it keeps each track
+on one origin for as long as it relays it. On a native listener, each
+route's generated backend carries the class's `ip_acl_name` (else
+`kubernetes.defaults.ip_acl_name`) and its geo ACL, as on any other route,
+and a session is judged by the lists of the backend it is routed to, so
+routes sharing the listener keep their own. A native session carries no
+HTTP credentials, so a class with an `authenticator_name` (or
+`kubernetes.defaults.authenticator_name`) does not serve its MoQ UDPRoutes:
+each is refused with `UnsupportedValue` rather than served
+unauthenticated. Serve them from a class without one.
+
+A client reaches a UDP port only where the Service in front of the
+controller publishes it. [gateway-service.yaml](../deploy/kube/gateway-service.yaml)
+publishes UDP 443 beside TCP 443, which carries HTTP/3, WebTransport and a
+`trickstercache.org/moq` listener on 443 alike; a listener on another port
+needs a UDP entry of its own.
 
 ## Endpoint routing mode
 
@@ -875,6 +975,9 @@ WebSocket and h2c backend protocols.
 | `XBackendTrafficPolicy` status and `retryConstraint` | Its `sessionPersistence` is honored; its status is not written back and `retryConstraint` is ignored |
 | `sessionPersistence` in the `service` routing mode | Kept only on a rule with several backendRefs, and then on the Service alone; see [Session persistence](#session-persistence) |
 | Rate limiting | Rate-limit at the load balancer in front, or at the origin |
+| MoQ publishing through a Gateway | A generated `moq` backend relays from its origins and accepts no publishers |
+| MoQ listener and relay tuning | Drafts, session limits, GOAWAY URIs and the live edge take their defaults |
+| MoQ relays in the `endpoint` routing mode | A relay addresses the Service's cluster IP; see [MoQ relays](#moq-relays) |
 
 ## Generated configuration
 

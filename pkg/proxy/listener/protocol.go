@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 )
 
 type protocolTLSUpdater interface {
@@ -42,6 +43,25 @@ type SessionGateUpdater interface {
 
 type protocolRestartKeyer interface {
 	ProtocolRestartKey() string
+}
+
+type protocolHolder interface {
+	ProtocolHandler() any
+}
+
+type ipaclUpdater interface {
+	UpdateIPACL(*ipacl.List)
+}
+
+func protocolTarget(l *Listener) any {
+	// a member of a shared QUIC endpoint holds the protocol server its reloads reach
+	if l == nil || l.server == nil {
+		return nil
+	}
+	if h, ok := l.server.(protocolHolder); ok {
+		return h.ProtocolHandler()
+	}
+	return l.server
 }
 
 // ProtocolServer is the lifecycle surface implemented by native protocol
@@ -108,11 +128,7 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 
 // UpdateProtocolTLSConfig rotates an in-band protocol server certificate.
 func (lg *Group) UpdateProtocolTLSConfig(listenerName string, config *tls.Config) bool {
-	l := lg.Get(listenerName)
-	if l == nil || l.server == nil {
-		return false
-	}
-	updater, ok := l.server.(protocolTLSUpdater)
+	updater, ok := protocolTarget(lg.Get(listenerName)).(protocolTLSUpdater)
 	if !ok {
 		return false
 	}
@@ -123,11 +139,7 @@ func (lg *Group) UpdateProtocolTLSConfig(listenerName string, config *tls.Config
 // UpdateProtocolRouteResolver switches the resolver used for new native
 // sessions without disturbing established connections.
 func (lg *Group) UpdateProtocolRouteResolver(listenerName string, resolver backends.RouteResolver) bool {
-	l := lg.Get(listenerName)
-	if l == nil || l.server == nil {
-		return false
-	}
-	updater, ok := l.server.(protocolRouteUpdater)
+	updater, ok := protocolTarget(lg.Get(listenerName)).(protocolRouteUpdater)
 	if !ok {
 		return false
 	}
@@ -138,11 +150,7 @@ func (lg *Group) UpdateProtocolRouteResolver(listenerName string, resolver backe
 // UpdateProtocolSessionGate switches the gate that new native sessions are judged by; sessions already
 // admitted are not judged again. It reports false when the server takes no gate.
 func (lg *Group) UpdateProtocolSessionGate(listenerName string, gate backends.SessionGate) bool {
-	l := lg.Get(listenerName)
-	if l == nil || l.server == nil {
-		return false
-	}
-	updater, ok := l.server.(SessionGateUpdater)
+	updater, ok := protocolTarget(lg.Get(listenerName)).(SessionGateUpdater)
 	if !ok {
 		return false
 	}
@@ -152,19 +160,15 @@ func (lg *Group) UpdateProtocolSessionGate(listenerName string, gate backends.Se
 
 // ProtocolRestartKey returns the immutable runtime identity of a protocol server.
 func (lg *Group) ProtocolRestartKey(listenerName string) (string, bool) {
-	l := lg.Get(listenerName)
-	if l == nil || l.server == nil {
-		return "", false
-	}
-	keyer, ok := l.server.(protocolRestartKeyer)
+	keyer, ok := protocolTarget(lg.Get(listenerName)).(protocolRestartKeyer)
 	if !ok {
 		return "", false
 	}
 	return keyer.ProtocolRestartKey(), true
 }
 
-// ProtocolServerAs returns the named listener's protocol server when it is a T, so a reload can
-// hand a running server its new configuration without the group knowing the server's type.
+// ProtocolServerAs returns the named listener's protocol server, or the handler a shared QUIC endpoint's member holds,
+// when it is a T, so a reload can hand a running server its new configuration without the group knowing its type.
 func ProtocolServerAs[T any](lg *Group, listenerName string) (T, bool) {
 	var zero T
 	if lg == nil {
@@ -174,7 +178,10 @@ func ProtocolServerAs[T any](lg *Group, listenerName string) (T, bool) {
 	if l == nil || l.server == nil {
 		return zero, false
 	}
-	svr, ok := l.server.(T)
+	if svr, ok := l.server.(T); ok {
+		return svr, true
+	}
+	svr, ok := protocolTarget(l).(T)
 	return svr, ok
 }
 

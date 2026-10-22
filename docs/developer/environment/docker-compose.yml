@@ -762,6 +762,50 @@ services:
       graphite_seed:
         condition: service_completed_successfully
 
+  # moq-dev's MoQ relay, the peer the moq provider interoperates with: tests
+  # publish synthetic tracks into it and pull them through Trickster on each
+  # supported draft, by native QUIC and by WebTransport, on UDP port 10443.
+  # It generates a self-signed certificate for localhost at each start and
+  # lets any session publish and subscribe.
+  moq_relay:
+    profiles: [moq, all-providers, integration]
+    image: moqdev/moq-relay:0.17.5@sha256:a14382211dc588da7345802a49ff52ef5bcea16ca83608a9ff01be9801532d5f
+    command:
+      - --listen=[::]:443
+      - --listen-tls-generate=localhost
+      - --auth-public=**
+    ports:
+      - 10443:443/udp
+    restart: always
+
+  # diagstreamer (hack/diagstreamer) generates a live diagnostic stream, a
+  # rendered clock, logo, color bars and timing strip with a beeping tone, served
+  # as HLS and DASH at http://127.0.0.1:8496/ for Trickster to front. It builds
+  # the Go image with ffmpeg added and runs the tool from the repository.
+  diagstreamer:
+    profiles: [moq]
+    build: ../../../hack/diagstreamer
+    volumes:
+      - ../../..:/repo:ro
+      - diagstreamer-gocache:/root/.cache/go-build
+      - diagstreamer-gomod:/go/pkg/mod
+    ports:
+      - 127.0.0.1:8496:8496
+    restart: always
+
+  # diagstreamer_moq publishes the same stream into moq_relay as the broadcast
+  # diagstreamer.hang, which serves both the hang and the MSF catalog; make
+  # developer-moq plays it through Trickster
+  diagstreamer_moq:
+    profiles: [moq]
+    build: ../../../hack/diagstreamer
+    command: [-out, moq, -moq-url, "moqt://moq_relay:443/", -moq-insecure, -moq-catalog, hang]
+    volumes:
+      - ../../..:/repo:ro
+      - diagstreamer-gocache:/root/.cache/go-build
+      - diagstreamer-gomod:/go/pkg/mod
+    restart: always
+
   # Mocks
 
   # devorigin (hack/devorigin) serves the live trips metrics that prometheus
@@ -848,6 +892,8 @@ services:
 
 volumes:
   seedgen-gocache:
+  diagstreamer-gocache:
+  diagstreamer-gomod:
   graphite-data:
   influxdbv2:
   influxdb3-data:

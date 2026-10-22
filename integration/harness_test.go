@@ -75,11 +75,18 @@ func rewriterHarness(t *testing.T) tricksterHarness {
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
+	h.startStoppable(t)
+}
+
+func (h tricksterHarness) startStoppable(t *testing.T) func() {
+	t.Helper()
+	// the func returned stops the daemon as a signal would, draining its listeners
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	runTrickster(t, context.Background(), "-config", h.ConfigPath)
+	stop := runTrickster(t, context.Background(), "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
+	return stop
 }
 
 type requestOptions struct {
@@ -188,17 +195,17 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 
 func configHarnessWithMySQLAddress(t *testing.T, address string, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	ports, release := portutil.Reserve(t, 5)
+	ports, release := portutil.Reserve(t, 6)
 	mysqlPorts, releaseMySQL := portutil.ReserveOn(t, 1, address)
 	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], mysqlPorts[0]
-	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[3], ports[4]
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort, tlsPort := ports[3], ports[4], ports[5]
 	mods = append([]func(*tkconfig.Config){func(c *tkconfig.Config) {
 		c.Listeners["mysql1"].ListenAddress = address
 	}}, mods...)
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
-			frontPort, metricsPort, mgmtPort, mysqlPort, 0,
+			frontPort, metricsPort, mgmtPort, tlsPort, mysqlPort, 0,
 			clickHouseHTTPOriginPort, clickHouseNativeOriginPort, mods...),
 		BaseAddr:                   fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:                fmt.Sprintf("127.0.0.1:%d", metricsPort),
@@ -217,12 +224,13 @@ func configHarnessWithMySQLAddress(t *testing.T, address string, mods ...func(*t
 // (gRPC) listener enabled on a reserved port, returned alongside the harness.
 func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 	t.Helper()
-	ports, release := portutil.Reserve(t, 5)
+	ports, release := portutil.Reserve(t, 6)
 	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort := ports[0], ports[1], ports[2], ports[3], ports[4]
+	tlsPort := ports[5]
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
-			frontPort, metricsPort, mgmtPort, mysqlPort, flightPort, 0, 0),
+			frontPort, metricsPort, mgmtPort, tlsPort, mysqlPort, flightPort, 0, 0),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
@@ -232,10 +240,10 @@ func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 
 func staticConfigHarness(t *testing.T, configPath string, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	ports, release := portutil.Reserve(t, 3)
-	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	ports, release := portutil.Reserve(t, 4)
+	frontPort, metricsPort, mgmtPort, tlsPort := ports[0], ports[1], ports[2], ports[3]
 	return tricksterHarness{
-		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0, 0, mods...),
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, tlsPort, 0, 0, 0, 0, mods...),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MgmtAddr:     fmt.Sprintf("127.0.0.1:%d", mgmtPort),
@@ -248,7 +256,7 @@ func staticConfigHarness(t *testing.T, configPath string, mods ...func(*tkconfig
 // pass 0 to remove the Flight SQL listener. mods run after the ports are set
 // and before the file is written.
 func writeTestConfig(t *testing.T, configPath string,
-	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
+	frontPort, metricsPort, mgmtPort, tlsPort, mysqlPort, flightPort int,
 	clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
 	mods ...func(*tkconfig.Config),
 ) string {
@@ -279,6 +287,9 @@ func writeTestConfig(t *testing.T, configPath string,
 	}
 	c.Listeners["default"].ListenPort = frontPort
 	c.Listeners["default"].ListenAddress = "127.0.0.1"
+	// an unset TLS port defaults to 8483, which a local dev instance may hold
+	c.Listeners["default"].TLSListenPort = tlsPort
+	c.Listeners["default"].TLSListenAddress = "127.0.0.1"
 	c.Listeners["metrics"].ListenPort = metricsPort
 	c.Listeners["metrics"].ListenAddress = "127.0.0.1"
 	c.Listeners["mgmt"].ListenPort = mgmtPort

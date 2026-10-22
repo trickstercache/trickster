@@ -19,11 +19,16 @@ package listener
 import (
 	"context"
 	"crypto/tls"
+	stderrors "errors"
 	"net"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	ttls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
@@ -152,4 +157,148 @@ func waitForListener(t *testing.T, lg *Group, name string) *Listener {
 	}
 	t.Fatal("listener never became available")
 	return nil
+}
+
+type fakeMember struct {
+	left      chan struct{}
+	once      sync.Once
+	shutdowns atomic.Int32
+	closes    atomic.Int32
+}
+
+func newFakeMember() *fakeMember {
+	return &fakeMember{left: make(chan struct{})}
+}
+
+func (f *fakeMember) Serve() error {
+	<-f.left
+	return nil
+}
+
+func (f *fakeMember) Shutdown(context.Context) error {
+	f.shutdowns.Add(1)
+	f.once.Do(func() { close(f.left) })
+	return nil
+}
+
+func (f *fakeMember) Close() error {
+	f.closes.Add(1)
+	f.once.Do(func() { close(f.left) })
+	return nil
+}
+
+func TestStartSharedPacketListener(t *testing.T) {
+	first := testCertificate(t)
+	lg := NewGroup()
+	member := newFakeMember()
+	var joinedHandler http.Handler
+	var joinedCerts sw.CertSwapper
+	var joinedTLS *tls.Config
+	routed := make(chan string, 2)
+	router := func(name string) http.Handler {
+		return http.HandlerFunc(func(http.ResponseWriter, *http.Request) { routed <- name })
+	}
+	go lg.StartSharedPacketListener("h3shared", "http3", "127.0.0.1", 0,
+		&tls.Config{Certificates: []tls.Certificate{first}, MinVersion: tls.VersionTLS13}, router("first"),
+		func(h http.Handler, certs sw.CertSwapper, tc *tls.Config) (PacketMember, error) {
+			joinedHandler, joinedCerts, joinedTLS = h, certs, tc
+			return member, nil
+		}, nil)
+
+	l := waitForListener(t, lg, "h3shared")
+	if l.CertSwapper() == nil || l.CertSwapper() != joinedCerts {
+		t.Fatal("join should receive the listener's own certificate swapper")
+	}
+	if joinedTLS == nil || len(joinedTLS.Certificates) != 0 || joinedTLS.GetCertificate == nil {
+		t.Fatal("join should receive a TLS config whose certificates come from the swapper")
+	}
+	if l.RouteSwapper() == nil || joinedHandler == nil {
+		t.Fatal("a listener with a router should hand join its route swapper")
+	}
+	// a reload swaps the routes served through the shared endpoint without rejoining it
+	joinedHandler.ServeHTTP(nil, nil)
+	lg.UpdateRouter("h3shared", router("second"))
+	joinedHandler.ServeHTTP(nil, nil)
+	if a, b := <-routed, <-routed; a != "first" || b != "second" {
+		t.Errorf("routes served %s then %s", a, b)
+	}
+
+	if err := lg.DrainAndClose("h3shared", time.Second); err != nil {
+		t.Errorf("draining a shared member: %v", err)
+	}
+	if member.shutdowns.Load() != 1 {
+		t.Error("draining should shut the member down")
+	}
+	if l.State() != StateStopped {
+		t.Error("a drained member should be stopped")
+	}
+}
+
+func TestStartSharedPacketListenerWithoutRouter(t *testing.T) {
+	lg := NewGroup()
+	member := newFakeMember()
+	go lg.StartSharedPacketListener("moqshared", "moq", "127.0.0.1", 0,
+		&tls.Config{MinVersion: tls.VersionTLS13}, nil,
+		func(h http.Handler, _ sw.CertSwapper, _ *tls.Config) (PacketMember, error) {
+			if h != nil {
+				t.Error("a listener without a router should hand join no handler")
+			}
+			return member, nil
+		}, nil)
+	l := waitForListener(t, lg, "moqshared")
+	defer lg.DrainAndClose("moqshared", 0)
+	if l.RouteSwapper() != nil {
+		t.Error("a listener without a router should have no route swapper")
+	}
+}
+
+func TestStartSharedPacketListenerJoinFails(t *testing.T) {
+	lg := NewGroup()
+	var failed atomic.Bool
+	wantErr := stderrors.New("join failed")
+	err := lg.StartSharedPacketListener("broken", "moq", "127.0.0.1", 0, nil, nil,
+		func(http.Handler, sw.CertSwapper, *tls.Config) (PacketMember, error) { return nil, wantErr },
+		func() { failed.Store(true) })
+	if !stderrors.Is(err, wantErr) {
+		t.Errorf("got %v, want %v", err, wantErr)
+	}
+	if !failed.Load() {
+		t.Error("a failed start should call the error func")
+	}
+	if lg.Get("broken") != nil {
+		t.Error("a listener that failed to join should not be published")
+	}
+}
+
+func TestStartSharedPacketListenerAfterShutdown(t *testing.T) {
+	lg := NewGroup()
+	if err := lg.Shutdown(0); err != nil {
+		t.Fatal(err)
+	}
+	member := newFakeMember()
+	err := lg.StartSharedPacketListener("late", "moq", "127.0.0.1", 0, nil, nil,
+		func(http.Handler, sw.CertSwapper, *tls.Config) (PacketMember, error) { return member, nil }, nil)
+	if !stderrors.Is(err, errors.ErrListenerGroupClosed) {
+		t.Errorf("got %v, want %v", err, errors.ErrListenerGroupClosed)
+	}
+	if member.closes.Load() != 1 {
+		t.Error("a member refused at publish should leave its endpoint")
+	}
+}
+
+type shutdownOnly struct {
+	ctxDone atomic.Bool
+}
+
+func (s *shutdownOnly) Shutdown(ctx context.Context) error {
+	s.ctxDone.Store(ctx.Err() != nil)
+	return nil
+}
+
+func TestCloseServerWithoutClose(t *testing.T) {
+	s := &shutdownOnly{}
+	closeServer(s)
+	if !s.ctxDone.Load() {
+		t.Error("a server without Close should be shut down with a context already done")
+	}
 }

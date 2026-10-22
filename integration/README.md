@@ -26,7 +26,18 @@ finish. `make integration-stop` stops the environment. `make developer-start`
 alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
 it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
 failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
-running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. So does
+`TestMoQInterop` and `TestMoQNamespaceDiscovery` when moq-dev's relay (the
+`moq_relay` service) isn't answering on UDP port 10443, and CI sets
+`TRICKSTER_MOQ_INTEROP_TEST=1` to require it. `TestMoQNamespaceDiscovery`
+checks that a broadcast published into moq-relay is reported to a
+`SUBSCRIBE_NAMESPACE` sent to Trickster in front of it, and withdrawn when its
+publisher leaves, on every draft. `TestMoQInteropCLI` runs moq-dev's `moq` CLI in Docker against
+Trickster only when `TRICKSTER_MOQ_CLI_TEST=1` is set; it pulls the pinned
+image on first use and reaches Trickster through `host.docker.internal`.
+`TestMoQExportThroughRelayCLI`, under the same variable and also needing
+`ffmpeg`, imports a live test pattern into moq-relay with the CLI and exports
+it through Trickster, as a moq-dev player finds a broadcast. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
 `TestALBTSMGlobalEvaluation` is **run by hand rather than by CI**: it needs
@@ -90,8 +101,9 @@ share one Trickster instance per group and run as sequential subtests. Cache-sen
 reload, lifecycle, and invalid-configuration scenarios retain isolated fixtures.
 Each fixture boots on a unique port range to avoid TCP TIME_WAIT races between tests. Tests that need the full
 developer config use `configHarness()` to clone it with swapped ports. The
-helper reserves random frontend, metrics, management, and MySQL listener ports
-until immediately before Trickster starts. Their addresses are exposed on the
+helper reserves random frontend, TLS, metrics, management, and MySQL listener
+ports until immediately before Trickster starts, so a local Trickster on the
+default ports cannot collide with the suite. Their addresses are exposed on the
 returned harness.
 
 ## Structure
@@ -140,6 +152,11 @@ each assertion so that timing can't change its outcome:
   needs a query no earlier run made (for example one carrying
   `time.Now().UnixNano()`). ALB member stats and sticky tables are kept per ALB
   name for the life of the process, so give each test's ALB its own name.
+- **QUIC dials.** Dial QUIC, HTTP/3 and WebTransport through
+  `pkg/proxy/quicdial` (or set it as the client's dial hook), never
+  `quic.DialAddr`. On macOS, `quic.DialAddr`'s dual-stack socket can be given a
+  port another process holds for IPv4, which then receives every reply, so about
+  one dial in 1,500 times out in its handshake.
 - **Metrics are process-wide.** Measure a counter before and after the action,
   and only on labels no background activity (health checks, other backends)
   also increments.
@@ -160,8 +177,8 @@ each assertion so that timing can't change its outcome:
 ## Adding a new test
 
 1. If you only need standard backends (prom, clickhouse, etc.), use
-   `configHarness(t)` to clone the developer config and reserve all four of its
-   listener ports.
+   `configHarness(t)` to clone the developer config and reserve its listener
+   ports.
 2. If you need custom backends (ALB pools, rule routing, etc.), add a static
    YAML under `testdata/configs/` and load it with `staticConfigHarness(t,
    path)` so its listener ports are reserved.

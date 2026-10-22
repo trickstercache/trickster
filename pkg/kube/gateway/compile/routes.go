@@ -93,6 +93,21 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 		return nil
 	}
 
+	if meff, ok := moqEffective(opts, p.idx, r, rule, group); ok {
+		// a moq relay accepts WebTransport sessions on the matched paths; the HTTP filters and overrides have
+		// no request of their own to apply to, since a session is one CONNECT
+		edge := &backendDoc{
+			Provider: providers.MoQ, CacheName: meff.cacheName, NegativeCacheName: meff.negativeCacheName,
+			AuthenticatorName: meff.authenticatorName, AccessLog: meff.accessLogFor(), TracingConfigName: meff.tracingName,
+		}
+		attach(edge)
+		edge.CacheKeyPrefix = ""
+		edge.Paths = compilePaths(entries, providers.MoQ, nil, nil)
+		moqOrigins(out, name, group, rs.listeners, meff, schemeHTTPS, edge)
+		out[name] = edge
+		return nil
+	}
+
 	if len(group.Members) == 1 && !group.Members[0].Invalid {
 		// one target serves the match directly, so its paths carry the match's rewriter and the
 		// per-request overrides; nothing dispatches in between, so the member's filters join the rule's

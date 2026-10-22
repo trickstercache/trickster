@@ -58,6 +58,7 @@ scrapes your local Trickster for the
 | `thanos` | an HA Prometheus pair with Thanos sidecars, and a Thanos querier | `make developer-start-thanos` |
 | `all-providers` | every TSDB backend above, except `mimir` and `thanos` | `make developer-start` |
 | `integration` | every TSDB backend except `mimir` and `thanos`, plus the integration-only `coredns` | `make integration-start` |
+| `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer; `diagstreamer`, a live diagnostic HLS and DASH stream on port 8496 ([hack/diagstreamer](../../../hack/diagstreamer/README.md)); `diagstreamer_moq`, the same stream published into `moq_relay` | `make developer-start-moq`, or `make developer-moq` for the MoQ harness ([Trying it locally](../../moq.md#trying-it-locally)) |
 
 `make developer-start` reads the `COMPOSE_PROFILES` variable, which defaults to
 `all-providers` and takes a comma-separated list, so you can combine backends:

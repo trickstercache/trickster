@@ -34,6 +34,7 @@ A policy governs the objects its `targetRefs` name, in the policy's own namespac
 |---|---|---|---|
 | `Gateway` | `gateway.networking.k8s.io` | every route attached to the Gateway | not supported |
 | `HTTPRoute` | `gateway.networking.k8s.io` | every rule of the route | one rule, by the rule's `name` |
+| `UDPRoute` | `gateway.networking.k8s.io` | the route, where a `trickstercache.org/moq` listener serves it; see [MoQ relays](#moq-relays) | not supported |
 | `Service` | `""` | every backendRef and Ingress backend naming the Service | one named port |
 | `Ingress` | `networking.k8s.io` | every rule of the Ingress | not supported |
 
@@ -45,7 +46,7 @@ configured default:
 
 1. the GatewayClass's `parametersRef` ([kubernetes-gateway.md](./kubernetes-gateway.md#gatewayclass-parameters)), or an Ingress's annotations;
 2. a policy on the Gateway;
-3. a policy on the HTTPRoute or Ingress;
+3. a policy on the HTTPRoute, UDPRoute or Ingress;
 4. a policy on the route's rule, by `sectionName`;
 5. a policy on the backend's Service, then one on the Service's port.
 
@@ -87,7 +88,7 @@ spec:
 | Field | Value | Effect |
 |---|---|---|
 | `handler` | `proxy`, `proxycache` | the path handler; `proxycache` makes the backend cache-capable |
-| `provider` | `prometheus`, `influxdb`, `clickhouse`, `graphite` | serves the target through a time series provider; see below |
+| `provider` | `prometheus`, `influxdb`, `clickhouse`, `graphite`, `moq` | serves the target through a time series provider, or as a MoQ relay; see below |
 | `cacheName` | a configured cache | which cache a caching route uses |
 | `negativeCacheName` | a configured negative cache | how long error responses are cached |
 | `maxTTL` | a duration, e.g. `10m` | caps how long a cached object is served before revalidation |
@@ -172,6 +173,26 @@ the same way. This policy cannot set either name or clear it. Provider settings 
 Prometheus `instant_round`, an InfluxDB `flux` block, a Graphite `render` section — take
 their defaults. MySQL is served over its own wire protocol rather than HTTP and cannot be
 selected.
+
+## MoQ relays
+
+`provider: moq` makes the generated backend a [MoQ Transport](./moq.md) relay rather
+than an HTTP proxy. On an HTTPRoute it relays the WebTransport sessions that arrive over
+HTTP/3; on a UDPRoute served by a `trickstercache.org/moq` listener, which makes a relay
+of the route with or without a policy, it relays native QUIC sessions. A policy on a
+Service makes a relay of every HTTPRoute rule that reaches only MoQ origins. See
+[kubernetes-gateway.md](./kubernetes-gateway.md#moq-relays) for both kinds of listener.
+
+A relay applies four fields: `cacheName`, the cache that groups leaving its in-memory
+live edge are kept in; `maxTTL`, how long a kept group lives at most (the backend default of
+25 hours unless set); `negativeCacheName`, whose `404` entry keeps an origin's
+`DOES_NOT_EXIST` refusal of a track (see [MoQ caching](./moq.md#caching)); and
+`loadBalancing`, how a rule with several backendRefs places each track on one of them
+(`rr`, `p2c`, `lc` or `hrw`, `hrw` unless set). The others shape HTTP requests and
+responses, which a session has none of: `handler`, `timeout`,
+`collapsedForwarding`, `cacheKeyParams`, `cacheKeyHeaders`, `requestHeaders`,
+`responseHeaders`, `cors`, `healthMode`, `loadBalancingKey`, `sticky`, `resultHeader` and
+`stepAlignment`. Each one set is reported by Event, and the rest of the policy applies.
 
 ## Cache key components
 

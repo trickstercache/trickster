@@ -23,6 +23,7 @@ import (
 	"slices"
 	"time"
 
+	moqo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
@@ -64,6 +65,8 @@ const (
 	ProtocolTLS = "tls"
 	// ProtocolUDP relays datagrams to the listener's one backend, one session per client.
 	ProtocolUDP = "udp"
+	// ProtocolMoQ is MoQ Transport over native QUIC; TLS is in-band, on the listener's UDP port.
+	ProtocolMoQ = "moq"
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
@@ -118,6 +121,8 @@ type Options struct {
 	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
 	// Postgres contains downstream limits when protocol is postgres.
 	Postgres *pgo.ListenerOptions `yaml:"postgres,omitempty"`
+	// MoQ contains downstream limits when protocol is moq.
+	MoQ *moqo.ListenerOptions `yaml:"moq,omitempty"`
 	// HTTP3 optionally serves this listener's routes over HTTP/3 as well.
 	HTTP3 *HTTP3Options `yaml:"http3,omitempty"`
 	// Stream tunes the connect and idle timeouts when protocol is tcp, tls or udp.
@@ -331,6 +336,7 @@ func (o *Options) Clone() *Options {
 	out := *o
 	out.MySQL = o.MySQL.Clone()
 	out.Postgres = o.Postgres.Clone()
+	out.MoQ = o.MoQ.Clone()
 	out.HTTP3 = o.HTTP3.Clone()
 	out.Stream = o.Stream.Clone()
 	out.TrustedProxies = slices.Clone(o.TrustedProxies)
@@ -364,7 +370,7 @@ func (o *Options) Equal(other *Options) bool {
 	if (o.Postgres == nil) != (other.Postgres == nil) || o.Postgres != nil && *o.Postgres != *other.Postgres {
 		return false
 	}
-	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) ||
+	if !o.MoQ.Equal(other.MoQ) || !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) ||
 		!o.PathNormalization.Equal(other.PathNormalization) {
 		return false
 	}

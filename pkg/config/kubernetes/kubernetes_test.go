@@ -57,6 +57,12 @@ func TestNewDefaults(t *testing.T) {
 	require.Equal(t, ao.HealthModeProvider, o.Defaults.HealthMode)
 	require.Empty(t, o.RoutingMode())
 	require.ErrorIs(t, o.Validate(), ErrRoutingModeRequired)
+	require.True(t, o.HTTP3(), "generated https listeners serve HTTP/3 unless told otherwise")
+	off := false
+	o.Defaults.HTTP3 = &off
+	require.False(t, o.HTTP3())
+	var none *Options
+	require.True(t, none.HTTP3())
 }
 
 // The controller does not exist without the section, and a nil section must

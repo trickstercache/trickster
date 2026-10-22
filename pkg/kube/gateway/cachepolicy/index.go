@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -80,6 +81,7 @@ var (
 var kindGroups = map[string]string{
 	KindGateway:   gwapiv1.GroupName,
 	KindHTTPRoute: gwapiv1.GroupName,
+	KindUDPRoute:  gwapiv1.GroupName,
 	KindService:   "",
 	KindIngress:   netv1.GroupName,
 }
@@ -114,6 +116,12 @@ func (x *Index) add(p *CachePolicy) {
 	}
 	policy.Name, policy.Source = src.Key(), src
 	e.policy = policy
+	if err == nil && policy.Provider == providers.MoQ {
+		for _, f := range ignoredByMoQ(p.Spec) {
+			// a relay caches tracks, not HTTP responses, so the policy applies without these
+			x.problems.Reject(src, "spec.%s is ignored for provider %s", f, providers.MoQ)
+		}
+	}
 	if len(p.Spec.TargetRefs) == 0 {
 		x.problems.RejectAs(string(gwapiv1.PolicyReasonInvalid), src, "%s", errNoTargets)
 	}
@@ -230,6 +238,33 @@ func (x *Index) lower(p *CachePolicy) (ir.Policy, error) {
 		return ir.Policy{}, fmt.Errorf("spec.stepAlignment: %w", err)
 	}
 	return out, nil
+}
+
+func ignoredByMoQ(s Spec) []string {
+	var out []string
+	for _, f := range []struct {
+		name string
+		set  bool
+	}{
+		{"handler", s.Handler != ""},
+		{"timeout", s.Timeout != ""},
+		{"collapsedForwarding", s.CollapsedForwarding != ""},
+		{"cacheKeyParams", s.CacheKeyParams != nil},
+		{"cacheKeyHeaders", s.CacheKeyHeaders != nil},
+		{"requestHeaders", len(s.RequestHeaders) > 0},
+		{"responseHeaders", len(s.ResponseHeaders) > 0},
+		{"healthMode", s.HealthMode != ""},
+		{"loadBalancingKey", s.LoadBalancingKey != ""},
+		{"sticky", s.Sticky != ""},
+		{"resultHeader", s.ResultHeader != ""},
+		{"stepAlignment", s.StepAlignment != ""},
+		{"cors", s.CORS != nil},
+	} {
+		if f.set {
+			out = append(out, f.name)
+		}
+	}
+	return out
 }
 
 func (x *Index) providerSupports(provider, stepAlignment string) error {

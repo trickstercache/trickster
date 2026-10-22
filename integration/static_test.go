@@ -76,9 +76,9 @@ func staticHarness(t *testing.T, mods ...func(*tkconfig.Config)) (h tricksterHar
 		c.Backends["private"].Static.Root = private
 		c.Backends["app"].Static.Root = site
 	}
-	ports, release := portutil.Reserve(t, 3)
+	ports, release := portutil.Reserve(t, 4)
 	h = tricksterHarness{
-		ConfigPath: writeTestConfig(t, staticTestConfig, ports[0], ports[1], ports[2], 0, 0, 0, 0,
+		ConfigPath: writeTestConfig(t, staticTestConfig, ports[0], ports[1], ports[2], ports[3], 0, 0, 0, 0,
 			append([]func(*tkconfig.Config){roots}, mods...)...),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", ports[0]),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", ports[1]),

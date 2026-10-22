@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/annotations"
@@ -56,6 +57,7 @@ const (
 	ParamStickyTTL         = "sticky_ttl"
 	ParamStickyIdle        = "sticky_idle"
 	ParamStickySecret      = "sticky_secret"
+	ParamHTTP3             = "http3"
 )
 
 // stickySecretKey is the entry of a sticky_secret Secret that holds the key
@@ -218,6 +220,14 @@ var classParams = map[string]paramSetter{
 	},
 	ParamIPACLName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setIPACL(&p.IPACLName, v)
+	},
+	ParamHTTP3: func(_ *translator, p *ir.Policy, v string) error {
+		on, err := strconv.ParseBool(v)
+		if err != nil {
+			return err
+		}
+		p.HTTP3 = strconv.FormatBool(on)
+		return nil
 	},
 	ParamRateLimiterName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setRateLimit(&p.RateLimiterName, v)

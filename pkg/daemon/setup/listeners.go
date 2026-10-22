@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/stream"
+	"github.com/trickstercache/trickster/v2/pkg/backends/moq"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -49,6 +50,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
@@ -75,6 +77,7 @@ type desiredListener struct {
 	// http3 marks a QUIC/UDP endpoint that mirrors this listener's TLS routes.
 	http3          bool
 	advertisedPort int
+	webTransport   bool
 	// stream marks a tcp, tls or udp relay, whose routing table is swapped on reload.
 	stream bool
 }
@@ -250,7 +253,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 						keys.ListenerName: desired.listenerName,
 					})
 				}
-				if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
+				if _, packet := desired.native.(native.PacketAdapter); packet {
+					// a QUIC listener's certificates live in its swapper, as an HTTP/3 endpoint's do
+					updateListenerCertificates(conf, desired, lg)
+				} else if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
 					lg.UpdateProtocolTLSConfig(key, tlsConfig)
 				} else {
 					logger.Error("unable to rotate native listener TLS", logging.Pairs{
@@ -261,11 +267,20 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			if desired.tls {
 				updateListenerCertificates(conf, desired, lg)
 			}
+			if desired.http3 {
+				setWebTransport(lg, desired)
+			}
 			continue
 		}
 
 		if desired.stream {
 			startStreamListener(lg, desired, streamConfig(conf, desired, clients), errorFunc)
+			continue
+		}
+
+		if pa, ok := desired.native.(native.PacketAdapter); ok {
+			startNativePacketListener(lg, conf, desired, pa, nativeBuildRequest(conf, desired, tracers, clients),
+				errorFunc)
 			continue
 		}
 
@@ -299,11 +314,15 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				continue
 			}
 			limits := serverLimits(desired.options)
-			advertised := desired.advertisedPort
-			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
+			go lg.StartSharedPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
 				desired.address, desired.port, tlsConfig, desired.router,
-				func(h http.Handler, tc *tls.Config) listener.PacketServer {
-					return listenerhttp3.NewServer(h, tc, advertised, limits)
+				func(h http.Handler, certs tr.CertSwapper, tc *tls.Config) (listener.PacketMember, error) {
+					handler := listenerhttp3.NewHandler(h, limits)
+					handler.SetWebTransport(desired.webTransport, desired.listenerName)
+					return quicmux.Join(desired.address, desired.port, quicmux.MemberOptions{
+						Name: desired.key, ALPNs: []string{listenerhttp3.ALPN},
+						Handler: handler, Certs: certs, TLS: tc, QUIC: listenerhttp3.QUICConfig(),
+					})
 				}, errorFunc)
 			continue
 		}
@@ -413,6 +432,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 					key: h3Key, listenerName: name,
 					address: h3Address, port: h3Port, advertisedPort: advertised,
 					tls: true, http3: true, options: options, router: r,
+					webTransport: moq.ServesWebTransport(conf, name),
 				}
 			}
 			out[key] = desiredListener{
@@ -423,6 +443,38 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 	}
 	return out
+}
+
+func setWebTransport(lg *listener.Group, desired desiredListener) {
+	// a reload that binds or unbinds the listener's last moq backend changes how new connections are served
+	if h, ok := listener.ProtocolServerAs[*listenerhttp3.Handler](lg, desired.key); ok {
+		h.SetWebTransport(desired.webTransport, desired.listenerName)
+	}
+}
+
+func startNativePacketListener(lg *listener.Group, conf *config.Config, desired desiredListener,
+	pa native.PacketAdapter, request native.BuildRequest, errorFunc func(),
+) {
+	tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
+	if err != nil {
+		logger.Error("unable to start native QUIC listener", logging.Pairs{
+			keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol, keys.Error: err.Error(),
+		})
+		return
+	}
+	gate := sessionGateFor(conf, desired.listenerName)
+	go lg.StartSharedPacketListener(desired.key, desired.options.Protocol, desired.address, desired.port, tlsConfig,
+		nil, func(_ http.Handler, certs tr.CertSwapper, tc *tls.Config) (listener.PacketMember, error) {
+			member, err := pa.Join(request, desired.key, certs, tc)
+			if err != nil {
+				return nil, err
+			}
+			if !setPacketSessionGate(member, gate) {
+				_ = member.Shutdown(closedContext())
+				return nil, errUngatedListener
+			}
+			return member, nil
+		}, errorFunc)
 }
 
 func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {

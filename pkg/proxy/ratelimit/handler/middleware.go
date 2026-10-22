@@ -98,15 +98,8 @@ func Listener(o *options.Options, ready string, strip bool, next http.Handler) h
 }
 
 func attach(o *options.Options) *attachment {
-	lim := ratelimit.Lookup(o.Name, ratelimit.Shape{
-		Keys:       ratelimit.EncodeKeys(o.Keys),
-		IPv6Prefix: o.IPv6Prefix,
-		Window:     time.Duration(o.Window),
-		Limit:      uint32(o.Limit), // #nosec G115 -- Validate bounds limit to uint32
-		MaxKeys:    o.MaxKeys,
-	}, ratelimit.Policy{Missing: missingOf(o.MissingKey), OnFull: onFullOf(o.MaxKeysAction)})
 	return &attachment{
-		lim: lim, name: o.Name, count: o.Action == options.ActionCount,
+		lim: ratelimit.LookupOptions(o), name: o.Name, count: o.Action == options.ActionCount,
 		onFullReject: o.MaxKeysAction == options.OnFullReject,
 		status:       o.Status, header: o.Header, body: o.Body, policy: o.PolicyHeaders,
 		limit: uint32(o.Limit), window: int64(time.Duration(o.Window)), // #nosec G115 -- Validate bounds limit to uint32
@@ -207,18 +200,4 @@ func (a *attachment) reject(w http.ResponseWriter, r *http.Request, d ratelimit.
 		return
 	}
 	_, _ = w.Write(a.body)
-}
-
-func missingOf(v string) ratelimit.MissingKey {
-	if v == options.MissingShared {
-		return ratelimit.MissingShared
-	}
-	return ratelimit.MissingExempt
-}
-
-func onFullOf(v string) ratelimit.MaxKeysAction {
-	if v == options.OnFullReject {
-		return ratelimit.MaxKeysReject
-	}
-	return ratelimit.MaxKeysAllow
 }

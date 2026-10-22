@@ -199,6 +199,36 @@ data:
     #       allow_md5: false
     #       allow_cleartext_without_tls: false
     #
+    #   # A listener with protocol moq accepts MoQ Transport sessions over native
+    #   # QUIC on its UDP port; TLS is part of the QUIC handshake, so TLS ports are
+    #   # not supported, and a backend it serves must provide a certificate in its
+    #   # tls block. Several moq backends may share one listener: a session is
+    #   # routed by the AUTHORITY and PATH of its SETUP against each backend's hosts
+    #   # and paths. A moq listener may share its UDP port with an HTTP/3 endpoint,
+    #   # or another moq listener, as long as their drafts differ.
+    #   moq1:
+    #     protocol: moq
+    #     port: 443
+    #     # address: ''
+    #     # moq:
+    #       # the client's SETUP must arrive within this timeout
+    #       handshake_timeout: 5s
+    #       # the QUIC idle timeout of the listener's connections
+    #       idle_timeout: 2m
+    #       max_sessions: 10000
+    #       max_requests_per_session: 1024
+    #       # advertised to clients in SETUP
+    #       max_filter_ranges: 16
+    #       max_request_updates: 64
+    #       # accepted MoQ Transport drafts, most preferred first
+    #       drafts: [22, 21, 20]
+    #       # the MOQT_IMPLEMENTATION setup option; defaults to trickster
+    #       implementation: ''
+    #       # when the listener stops, each session gets a GOAWAY naming this moqt
+    #       # URI to continue at, and a new request is redirected there; empty has
+    #       # clients reconnect where they were. Changing it restarts nothing.
+    #       goaway_uri: ''
+    #
     #   # A ClickHouse listener accepts the Native binary protocol and maps to one
     #   # ClickHouse backend through that backend's listener_names option.
     #   clickhouse-native:
@@ -667,6 +697,90 @@ data:
       #   # timeseries_retention_factor, volatile_window, sharding and
       #   # max_object_size_bytes backend settings apply. proxy_only: true relays
       #   # every statement without inspecting it.
+
+      # # example MoQ Transport relay backend, exposed by a listener with protocol
+      # # moq (see the listeners section), and to browsers by WebTransport through
+      # # an http listener with http3 enabled. One upstream subscription per track
+      # # is shared by every downstream subscriber; the newest groups stay in memory
+      # # and older ones spill to cache_name, which FETCH and fills read back.
+      # moq1:
+      #   provider: moq
+      #   # a native QUIC origin (moqt://) or a WebTransport one (https://); omit
+      #   # origin_url to serve only what publishers send
+      #   origin_url: 'moqt://origin.example.com:443/live'
+      #   # on an http listener, the backend's paths accept WebTransport sessions
+      #   # (extended CONNECT) on the listener's HTTP/3 endpoint
+      #   listener_names: [moq1, default]
+      #   # matched against the AUTHORITY and PATH of a session's SETUP, or the
+      #   # CONNECT request that opens a WebTransport session
+      #   hosts: [live.example.com]
+      #   cache_name: default
+      #   # caps MAX_CACHE_DURATION, and is the lifetime of spilled groups of tracks that set none
+      #   max_ttl: 1h
+      #   moq:
+      #     upstream:
+      #       # in place of origin_url, an alb backend whose pool are moq backends
+      #       # with origins: each track is subscribed through one member, a
+      #       # strategy keyed on the flow (hrw) placing it by its full name, and a
+      #       # track whose origin is lost moves to another member without its
+      #       # subscribers noticing. The alb's mechanism is rr, p2c, hrw or lc;
+      #       # stream.passive_health ejects members whose origins cannot be reached.
+      #       # alb: origins
+      #       # drafts offered to the origin, most preferred first
+      #       drafts: [21, 20]
+      #       # keep the upstream subscription forwarding while every subscriber is paused
+      #       prewarm: false
+      #       reconnect_backoff: 1s
+      #       # keep an upstream subscription this long after its last subscriber leaves
+      #       linger: 5s
+      #       max_gap_fetches: 16
+      #     live_edge:
+      #       # groups of each track kept in memory
+      #       groups: 3
+      #       # payload bytes the live edge holds across all of the backend's tracks
+      #       max_size_bytes: 67108864
+      #     # false keeps only the live edge, so older groups are fetched from the origin
+      #     spill: true
+      #     # the wait for upstream fetches when a FETCH or fill names no FILL_TIMEOUT
+      #     fill_timeout: 2s
+      #     max_object_size_bytes: 67108864
+      #     webtransport:
+      #       # drafts accepted from WebTransport clients, most preferred first
+      #       drafts: [22, 21, 20]
+      #       # the draft assumed for a client offering no WT-Available-Protocols,
+      #       # and for a WebTransport origin answering without WT-Protocol; 0
+      #       # refuses both
+      #       default_draft: 0
+      #       # browser origins (scheme://host[:port]) that may open sessions, or
+      #       # '*'; empty allows only an origin naming the requested host
+      #       allowed_origins: []
+      #       max_sessions: 10000
+      #       # when the http listener stops, each WebTransport session gets a GOAWAY
+      #       # naming this https URI to continue at; empty reuses the current one
+      #       goaway_uri: ''
+      #     publish:
+      #       # accept PUBLISH and PUBLISH_NAMESPACE, making Trickster the origin of
+      #       # what publishers send; open ingest belongs behind a network boundary
+      #       enabled: false
+      #       # namespace prefixes publishers may claim, as fields joined by '/',
+      #       # such as live/studio; empty allows any
+      #       namespaces: []
+      #       max_publishers_per_track: 4
+      #     authorization:
+      #       # none admits every request; token requires an AUTHORIZATION_TOKEN
+      #       # that token_file grants, one '<token> <publish|subscribe|any>
+      #       # [namespace]' per line, read again whenever the file changes
+      #       mode: none
+      #   # the health check completes a SETUP exchange with the origin on a fresh session
+      #   healthcheck:
+      #     interval: 5s
+      #   tls:
+      #     # served to clients of the moq listener and the http listener's TLS port
+      #     full_chain_cert_path: /etc/trickster/tls/server.crt
+      #     private_key_path: /etc/trickster/tls/server.key
+      #     # used toward the origin
+      #     certificate_authority_paths:
+      #       - /etc/trickster/tls/origin-ca.crt
 
       # # example VictoriaMetrics backend: MetricsQL through the Prometheus querying
       # # API and the Graphite APIs. See /docs/victoriametrics.md.

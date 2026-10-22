@@ -1145,6 +1145,57 @@ func TestApplyStreamListenerUDP(t *testing.T) {
 	}
 }
 
+func availableUDPPort(t *testing.T) int {
+	t.Helper()
+	c, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	return c.LocalAddr().(*net.UDPAddr).Port
+}
+
+func TestApplyHTTP3ReleasesSocketOnRemoval(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "test.key.pem")
+	certPath := filepath.Join(dir, "test.cert.pem")
+	if err := tlstest.WriteTestKeyAndCert(false, keyPath, certPath); err != nil {
+		t.Fatal(err)
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+
+	udpPort := availableUDPPort(t)
+	conf := tlsTestConfig(t, keyPath, certPath, availablePort(t))
+	conf.Backends["default"].NormalizeListenerNames()
+	conf.MgmtConfig.ReloadDrainTimeout = timeconv.Duration(100 * time.Millisecond)
+	frontend := conf.Listeners[listenerconfig.DefaultFrontendName]
+	frontend.Protocol = listenerconfig.ProtocolHTTP
+	frontend.HTTP3 = &listenerconfig.HTTP3Options{Enabled: true, ListenAddress: "127.0.0.1", ListenPort: udpPort}
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: markerRouter("h3")}
+	applyListenerConfigs(conf, nil, routers, http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	h3Key := listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP3, false)
+	waitForListener(t, group, h3Key)
+	udpAddr := fmt.Sprintf("127.0.0.1:%d", udpPort)
+	if probe, err := net.ListenPacket("udp", udpAddr); err == nil {
+		_ = probe.Close()
+		t.Fatal("the HTTP/3 endpoint should hold its UDP port")
+	}
+
+	// disabling HTTP/3 drains the endpoint, which must release the socket for a later bind
+	second := conf.Clone()
+	second.Listeners[listenerconfig.DefaultFrontendName].HTTP3.Enabled = false
+	applyListenerConfigs(second, conf, routers, http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	if group.Get(h3Key) != nil {
+		t.Error("the HTTP/3 endpoint should be removed from the group")
+	}
+	probe, err := net.ListenPacket("udp", udpAddr)
+	if err != nil {
+		t.Fatalf("the drained HTTP/3 endpoint kept its UDP port: %v", err)
+	}
+	_ = probe.Close()
+}
+
 func TestNormalizedReadyPath(t *testing.T) {
 	o := pno.New()
 	if got := normalizedReadyPath(o, "/trickster/foo/../ready"); got != "/trickster/ready" {
