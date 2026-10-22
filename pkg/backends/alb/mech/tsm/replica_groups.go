@@ -245,6 +245,12 @@ func coalesceReplicaResults(live, configured pool.Targets,
 			result := &results[liveIndex]
 			if fallback == nil && (result.mergeFunc != nil || result.statusCode != 0) {
 				fallback = result
+			} else if fallback != nil && result.statusCode >= 400 {
+				isFallback4xx := fallback.statusCode >= 400 && fallback.statusCode < 500
+				isCurr4xx := result.statusCode >= 400 && result.statusCode < 500
+				if (isCurr4xx && !isFallback4xx) || (isCurr4xx == isFallback4xx && result.statusCode < fallback.statusCode) {
+					fallback = result
+				}
 			}
 			if !result.failed && result.contrib != nil &&
 				result.statusCode >= 200 && result.statusCode < 300 {

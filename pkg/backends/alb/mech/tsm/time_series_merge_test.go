@@ -17,9 +17,11 @@
 package tsm
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -290,13 +292,20 @@ func TestLimitQueryRangeALB(t *testing.T) {
 func TestTSMNon2xxMemberDoesNotAttemptDecode(t *testing.T) {
 	// Member 1: returns 200 OK with valid dataset
 	h200 := stubMergeHandler("shard1", http.StatusOK)
+
 	// Member 2: returns 400 Bad Request with error body
+	var unmarshaler400Called atomic.Bool
 	h400 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rsc := request.GetResources(r)
 		if rsc != nil {
 			rsc.MergeFunc = mergeFn
 			rsc.BatchMergeFunc = batchMergeFn
 			rsc.MergeRespondFunc = markerRespondFunc
+			rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+			rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				unmarshaler400Called.Store(true)
+				return nil, errors.New("should not be called for 400 response")
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set(headers.NameTricksterResult, "engine=none")
@@ -309,19 +318,15 @@ func TestTSMNon2xxMemberDoesNotAttemptDecode(t *testing.T) {
 	albpool.WaitHealthy(t, p, 2)
 
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc.IsMergeMember = true
-	rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-		if string(b) == `{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}` {
-			t.Errorf("TSUnmarshaler should NOT be called for non-2xx responses")
-		}
-		return nil, nil
-	}
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
-
 	h := &handler{mergePaths: []string{"/"}}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
+
+	if unmarshaler400Called.Load() {
+		t.Errorf("TSUnmarshaler should NOT be called for 400 response")
+	}
 
 	// One member succeeded, one failed with 400 -> aggregated status should be partial hit (200 OK)
 	if w.Code != http.StatusOK {
@@ -334,6 +339,8 @@ func TestTSMNon2xxMemberDoesNotAttemptDecode(t *testing.T) {
 }
 
 func TestTSMAllMembers400DoesNotAttemptDecode(t *testing.T) {
+	const expectedErrorJSON = `{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}`
+	var unmarshalerCalled atomic.Bool
 	h400 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rsc := request.GetResources(r)
 		if rsc != nil {
@@ -341,11 +348,16 @@ func TestTSMAllMembers400DoesNotAttemptDecode(t *testing.T) {
 				return nil
 			}
 			rsc.MergeRespondFunc = markerRespondFunc
+			rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+			rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				unmarshalerCalled.Store(true)
+				return nil, errors.New("should not be called when returning 400")
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set(headers.NameTricksterResult, "engine=none")
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"status":"error","errorType":"bad_data","error":"Forbidden: missing label"}`))
+		w.Write([]byte(expectedErrorJSON))
 	})
 
 	p, _, _ := albpool.NewHealthy([]http.Handler{h400, h400})
@@ -353,20 +365,119 @@ func TestTSMAllMembers400DoesNotAttemptDecode(t *testing.T) {
 	albpool.WaitHealthy(t, p, 2)
 
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
-	rsc.IsMergeMember = true
-	rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-		t.Errorf("TSUnmarshaler should NOT be called when all members return 400")
-		return nil, nil
-	}
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
-
 	h := &handler{mergePaths: []string{"/"}}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 
-	// All members returned 400 -> aggregated status should be 400
+	if unmarshalerCalled.Load() {
+		t.Errorf("TSUnmarshaler should NOT be called when all members return 400")
+	}
+
+	// All members returned 400 -> aggregated status should be 400 with propagated body and content-type
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+	if w.Body.String() != expectedErrorJSON {
+		t.Errorf("expected error body %q, got %q", expectedErrorJSON, w.Body.String())
+	}
+}
+
+func TestPickErrorWinner(t *testing.T) {
+	results := []gatherResult{
+		{statusCode: 502, body: []byte("502")},
+		{statusCode: 400, body: []byte("400")},
+		{statusCode: 504, body: []byte("504")},
+	}
+	winner := pickErrorWinner(results)
+	if winner == nil {
+		t.Fatalf("expected non-nil winner")
+	}
+	if winner.statusCode != 400 {
+		t.Errorf("expected 400, got %d", winner.statusCode)
+	}
+}
+
+func TestTSMAllMembersFailedMixedErrorsSurfaces4xx(t *testing.T) {
+	var unmarshalerCalled atomic.Bool
+	h502 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.MergeFunc = mergeFn
+			rsc.MergeRespondFunc = markerRespondFunc
+			rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+			rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				unmarshalerCalled.Store(true)
+				return nil, errors.New("should not be called on 502")
+			}
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set(headers.NameTricksterResult, "engine=none")
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("502 Bad Gateway"))
+	})
+
+	const expected400Body = `{"status":"error","errorType":"bad_data","error":"parse error: syntax error"}`
+	h400 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.MergeFunc = mergeFn
+			rsc.MergeRespondFunc = markerRespondFunc
+			rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+			rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				unmarshalerCalled.Store(true)
+				return nil, errors.New("should not be called on 400")
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameTricksterResult, "engine=none")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(expected400Body))
+	})
+
+	h504 := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		if rsc != nil {
+			rsc.MergeFunc = mergeFn
+			rsc.MergeRespondFunc = markerRespondFunc
+			rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+			rsc.TSUnmarshaler = func(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+				unmarshalerCalled.Store(true)
+				return nil, errors.New("should not be called on 504")
+			}
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set(headers.NameTricksterResult, "engine=none")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		w.Write([]byte("504 Gateway Timeout"))
+	})
+
+	p, _, _ := albpool.NewHealthy([]http.Handler{h502, h400, h504})
+	defer p.Stop()
+	albpool.WaitHealthy(t, p, 3)
+
+	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
+	r := request.SetResources(albpool.NewParentGET(t), rsc)
+	h := &handler{mergePaths: []string{"/"}}
+	h.SetPool(p)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if unmarshalerCalled.Load() {
+		t.Errorf("TSUnmarshaler should NOT be called on failed fanout members")
+	}
+	// 400 Bad Request should win over 502 and 504
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("expected Content-Type application/json, got %s", ct)
+	}
+	if w.Body.String() != expected400Body {
+		t.Errorf("expected body %q, got %q", expected400Body, w.Body.String())
 	}
 }
