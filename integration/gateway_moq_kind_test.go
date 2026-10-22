@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +52,7 @@ func quicServedSerial(addr string) *big.Int {
 	// the serial of the certificate the listener presents for the scenario's host, nil when the handshake fails
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, moqGatewayTLS(codec.ALPNFor(gatewayMoQDraft)), nil)
+	conn, err := quicdial.DialAddr(ctx, addr, moqGatewayTLS(codec.ALPNFor(gatewayMoQDraft)), nil)
 	if err != nil {
 		return nil
 	}
@@ -67,7 +68,7 @@ func dialGatewayMoQ(t *testing.T) *session.Session {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, gatewayMoQAddr, moqGatewayTLS(codec.ALPNs(codec.ClientOffer)...),
+	conn, err := quicdial.DialAddr(ctx, gatewayMoQAddr, moqGatewayTLS(codec.ALPNs(codec.ClientOffer)...),
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	require.NoError(t, err)
 	c, ok := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)

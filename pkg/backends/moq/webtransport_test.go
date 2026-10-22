@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -86,7 +87,7 @@ func dialWTHandler(t *testing.T, addr string, header http.Header, h session.Hand
 	*http.Response, *session.Session, error,
 ) {
 	t.Helper()
-	tr := &webtransport.Transport{
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}, // #nosec G402 -- loopback test
 			MinVersion: tls.VersionTLS13,

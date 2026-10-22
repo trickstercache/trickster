@@ -25,7 +25,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/require"
@@ -56,20 +56,18 @@ const (
 	moqInteropDeltaSize  = 96
 	moqInteropDeltaCount = 3
 	moqCLIEnv            = "TRICKSTER_MOQ_CLI_TEST"
-	moqCLIImage          = "moqdev/moq:0.14.0@sha256:dfe7f1e4ae998b3df6f71e55a4a71f10026d09c8a20f1dc4437c547afa986255"
+	moqCLIImage          = "moqdev/moq:0.14.5@sha256:991edc7bc70b96854730ddf0b1019f4e26e4a2ec0e983dd877acf3b1773c51bd"
 	moqCLIBackend        = "moqcli"
 	moqCLIWait           = time.Minute
 	moqCLIPullWait       = 5 * time.Minute
 )
-
-var moqDevFetchDrafts = []int{19, 18, 17}
 
 func requireMoQRelay(t *testing.T) {
 	t.Helper()
 	try := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		conn, err := quic.DialAddr(ctx, moqRelayAddr, moqPeerTLS(codec.ALPNFor(codec.ClientOffer[0])), nil)
+		conn, err := quicdial.DialAddr(ctx, moqRelayAddr, moqPeerTLS(codec.ALPNFor(codec.ClientOffer[0])), nil)
 		if err != nil {
 			return err
 		}
@@ -131,7 +129,7 @@ func publishTo(t *testing.T, addr string, draft int, ns wire.Namespace) *interop
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, moqPeerTLS(codec.ALPNFor(draft)),
+	conn, err := quicdial.DialAddr(ctx, addr, moqPeerTLS(codec.ALPNFor(draft)),
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	require.NoError(t, err)
 	c, ok := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
@@ -239,11 +237,6 @@ func TestMoQInterop(t *testing.T) {
 			lt := subscribeThrough(t, sub, pub, ft)
 			group0 := lt.publish()
 			lt.publish()
-			if !slices.Contains(moqDevFetchDrafts, up) {
-				// moq-dev answers FETCH only through -19; from -20 the range moved into LOCATION_FILTER
-				return
-			}
-
 			// group 0 has left the live edge and nothing spilled it, so moq-relay answers the fetch
 			backend := fmt.Sprintf(`backend_name="%s",source="upstream"`, fmt.Sprintf(moqInteropBackend, up))
 			before, _ := metricValue(t, h.MetricsAddr, "trickster_moq_fetch_objects_total", backend)
@@ -310,8 +303,7 @@ func TestMoQInteropCLI(t *testing.T) {
 	subscribes := fmt.Sprintf(`backend_name="%s",result="ok",type="subscribe"`, moqCLIBackend)
 	run := strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	// the CLI spells -22's LOCATION_FILTER as -21's, which is why clients are served -21 and offer no -22
-	for _, d := range codec.ClientOffer {
+	for _, d := range codec.Drafts() {
 		t.Run(strconv.Itoa(d), func(t *testing.T) {
 			ns := wire.Namespace{[]byte("cli"), []byte(run), []byte(strconv.Itoa(d))}
 			pub := publishTo(t, addr, d, ns)
@@ -323,12 +315,9 @@ func TestMoQInteropCLI(t *testing.T) {
 			group1 := lt.publish()
 			ctx, cancel := context.WithTimeout(context.Background(), moqCLIWait)
 			defer cancel()
-			if slices.Contains(moqDevFetchDrafts, d) {
-				// the CLI fetches a group behind the live edge only through -19
-				out, err := moqCLI(ctx, port, d, ns, "fetch", "--group", "0", moqTrack).Output()
-				require.NoError(t, err, "moq fetch --group 0: %s", stderrOf(err))
-				require.Equal(t, strings.Join(group0, ""), string(out))
-			}
+			fetched, err := moqCLI(ctx, port, d, ns, "fetch", "--group", "0", moqTrack).Output()
+			require.NoError(t, err, "moq fetch --group 0: %s", stderrOf(err))
+			require.Equal(t, strings.Join(group0, ""), string(fetched))
 
 			// without --group the CLI prints the newest group: the current one, or the next once it is published
 			before, _ := metricValue(t, h.MetricsAddr, "trickster_moq_requests_total", subscribes)

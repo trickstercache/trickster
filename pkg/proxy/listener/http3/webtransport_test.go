@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
@@ -85,7 +86,7 @@ func (e *wtEndpoint) tlsConfig() *tls.Config {
 
 func (e *wtEndpoint) dial(t *testing.T, protocols ...string) (*http.Response, *webtransport.Session, error) {
 	t.Helper()
-	tr := &webtransport.Transport{TLSClientConfig: e.tlsConfig(), ApplicationProtocols: protocols}
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly, TLSClientConfig: e.tlsConfig(), ApplicationProtocols: protocols}
 	ctx, cancel := context.WithTimeout(context.Background(), testDialTimeout)
 	defer cancel()
 	return tr.Dial(ctx, "https://"+e.addr+"/moq", nil)
@@ -183,8 +184,8 @@ func TestWebTransportSessions(t *testing.T) {
 	_ = s.CloseWithError(0, "")
 
 	// plain requests are served on a connection that carries sessions
-	tr := &webtransport.Transport{TLSClientConfig: e.tlsConfig()}
-	qconn, err := quic.DialAddr(ctx, e.addr, e.tlsConfig(), &quic.Config{
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly, TLSClientConfig: e.tlsConfig()}
+	qconn, err := quicdial.DialAddr(ctx, e.addr, e.tlsConfig(), &quic.Config{
 		EnableDatagrams: true, EnableStreamResetPartialDelivery: true,
 	})
 	if err != nil {
@@ -223,7 +224,7 @@ func TestWebTransportShutdown(t *testing.T) {
 	next(t, seen)
 	ctx, cancel := context.WithTimeout(context.Background(), testDialTimeout)
 	defer cancel()
-	idle, err := quic.DialAddr(ctx, e.addr, e.tlsConfig(), &quic.Config{
+	idle, err := quicdial.DialAddr(ctx, e.addr, e.tlsConfig(), &quic.Config{
 		EnableDatagrams: true, EnableStreamResetPartialDelivery: true,
 	})
 	if err != nil {

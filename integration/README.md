@@ -151,6 +151,11 @@ each assertion so that timing can't change its outcome:
   needs a query no earlier run made (for example one carrying
   `time.Now().UnixNano()`). ALB member stats and sticky tables are kept per ALB
   name for the life of the process, so give each test's ALB its own name.
+- **QUIC dials.** Dial QUIC, HTTP/3 and WebTransport through
+  `pkg/proxy/quicdial` (or set it as the client's dial hook), never
+  `quic.DialAddr`. On macOS, `quic.DialAddr`'s dual-stack socket can be given a
+  port another process holds for IPv4, which then receives every reply, so about
+  one dial in 1,500 times out in its handshake.
 - **Metrics are process-wide.** Measure a counter before and after the action,
   and only on labels no background activity (health checks, other backends)
   also increments.

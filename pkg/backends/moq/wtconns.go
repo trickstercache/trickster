@@ -22,6 +22,8 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
+
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
@@ -152,7 +154,7 @@ func (c *wtConn) dial(ctx context.Context, w *wtDial) {
 	defer close(c.ready)
 	tc := w.tls.Clone()
 	tc.NextProtos = []string{http3.NextProtoH3}
-	qconn, err := quic.DialAddr(ctx, w.addr, tc, w.quic)
+	qconn, err := quicdial.DialAddr(ctx, w.addr, tc, w.quic)
 	if err != nil {
 		c.err = err
 		return

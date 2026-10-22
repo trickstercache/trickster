@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 )
@@ -50,7 +51,7 @@ func dialDraft(t *testing.T, addr string, draft int, h session.Handler) *session
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
+	conn, err := quicdial.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
 		NextProtos: []string{codec.ALPNFor(draft)}, MinVersion: tls.VersionTLS13},
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	if err != nil {

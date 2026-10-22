@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
         - name: moq-relay
-          image: moqdev/moq-relay:0.17.0@sha256:4f4de66c996deb4633f7c09983a7ba850c8fd4cc30b07114f742cfe8574c7ebe
+          image: moqdev/moq-relay:0.17.5@sha256:a14382211dc588da7345802a49ff52ef5bcea16ca83608a9ff01be9801532d5f
           # a self-signed certificate, which the generated backend accepts since no
           # BackendTLSPolicy names the Service
           args:

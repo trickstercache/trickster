@@ -35,12 +35,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
-
-	"github.com/quic-go/quic-go"
 )
 
 func TestApplyHTTP3WebTransportFollowsMoQBackends(t *testing.T) {
@@ -114,7 +113,7 @@ func TestMoQListenerRuntimeCerts(t *testing.T) {
 	handshake := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		conn, err := quic.DialAddr(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), &tls.Config{
+		conn, err := quicdial.DialAddr(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), &tls.Config{
 			InsecureSkipVerify: true, ServerName: serverName, // #nosec G402 -- test certificate
 			NextProtos: []string{codec.ALPNFor(21)}, MinVersion: tls.VersionTLS13,
 		}, nil)
@@ -166,7 +165,7 @@ func TestHTTP3ListenerRuntimeCerts(t *testing.T) {
 	handshake := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		conn, err := quic.DialAddr(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(udpPort)), &tls.Config{
+		conn, err := quicdial.DialAddr(ctx, net.JoinHostPort("127.0.0.1", strconv.Itoa(udpPort)), &tls.Config{
 			InsecureSkipVerify: true, ServerName: serverName, // #nosec G402 -- test certificate
 			NextProtos: []string{listenerhttp3.ALPN}, MinVersion: tls.VersionTLS13,
 		}, nil)

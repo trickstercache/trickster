@@ -210,7 +210,7 @@
 #       max_filter_ranges: 16
 #       max_request_updates: 64
 #       # accepted MoQ Transport drafts, most preferred first
-#       drafts: [21, 22, 20]
+#       drafts: [22, 21, 20]
 #       # the MOQT_IMPLEMENTATION setup option; defaults to trickster
 #       implementation: ''
 #       # when the listener stops, each session gets a GOAWAY naming this moqt
@@ -735,7 +735,7 @@ backends:
   #     max_object_size_bytes: 67108864
   #     webtransport:
   #       # drafts accepted from WebTransport clients, most preferred first
-  #       drafts: [21, 22, 20]
+  #       drafts: [22, 21, 20]
   #       # the draft assumed for a client offering no WT-Available-Protocols,
   #       # and for a WebTransport origin answering without WT-Protocol; 0
   #       # refuses both

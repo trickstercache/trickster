@@ -41,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	pl "github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
@@ -234,7 +235,7 @@ func dial(t *testing.T, addr, authority string) (*session.Session, error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"moqt-21"}, // #nosec G402
+	conn, err := quicdial.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, NextProtos: []string{"moqt-21"}, // #nosec G402
 		MinVersion: tls.VersionTLS13}, &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	if err != nil {
 		return nil, err
@@ -355,7 +356,7 @@ func TestRouteBySNI(t *testing.T) {
 	start := func(serverName string) (*session.Session, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), wait)
 		defer cancel()
-		conn, err := quic.DialAddr(ctx, st.addr, &tls.Config{InsecureSkipVerify: true, ServerName: serverName, // #nosec G402
+		conn, err := quicdial.DialAddr(ctx, st.addr, &tls.Config{InsecureSkipVerify: true, ServerName: serverName, // #nosec G402
 			NextProtos: []string{"moqt-21"}, MinVersion: tls.VersionTLS13},
 			&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 		if err != nil {

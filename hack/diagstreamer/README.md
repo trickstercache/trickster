@@ -111,7 +111,7 @@ go run ./cmd/diagstreamer -out moq -moq-url moqt://127.0.0.1:10443/ -moq-insecur
   one by the broadcast name's suffix, so the default broadcast is `diagstreamer.msf`, or
   `diagstreamer.hang` with `-moq-catalog hang`. `-moq-broadcast` names it outright.
 - moq-dev's CLI reads it: `moq --connect <relay> --broadcast diagstreamer.msf export fmp4`.
-  The 0.14.0 CLI cannot read an MSF catalog with CMAF packaging, even one it published itself, so
+  The CLI (0.14.0 through at least 0.14.5) cannot read an MSF catalog with CMAF packaging, even one it published itself, so
   add `--catalog-format hang` with that release.
 - `-moq-url` takes `moqt://` for native QUIC and `https://` for WebTransport. `-moq-insecure`
   skips certificate checks, and `-moq-ca` trusts a PEM bundle.

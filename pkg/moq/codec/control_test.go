@@ -527,7 +527,7 @@ func TestCodecRegistry(t *testing.T) {
 	if got := ALPNs([]int{22, 99, 20}); len(got) != 2 || got[0] != "moqt-22" || got[1] != "moqt-20" {
 		t.Errorf("ALPNs %v", got)
 	}
-	if ServerPreference[0] != 21 || len(ClientOffer) == 0 {
+	if ServerPreference[0] != 22 || ClientOffer[0] != 22 {
 		t.Error("preference defaults")
 	}
 	if _, ok := c.MessageType(message.KindPublishOK); ok {

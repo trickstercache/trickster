@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -106,7 +107,7 @@ func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int
 		tc.NextProtos = codec.ALPNs(drafts)
 		addr := net.JoinHostPort(host, port)
 		d.connect = func(ctx context.Context) (session.Conn, *codec.Codec, error) {
-			conn, err := quic.DialAddr(ctx, addr, tc, qc)
+			conn, err := quicdial.DialAddr(ctx, addr, tc, qc)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -130,9 +131,9 @@ func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int
 		// the CONNECT request carries the authority and path, so SETUP names neither
 		tc.NextProtos = []string{http3.NextProtoH3}
 		d.webTransport = true
-		// quic.DialAddr, unlike webtransport-go's default, never sends 0-RTT data
+		// a full handshake, unlike webtransport-go's default, never sends 0-RTT data
 		d.transport = &webtransport.Transport{
-			TLSClientConfig: tc, QUICConfig: qc, ApplicationProtocols: codec.ALPNs(drafts), DialAddr: quic.DialAddr,
+			TLSClientConfig: tc, QUICConfig: qc, ApplicationProtocols: codec.ALPNs(drafts), DialAddr: quicdial.DialAddr,
 		}
 		target := origin.String()
 		addr := net.JoinHostPort(host, port)

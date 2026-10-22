@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
@@ -107,7 +108,7 @@ func dial(t *testing.T, addr net.Addr, sni string, alpns ...string) (*quic.Conn,
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), testTimeout)
 	defer cancel()
-	return quic.DialAddr(ctx, addr.String(), &tls.Config{
+	return quicdial.DialAddr(ctx, addr.String(), &tls.Config{
 		ServerName: sni, NextProtos: alpns, MinVersion: tls.VersionTLS13,
 		InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test certs
 	}, &quic.Config{})

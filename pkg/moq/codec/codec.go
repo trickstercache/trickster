@@ -164,13 +164,11 @@ func Drafts() []int {
 	return out
 }
 
-// ServerPreference orders the drafts a server picks from. -21 precedes -22: they differ only in LOCATION_FILTER's
-// spelling, and a widely deployed implementation encodes -22 as -21, so a client offering both is served -21.
-var ServerPreference = []int{21, 22, 20, 19, 18, 17}
+// ServerPreference orders the drafts a server picks from, newest first
+var ServerPreference = []int{22, 21, 20, 19, 18, 17}
 
-// ClientOffer is the default list a client offers; it omits -22, which a server preferring the newest draft
-// would pick, for the interoperability reason given on ServerPreference
-var ClientOffer = []int{21, 20, 19, 18, 17}
+// ClientOffer is the default list a client offers, newest first
+var ClientOffer = []int{22, 21, 20, 19, 18, 17}
 
 // ALPNs returns the ALPNs of the given drafts that are supported, in the order given
 func ALPNs(drafts []int) []string {

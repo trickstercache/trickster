@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -94,7 +95,7 @@ func dialMoQ(ctx context.Context, cfg *Config, h session.Handler) (*session.Sess
 			port = moqDefaultPort
 		}
 		tc.NextProtos = codec.ALPNs(codec.ClientOffer)
-		qconn, err := quic.DialAddr(ctx, net.JoinHostPort(u.Hostname(), port), tc, qc)
+		qconn, err := quicdial.DialAddr(ctx, net.JoinHostPort(u.Hostname(), port), tc, qc)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -112,7 +113,7 @@ func dialMoQ(ctx context.Context, cfg *Config, h session.Handler) (*session.Sess
 		tc.NextProtos = []string{http3.NextProtoH3}
 		tr := &webtransport.Transport{
 			TLSClientConfig: tc, QUICConfig: qc, ApplicationProtocols: codec.ALPNs(codec.ClientOffer),
-			DialAddr: quic.DialAddr,
+			DialAddr: quicdial.DialAddr,
 		}
 		_, ws, err := tr.Dial(ctx, u.String(), nil)
 		if err != nil {

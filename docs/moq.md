@@ -37,21 +37,21 @@ can relay a track whose origin speaks another.
 
 | Draft | ALPN | Notes |
 | --- | --- | --- |
-| -22 | `moqt-22` | the newest; offered to clients but not to origins by default (see below) |
-| -21 | `moqt-21` | the preferred draft |
+| -22 | `moqt-22` | the newest and the preferred draft; `LOCATION_FILTER` carries its type |
+| -21 | `moqt-21` | editorial changes only |
 | -20 | `moqt-20` | fill fetch streams replace Joining FETCH |
 | -19 | `moqt-19` | range filters, `MAX_REQUEST_UPDATES`, multiple subscriptions per track |
 | -18 | `moqt-18` | `moqt://` URIs, `SUBSCRIBE_TRACKS`, `REDIRECT` |
 | -17 | `moqt-17` | Required Request ID, `PUBLISH_OK`, the combined `SUBSCRIBE_NAMESPACE` |
 
 Native QUIC clients negotiate the draft by ALPN, and WebTransport clients by
-`WT-Available-Protocols`. Trickster prefers -21, then -22, then -20 and the rest, newest first,
-and offers origins -21, -20, -19, -18 and -17. moq-dev's relay and CLI encode -22 as -21, so
-preferring -21 keeps them working; set `drafts` to change the order. Drafts before -17 are not
-supported.
+`WT-Available-Protocols`. Trickster prefers the newest draft, and offers origins every draft,
+newest first. moq-dev's relay before 0.17.3 and CLI before 0.14.3 encode -22 as -21; to work
+with those releases, list -21 ahead of -22 in `drafts` and `upstream.drafts`. Drafts before -17
+are not supported.
 
 Interoperability is tested on every draft against [moq-dev](https://github.com/moq-dev/moq)'s
-relay (0.17.0) and `moq` CLI (0.14.0).
+relay (0.17.5) and `moq` CLI (0.14.5), including FETCH.
 
 ## How clients reach the relay
 
@@ -112,7 +112,7 @@ backends:
 | `moq.max_sessions` | `10000` | sessions served at once; past it, a new connection is closed ("session limit reached") |
 | `moq.max_requests_per_session` | `1024` | requests a client may have open at once; past it, a request is refused with `EXCESSIVE_LOAD` |
 | `moq.max_filter_ranges`, `moq.max_request_updates` | `16`, `64` | advertised to clients in SETUP |
-| `moq.drafts` | `[21, 22, 20, 19, 18, 17]` | accepted drafts, most preferred first |
+| `moq.drafts` | `[22, 21, 20, 19, 18, 17]` | accepted drafts, most preferred first |
 | `moq.implementation` | `trickster/<version>` | the `MOQT_IMPLEMENTATION` setup option |
 | `moq.goaway_uri` | | the `moqt://` URI a GOAWAY names when the listener stops; see [Reloads and shutdown](#reloads-and-shutdown) |
 
@@ -141,7 +141,7 @@ and the geo ACL of the backends it serves gates the session the same way. A back
 | `max_ttl` | `25h` | the most a spilled group lives, and its lifetime when its track sets no `MAX_CACHE_DURATION` |
 | `tls` | | the certificate served to clients, and the origin's verification |
 | `moq.upstream.alb` | | an alb of `moq` backends to reach the origins through, in place of `origin_url`; see [Origin pools](#origin-pools) |
-| `moq.upstream.drafts` | `[21, 20, 19, 18, 17]` | drafts offered to the origin, most preferred first |
+| `moq.upstream.drafts` | `[22, 21, 20, 19, 18, 17]` | drafts offered to the origin, most preferred first |
 | `moq.upstream.prewarm` | `false` | keeps the upstream subscription forwarding while every subscriber is paused |
 | `moq.upstream.reconnect_backoff` | `1s` | the first wait before re-subscribing a lost upstream subscription |
 | `moq.upstream.linger` | `5s` | how long an upstream subscription stays after its last subscriber leaves |
@@ -185,7 +185,7 @@ all apply to it.
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `moq.webtransport.drafts` | `[21, 22, 20, 19, 18, 17]` | drafts accepted from WebTransport clients, most preferred first |
+| `moq.webtransport.drafts` | `[22, 21, 20, 19, 18, 17]` | drafts accepted from WebTransport clients, most preferred first |
 | `moq.webtransport.default_draft` | `0` | the draft assumed for a client that offers no `WT-Available-Protocols`, and for a WebTransport origin that answers without `WT-Protocol`; `0` refuses both |
 | `moq.webtransport.allowed_origins` | | browser origins (`scheme://host[:port]`) that may open sessions, or `*`; empty allows only an origin naming the requested host, and a client that sends no `Origin` is always allowed |
 | `moq.webtransport.max_sessions` | `10000` | WebTransport sessions the backend serves at once |

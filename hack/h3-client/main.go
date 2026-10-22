@@ -35,6 +35,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
+
 	"github.com/quic-go/quic-go/http3"
 )
 
@@ -80,7 +82,7 @@ func run() error {
 		return fmt.Errorf("building request: %w", err)
 	}
 
-	tr := &http3.Transport{TLSClientConfig: tlsConf}
+	tr := &http3.Transport{Dial: quicdial.DialAddrEarly, TLSClientConfig: tlsConf}
 	defer tr.Close()
 	client := &http.Client{Transport: tr, Timeout: *timeout}
 

@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/webtransport-go"
@@ -105,7 +106,7 @@ func (h ingestHarness) native(t *testing.T, tokens ...string) *session.Session {
 	// a session on the moq listener, its SETUP carrying tokens
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, h.moqAddr, &tls.Config{
+	conn, err := quicdial.DialAddr(ctx, h.moqAddr, &tls.Config{
 		RootCAs: h.pool, ServerName: "localhost",
 		NextProtos: codec.ALPNs(codec.ClientOffer), MinVersion: tls.VersionTLS13,
 	},
@@ -128,7 +129,7 @@ func (h ingestHarness) native(t *testing.T, tokens ...string) *session.Session {
 func (h ingestHarness) browser(t *testing.T, tokens ...string) *session.Session {
 	t.Helper()
 	// a session by WebTransport through the default listener, its SETUP carrying tokens
-	tr := &webtransport.Transport{
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly,
 		TLSClientConfig:      &tls.Config{RootCAs: h.pool, ServerName: "localhost", MinVersion: tls.VersionTLS13},
 		ApplicationProtocols: codec.ALPNs(codec.ClientOffer),
 	}

@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
@@ -310,7 +311,7 @@ func dialMoQWith(t *testing.T, addr, authority string, alpns ...string) (*sessio
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
+	conn, err := quicdial.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
 		NextProtos: alpns, MinVersion: tls.VersionTLS13},
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	if err != nil {

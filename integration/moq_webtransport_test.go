@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
@@ -96,7 +97,7 @@ func (h moqWebHarness) tlsConfig() *tls.Config {
 func (h moqWebHarness) dial(t *testing.T, header http.Header) (*http.Response, *session.Session, error) {
 	t.Helper()
 	// a MoQ session by WebTransport through the backend's path-routed URL
-	tr := &webtransport.Transport{TLSClientConfig: h.tlsConfig(), ApplicationProtocols: codec.ALPNs(codec.ClientOffer)}
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly, TLSClientConfig: h.tlsConfig(), ApplicationProtocols: codec.ALPNs(codec.ClientOffer)}
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
 	rsp, ws, err := tr.Dial(ctx, "https://"+h.h3Addr+"/"+moqWebBackend+"/live", header)
@@ -120,7 +121,7 @@ func TestMoQWebTransport(t *testing.T) {
 	}))
 	t.Cleanup(site.Close)
 	h := moqWebTransportHarness(t, origin, site.URL, false)
-	const sessionSeries = `backend_name="moqweb",draft="21",listener_name="default",result="ok",role="downstream",` +
+	const sessionSeries = `backend_name="moqweb",draft="22",listener_name="default",result="ok",role="downstream",` +
 		`transport="webtransport"`
 	// the counter outlives the daemon in this process, so only its change is this test's
 	before, _ := metricValue(t, h.MetricsAddr, "trickster_moq_sessions_total", sessionSeries)
@@ -141,7 +142,7 @@ func TestMoQWebTransport(t *testing.T) {
 	require.Equal(t, before+2, sessions)
 
 	// plain HTTP/3 requests are served on the endpoint that now carries WebTransport
-	client := &http.Client{Transport: &http3.Transport{TLSClientConfig: h.tlsConfig()}, Timeout: moqWait}
+	client := &http.Client{Transport: &http3.Transport{Dial: quicdial.DialAddrEarly, TLSClientConfig: h.tlsConfig()}, Timeout: moqWait}
 	resp, err := client.Get("https://" + h.h3Addr + "/h3site/")
 	require.NoError(t, err)
 	body, _ := io.ReadAll(resp.Body)

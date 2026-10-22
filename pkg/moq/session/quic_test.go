@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/quic-go/quic-go"
@@ -63,7 +64,7 @@ func quicPair(t *testing.T) (session.Conn, session.Conn) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
-	cc, err := quic.DialAddr(ctx, ln.Addr().String(), &tls.Config{
+	cc, err := quicdial.DialAddr(ctx, ln.Addr().String(), &tls.Config{
 		InsecureSkipVerify: true, NextProtos: []string{alpn}, MinVersion: tls.VersionTLS13, // #nosec G402 -- loopback test
 	}, qc)
 	if err != nil {

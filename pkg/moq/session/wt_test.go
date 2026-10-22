@@ -27,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/quic-go/quic-go"
@@ -73,7 +74,7 @@ func wtPair(t *testing.T) (session.Conn, session.Conn) {
 		_ = srv.Close()
 		_ = pc.Close()
 	})
-	tr := &webtransport.Transport{
+	tr := &webtransport.Transport{DialAddr: quicdial.DialAddrEarly,
 		TLSClientConfig: &tls.Config{
 			InsecureSkipVerify: true, NextProtos: []string{http3.NextProtoH3}, // #nosec G402 -- loopback test
 			MinVersion: tls.VersionTLS13,

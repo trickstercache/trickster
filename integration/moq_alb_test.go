@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
 	"github.com/stretchr/testify/require"
@@ -182,7 +183,7 @@ func dialMoQHandler(t *testing.T, addr, authority, path string, h session.Handle
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
-	conn, err := quic.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
+	conn, err := quicdial.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
 		NextProtos: codec.ALPNs(codec.ClientOffer), MinVersion: tls.VersionTLS13},
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	require.NoError(t, err)
