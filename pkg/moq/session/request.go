@@ -464,9 +464,6 @@ func (r *Request) receive(m message.Message) error {
 		if err = r.s.registerAlias(v.TrackAlias, r); err != nil {
 			return err
 		}
-		r.mu.Lock()
-		r.alias, r.hasAlias = v.TrackAlias, true
-		r.mu.Unlock()
 		if order := v.TrackProperties.GroupOrder(); order != message.GroupOrderAscending {
 			r.adoptTrackOrder(order)
 		}
@@ -713,7 +710,9 @@ func (s *Session) Open(ctx context.Context, m message.Message, h RequestHandler,
 			s.routeFetch(id, r, r.fillOrder(v.Params.Fill))
 		}
 	case *message.Publish:
+		r.mu.Lock()
 		r.alias, r.hasAlias = v.TrackAlias, true
+		r.mu.Unlock()
 	}
 	if !s.track(r) {
 		st.CancelWrite(uint64(message.ResetSessionClosed))

@@ -267,3 +267,47 @@ func TestEarlyDatagramsBounded(t *testing.T) {
 		t.Errorf("a full table of fresh datagrams takes no more: %d", s.earlyCount)
 	}
 }
+
+func TestSubscribeAliasDuringFinish(t *testing.T) {
+	for _, order := range []string{"response first", "finish first", "concurrent"} {
+		t.Run(order, func(t *testing.T) {
+			for range 100 {
+				s := &Session{
+					live: make(map[*Request]struct{}), aliases: make(map[uint64]*Request),
+					tombstones: make(map[uint64]time.Time),
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				r := &Request{s: s, ctx: ctx, cancel: cancel, local: true, kind: message.KindSubscribe,
+					resp: make(chan message.Message, 1)}
+				s.live[r] = struct{}{}
+				respond := func() {
+					if err := r.receive(&message.SubscribeOK{TrackAlias: 7}); err != nil {
+						t.Error(err)
+					}
+				}
+				switch order {
+				case "response first":
+					respond()
+					if alias, ok := r.TrackAlias(); !ok || alias != 7 || s.aliases[7] != r {
+						t.Error("response did not register the request's alias")
+					}
+					r.finish(ErrRequestEnded)
+				case "finish first":
+					r.finish(ErrRequestEnded)
+					respond()
+				case "concurrent":
+					done := make(chan struct{})
+					go func() {
+						respond()
+						close(done)
+					}()
+					r.finish(ErrRequestEnded)
+					<-done
+				}
+				if len(s.aliases) != 0 || len(s.live) != 0 {
+					t.Fatal("a finished request remains registered")
+				}
+			}
+		})
+	}
+}

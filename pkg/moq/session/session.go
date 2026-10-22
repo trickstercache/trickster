@@ -749,7 +749,6 @@ func (s *Session) handleBidi(st Stream) {
 			s.fail(err)
 			return
 		}
-		r.alias, r.hasAlias = p.TrackAlias, true
 	}
 	if !s.track(r) {
 		r.release()
@@ -782,13 +781,14 @@ func (s *Session) untrack(r *Request, err error) {
 		s.inbound--
 		r.counted = false
 	}
-	if r.hasAlias && s.aliases[r.alias] == r {
-		delete(s.aliases, r.alias)
-		s.tombstone(r.alias)
-	}
 	r.mu.Lock()
+	alias, hasAlias := r.alias, r.hasAlias
 	routed, refused := r.fetchOrders != nil, r.refused
 	r.mu.Unlock()
+	if hasAlias && s.aliases[alias] == r {
+		delete(s.aliases, alias)
+		s.tombstone(alias)
+	}
 	if !routed {
 		return
 	}

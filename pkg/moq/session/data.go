@@ -41,12 +41,23 @@ var (
 
 func (s *Session) registerAlias(alias uint64, r *Request) error {
 	s.mu.Lock()
-	if cur, ok := s.aliases[alias]; ok && cur != r && cur.ctx.Err() == nil {
-		same := trackOf(cur.msg).Equal(trackOf(r.msg))
+	if r.ctx.Err() != nil {
 		s.mu.Unlock()
-		if !same {
+		return nil
+	}
+	shared := false
+	if cur, ok := s.aliases[alias]; ok && cur != r && cur.ctx.Err() == nil {
+		if !trackOf(cur.msg).Equal(trackOf(r.msg)) {
+			s.mu.Unlock()
 			return &message.SessionError{Code: message.CodeDuplicateTrackAlias, Reason: "track alias names another track"}
 		}
+		shared = true
+	}
+	r.mu.Lock()
+	r.alias, r.hasAlias = alias, true
+	r.mu.Unlock()
+	if shared {
+		s.mu.Unlock()
 		// a second subscription to the same track may share its alias; its objects reach the first
 		return nil
 	}
