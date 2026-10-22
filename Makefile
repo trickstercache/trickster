@@ -500,7 +500,7 @@ $(DEVELOPER_START_TARGETS): developer-start-%:
 	@$(MAKE) developer-start COMPOSE_PROFILES=$*
 
 # developer-moq runs the MoQ harness: moq-dev's relay, diagstreamer publishing into it, and Trickster in the
-# foreground serving the player at https://localhost:8483/player/, which developer-moq-browser opens in Chrome
+# foreground serving the player at https://localhost:8583/player/, which developer-moq-browser opens in Chrome
 .PHONY: developer-moq
 developer-moq: dev-certs
 	@hack/developer-moq.sh up $(ARGS)

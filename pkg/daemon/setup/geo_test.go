@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
+	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	geoacl "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl"
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
@@ -174,6 +175,10 @@ func TestSessionGateFor(t *testing.T) {
 	gate := sessionGateFor(conf, "default")
 	require.NotNil(t, gate)
 	require.Nil(t, sessionGateFor(conf, "elsewhere"))
+	// a moq listener judges each session by the backend it is routed to, so it takes no gate of its own
+	conf.Listeners["default"].Protocol = listenerconfig.ProtocolMoQ
+	require.Nil(t, sessionGateFor(conf, "default"))
+	conf.Listeners["default"].Protocol = listenerconfig.ProtocolHTTP
 
 	taker := &gateTaker{}
 	require.True(t, setSessionGate(taker, gate))

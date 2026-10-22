@@ -187,9 +187,13 @@ func TestMoQExportThroughRelayCLI(t *testing.T) {
 	exp.Stdout, exp.Stderr = &out, &expErr
 	_ = exp.Run()
 	_ = exec.Command("docker", "rm", "-f", exporter).Run() // #nosec G204 -- test-built name
-	require.True(t, bytes.Contains(out.Bytes(), []byte("moov")) && bytes.Contains(out.Bytes(), []byte("moof")),
-		"the export through Trickster carries the broadcast (%d bytes)\nexport: %s\nimport: %s", out.Len(),
-		expErr.String(), impErr.String())
+	if !bytes.Contains(out.Bytes(), []byte("moov")) || !bytes.Contains(out.Bytes(), []byte("moof")) {
+		// the importer is still writing its stderr, so it is stopped before that is read
+		stop()
+		_ = imp.Wait()
+		t.Fatalf("the export through Trickster carries the broadcast (%d bytes)\nexport: %s\nimport: %s", out.Len(),
+			expErr.String(), impErr.String())
+	}
 	probe := exec.Command("ffprobe", "-v", "error", "-show_entries", "stream=codec_name", "-of", "csv=p=0", "pipe:0")
 	probe.Stdin = bytes.NewReader(out.Bytes())
 	streams, err := probe.Output()

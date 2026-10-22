@@ -17,12 +17,16 @@
 package relay_test
 
 import (
+	"context"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
+	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/moq/session/memconn"
 )
 
 func filtered(f message.LocationFilter) message.Params {
@@ -105,5 +109,61 @@ func TestJoinReplaysDatagrams(t *testing.T) {
 	slices.Sort(got)
 	if !slices.Equal(got, []string{"a", "b"}) {
 		t.Errorf("replayed %v", got)
+	}
+}
+
+type answerGatedConn struct {
+	*memconn.Conn
+	gated   atomic.Bool
+	entered chan struct{}
+	gate    chan struct{}
+}
+
+func (c *answerGatedConn) AcceptStream(ctx context.Context) (session.Stream, error) {
+	st, err := c.Conn.AcceptStream(ctx)
+	if err != nil || !c.gated.Load() {
+		return st, err
+	}
+	return &answerGatedStream{Stream: st, c: c}, nil
+}
+
+type answerGatedStream struct {
+	session.Stream
+	c    *answerGatedConn
+	once atomic.Bool
+}
+
+func (s *answerGatedStream) Write(b []byte) (int, error) {
+	if s.once.CompareAndSwap(false, true) {
+		s.c.entered <- struct{}{}
+		<-s.c.gate
+	}
+	return s.Stream.Write(b)
+}
+
+func TestJoinHoldsDatagramsUntilAnswered(t *testing.T) {
+	h := newHarness(t, relay.Options{}, nil)
+	h.o.datagrams = true
+	req, r := subscribe(t, h.client(), "audio", message.Params{})
+	subscribed(t, req)
+	h.o.publish(t, "audio", 0, objs("a")...)
+	recv(t, r.datagrams, "the first datagram")
+	conn := &answerGatedConn{entered: make(chan struct{}, 1), gate: make(chan struct{})}
+	cl := h.connect(nil, func(c *memconn.Conn) session.Conn {
+		conn.Conn = c
+		return conn
+	})
+	conn.gated.Store(true)
+	jreq, jr := subscribe(t, cl, "audio", message.Params{})
+	// the relay has joined the subscriber to the track and is sending its SUBSCRIBE_OK when the next datagram arrives
+	recv(t, conn.entered, "the SUBSCRIBE_OK write")
+	h.o.publish(t, "audio", 1, objs("b")...)
+	recv(t, r.datagrams, "the datagram sent during the answer")
+	close(conn.gate)
+	subscribed(t, jreq)
+	got := []string{recv(t, jr.datagrams, "a datagram").payload, recv(t, jr.datagrams, "a datagram").payload}
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("received %v", got)
 	}
 }

@@ -69,9 +69,9 @@ func moqTLS(cfg *Config, host string) (*tls.Config, error) {
 	return tc, nil
 }
 
-// dialMoQ opens a session to the relay at cfg.MoQURL, over native QUIC for moqt:// or WebTransport for https://;
-// the returned close ends the session and its transport
 func dialMoQ(ctx context.Context, cfg *Config, h session.Handler) (*session.Session, func(), error) {
+	// opens a session to the relay at cfg.MoQURL, over native QUIC for moqt:// or WebTransport for https://;
+	// the returned close ends the session and its transport
 	u, err := url.Parse(cfg.MoQURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing the MoQ URL: %w", err)

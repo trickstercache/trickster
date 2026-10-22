@@ -167,8 +167,8 @@ func Drafts() []int {
 // ServerPreference orders the drafts a server picks from, newest first
 var ServerPreference = []int{22, 21, 20, 19, 18, 17}
 
-// ClientOffer is the default list a client offers, newest first
-var ClientOffer = []int{22, 21, 20, 19, 18, 17}
+// ClientOffer is the default list a client offers, newest first, the same as ServerPreference
+var ClientOffer = slices.Clone(ServerPreference)
 
 // ALPNs returns the ALPNs of the given drafts that are supported, in the order given
 func ALPNs(drafts []int) []string {

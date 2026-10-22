@@ -60,8 +60,8 @@ type RequestHandler interface {
 type DataHandler interface {
 	// HandleSubgroup serves one incoming subgroup stream on a goroutine of its own
 	HandleSubgroup(r *Request, in *IncomingSubgroup)
-	// HandleDatagram receives one object datagram; it must not block, and d and its payload are valid only
-	// during the call
+	// HandleDatagram receives one object datagram; it must not block, may run concurrently with itself, and d
+	// and its payload are valid only during the call
 	HandleDatagram(r *Request, d *message.Datagram)
 	// HandleFetch serves one incoming fetch stream on a goroutine of its own
 	HandleFetch(r *Request, in *IncomingFetch)

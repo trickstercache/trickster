@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/netip"
 
 	"github.com/quic-go/quic-go"
 )
@@ -38,7 +39,7 @@ func DialAddrEarly(ctx context.Context, addr string, tlsConf *tls.Config, conf *
 }
 
 func dial(ctx context.Context, addr string, tlsConf *tls.Config, conf *quic.Config, early bool) (*quic.Conn, error) {
-	raddr, err := net.ResolveUDPAddr("udp", addr)
+	raddr, host, err := resolve(ctx, addr)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +58,7 @@ func dial(ctx context.Context, addr string, tlsConf *tls.Config, conf *quic.Conf
 		tc = &tls.Config{}
 	}
 	if tc.ServerName == "" {
-		if host, _, err := net.SplitHostPort(addr); err == nil {
-			tc.ServerName = host
-		}
+		tc.ServerName = host
 	}
 	tr := &quic.Transport{Conn: pc}
 	var conn *quic.Conn
@@ -80,4 +79,28 @@ func dial(ctx context.Context, addr string, tlsConf *tls.Config, conf *quic.Conf
 		_ = pc.Close()
 	}()
 	return conn, nil
+}
+
+func resolve(ctx context.Context, addr string) (*net.UDPAddr, string, error) {
+	// resolves within ctx, preferring an IPv4 address as net.ResolveUDPAddr does
+	host, service, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, "", err
+	}
+	port, err := net.DefaultResolver.LookupPort(ctx, "udp", service)
+	if err != nil {
+		return nil, "", err
+	}
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+	if err != nil {
+		return nil, "", err
+	}
+	ip := ips[0]
+	for _, a := range ips {
+		if a.Unmap().Is4() {
+			ip = a
+			break
+		}
+	}
+	return net.UDPAddrFromAddrPort(netip.AddrPortFrom(ip.Unmap(), uint16(port))), host, nil // #nosec G115 -- a port
 }

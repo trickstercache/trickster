@@ -47,6 +47,7 @@ const (
 	defaultMaxRequests      = 1024
 	defaultAliasWait        = 2 * time.Second
 	defaultMaxParked        = 64
+	maxEarlyDatagrams       = 256
 	tombstoneTTL            = 5 * time.Second
 	maxTombstones           = 4096
 	readerSize              = 4096
@@ -127,6 +128,8 @@ type Session struct {
 	waiting    map[uint64][]chan *Request
 	requires   map[uint64][]chan struct{}
 	parked     int
+	early      map[uint64][]earlyDatagram
+	earlyCount int
 	tombstones map[uint64]time.Time
 	nextAlias  uint64
 	gotGoAway  bool
@@ -160,8 +163,9 @@ func New(conn Conn, o Options) (*Session, error) {
 	s := &Session{
 		conn: conn, codec: o.Codec, opts: o, ctx: ctx, cancel: cancel, done: make(chan struct{}),
 		setupDone: make(chan struct{}), aliases: make(map[uint64]*Request), fetches: make(map[uint64]*Request),
-		waiting: make(map[uint64][]chan *Request), tombstones: make(map[uint64]time.Time),
-		live: make(map[*Request]struct{}), tokens: tokenCache{max: o.Setup.MaxAuthTokenCacheSize},
+		waiting: make(map[uint64][]chan *Request), early: make(map[uint64][]earlyDatagram),
+		tombstones: make(map[uint64]time.Time),
+		live:       make(map[*Request]struct{}), tokens: tokenCache{max: o.Setup.MaxAuthTokenCacheSize},
 	}
 	if o.Role == RoleServer {
 		s.nextID = 1

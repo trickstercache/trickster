@@ -35,8 +35,8 @@ const (
 	testTicks      = 9000 // one frame at 10fps in a 90 kHz timescale
 )
 
-// testStreamer is a stream that started ago, with segments of synthetic video and audio chunks fed in
 func testStreamer(t *testing.T, cfg Config, ago time.Duration, segments int) *Streamer {
+	// a stream that started ago, with segments of synthetic video and audio chunks fed in
 	t.Helper()
 	s, err := newStreamer(cfg, func() time.Time { return time.Now().Add(-ago) })
 	if err != nil {
@@ -53,14 +53,14 @@ func testStreamer(t *testing.T, cfg Config, ago time.Duration, segments int) *St
 	return s
 }
 
-// feedSegments delivers frames for segments [from, to) of the stream, then the first frame of segment to
 func feedSegments(s *Streamer, from, to int) {
+	// delivers frames for segments [from, to) of the stream, then the first frame of segment to
 	per := int(s.cfg.FramesPerSegment())
 	feedFrames(s, from*per, to*per)
 }
 
-// feedFrames delivers frames first through last of the stream
 func feedFrames(s *Streamer, first, last int) {
+	// delivers frames first through last of the stream
 	per := int(s.cfg.FramesPerSegment())
 	for i := first; i <= last; i++ {
 		for _, v := range s.videos {

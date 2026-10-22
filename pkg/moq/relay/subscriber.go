@@ -19,7 +19,6 @@ package relay
 import (
 	"context"
 	"math"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +35,15 @@ const (
 	subActive
 	subDone
 )
+
+// at most this many live datagrams wait for a subscription while its SUBSCRIBE_OK is being sent
+const maxHeldDatagrams = 256
+
+type heldDatagram struct {
+	o           *object
+	props       message.Properties
+	defaultPrio uint8
+}
 
 type subscriber struct {
 	t      *track
@@ -57,6 +65,8 @@ type subscriber struct {
 	sgTimeout  time.Duration
 	pending    []*message.RequestUpdate
 	writers    map[*writer]struct{}
+	dgHeld     []heldDatagram
+	dgLive     int
 
 	held    bool
 	wg      sync.WaitGroup
@@ -159,9 +169,18 @@ func (s *subscriber) markActive() []*message.RequestUpdate {
 	s.state.Store(uint32(subActive))
 	pending := s.pending
 	s.pending = nil
+	held := s.dgHeld
+	s.dgHeld, s.dgLive = nil, 0
 	s.mu.Unlock()
 	close(s.ready)
 	s.t.r.m.subscriptions(directionDownstream, 1)
+	if len(held) > 0 {
+		s.wg.Go(func() {
+			for _, h := range held {
+				s.sendDatagram(h.o, h.props, h.defaultPrio)
+			}
+		})
+	}
 	return pending
 }
 
@@ -271,24 +290,33 @@ func (t *track) startJoinRunsLocked(s *subscriber, props message.Properties) {
 			}
 		}
 	}
-	if t.newest != nil && len(t.newest.datagrams) > 0 {
-		s.replayDatagrams(slices.Clone(t.newest.datagrams), props)
+	if t.newest == nil || len(t.newest.datagrams) == 0 {
+		return
 	}
+	// the datagrams are sent once the subscription is answered, ahead of any arriving meanwhile
+	defaultPrio := props.PublisherPriority()
+	s.mu.Lock()
+	s.dgHeld = make([]heldDatagram, 0, len(t.newest.datagrams))
+	for _, o := range t.newest.datagrams {
+		s.dgHeld = append(s.dgHeld, heldDatagram{o: o, props: props, defaultPrio: defaultPrio})
+	}
+	s.mu.Unlock()
 }
 
-func (s *subscriber) replayDatagrams(objs []*object, props message.Properties) {
-	// the datagrams wait for the subscription to be answered, as its streams do
-	s.wg.Go(func() {
-		select {
-		case <-s.ready:
-		case <-s.ctx.Done():
-			return
-		}
-		defaultPrio := props.PublisherPriority()
-		for _, o := range objs {
-			s.sendDatagram(o, props, defaultPrio)
-		}
-	})
+func (s *subscriber) holdDatagram(o *object, props message.Properties, defaultPrio uint8) bool {
+	// a datagram arriving while the subscription is answered waits for the answer, as its streams do
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if subState(s.state.Load()) != subPending {
+		return false
+	}
+	if s.dgLive >= maxHeldDatagrams {
+		s.t.r.m.drop(dropDatagramQueueFull)
+		return true
+	}
+	s.dgLive++
+	s.dgHeld = append(s.dgHeld, heldDatagram{o: o, props: props, defaultPrio: defaultPrio})
+	return true
 }
 
 func (t *track) startOpenRunsLocked(s *subscriber) {
@@ -376,6 +404,9 @@ func minNonzero(a, b time.Duration) time.Duration {
 }
 
 func (s *subscriber) sendDatagram(o *object, props message.Properties, defaultPrio uint8) {
+	if subState(s.state.Load()) == subPending && s.holdDatagram(o, props, defaultPrio) {
+		return
+	}
 	if subState(s.state.Load()) != subActive || !s.forward.Load() || !s.passes(o, defaultPrio) {
 		return
 	}

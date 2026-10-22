@@ -91,6 +91,9 @@ type Options struct {
 	MaxRendezvous time.Duration
 	// Metrics receives the relay's measurements; nil records none
 	Metrics *Metrics
+	// CacheNamespace keeps this relay's spilled groups apart from those of other relays sharing its cache, so one
+	// relay's publishers can neither overwrite nor read another's; a backend uses its name
+	CacheNamespace string
 }
 
 func (o Options) withDefaults() Options {

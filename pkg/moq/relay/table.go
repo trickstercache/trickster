@@ -42,8 +42,10 @@ func (tb *table) init() {
 	}
 }
 
-func trackKey(b []byte, scope Scope, name message.FullTrackName) []byte {
-	// the scope and the full track name, each part length-prefixed so no two tracks share a key
+func trackKey(b []byte, cacheNS string, scope Scope, name message.FullTrackName) []byte {
+	// the relay's cache namespace, the scope and the full track name, each part length-prefixed so no two tracks
+	// share a key; the key names the track's spilled groups, so relays sharing a cache never share them
+	b = wire.AppendString(b, cacheNS)
 	b = wire.AppendString(b, scope.Authority)
 	b = wire.AppendString(b, scope.Path)
 	b = wire.AppendNamespace(b, name.Namespace)
@@ -53,7 +55,7 @@ func trackKey(b []byte, scope Scope, name message.FullTrackName) []byte {
 func (tb *table) acquire(r *Relay, scope Scope, name message.FullTrackName) *track {
 	// the track is created when absent, and returned with a reference the caller releases
 	var kb [256]byte
-	key := trackKey(kb[:0], scope, name)
+	key := trackKey(kb[:0], r.opts.CacheNamespace, scope, name)
 	h := xxhash.Sum64(key)
 	sh := &tb.shards[h%tableShards]
 	sh.mu.Lock()

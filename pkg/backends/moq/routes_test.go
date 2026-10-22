@@ -17,6 +17,7 @@
 package moq
 
 import (
+	"net/netip"
 	"slices"
 	"testing"
 
@@ -25,6 +26,9 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -52,8 +56,8 @@ func TestLongestPrefix(t *testing.T) {
 		{[]string{"/vod"}, "/live", -1},
 	}
 	for _, tc := range tests {
-		if got := longestPrefix(tc.prefixes, tc.path); got != tc.want {
-			t.Errorf("longestPrefix(%v, %q) = %d, want %d", tc.prefixes, tc.path, got, tc.want)
+		if got, _ := matchPrefix(tc.prefixes, tc.path); got != tc.want {
+			t.Errorf("matchPrefix(%v, %q) = %d, want %d", tc.prefixes, tc.path, got, tc.want)
 		}
 	}
 }
@@ -222,5 +226,69 @@ func TestAdapterContract(t *testing.T) {
 	}
 	if _, err := a.(native.PacketAdapter).Join(native.BuildRequest{}, "x", nil, nil); err == nil {
 		t.Error("joining needs listener options")
+	}
+}
+
+func TestRouteJudges(t *testing.T) {
+	// a path's acl replaces its backend's, none clears it, and a path naming neither takes the backend's
+	backendList, _, err := ipacl.Compile(ipacl.Options{Name: "backend"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pathList, _, err := ipacl.Compile(ipacl.Options{Name: "path"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	geo := &geoaclopts.Options{Compiled: compiledGeo{denyAll{}}}
+	o := bo.New()
+	o.Name, o.Provider, o.ListenerNames = "live", "moq", []string{"moq1"}
+	o.IPACLName, o.IPACL, o.GeoACLName, o.GeoACLOptions = "backend", backendList, "geo", geo
+	o.Paths = po.List{
+		{Path: "/inherit"},
+		{Path: "/cleared", IPACLName: reserved.ReferenceNone, GeoACLName: reserved.ReferenceNone},
+		{Path: "/own", IPACLName: "path", IPACL: pathList},
+	}
+	c := config.NewConfig()
+	c.Backends = bo.Lookup{"live": o, "other": func() *bo.Options {
+		other := bo.New()
+		other.Name, other.Provider, other.ListenerNames, other.Hosts = "other", "moq", []string{"moq1"}, []string{"x"}
+		return other
+	}()}
+	rt := routesFor(native.BuildRequest{Config: c, ListenerName: "moq1",
+		BackendClients: backends.Backends{"live": namedBackend{name: "live"}, "other": namedBackend{name: "other"}}})
+	judged := func(path string) sessionJudge {
+		e, at, _, ok := rt.resolve(backends.RouteInput{Authority: "live.example.com", Path: path})
+		if !ok || e.name != "live" {
+			t.Fatalf("%s did not route to live", path)
+		}
+		return e.judgeFor(at)
+	}
+	if j := judged("/inherit/x"); j.ipacl != backendList || j.geo == nil {
+		t.Errorf("a path naming no acl takes the backend's: %+v", j)
+	}
+	if j := judged("/cleared"); j.ipacl != nil || j.geo != nil {
+		t.Errorf("none clears the backend's acls: %+v", j)
+	}
+	if j := judged("/own"); j.ipacl != pathList || j.geo == nil {
+		t.Errorf("a path's own list replaces the backend's alone: %+v", j)
+	}
+	if e, _, _, _ := rt.resolve(backends.RouteInput{Authority: "x", Path: "/"}); e.judgeFor(-1).ipacl != nil {
+		t.Error("a backend naming no acl, and no paths, admits every session")
+	}
+	if e := &rt.entries[slices.IndexFunc(rt.entries, func(e routeEntry) bool { return e.name == "live" })]; e.judgeFor(-1).ipacl != backendList {
+		t.Error("a session matching no listed path is judged by the backend's acls")
+	}
+	if _, denied := judged("/cleared").refusal(netip.MustParseAddr("192.0.2.1")); denied {
+		t.Error("a path with its acls cleared admits every session")
+	}
+	if reason, denied := judged("/inherit").refusal(netip.MustParseAddr("192.0.2.1")); !denied || reason != "" {
+		t.Errorf("the backend's list refuses first, without a reason: %v %q", denied, reason)
+	}
+	if reason, denied := (sessionJudge{geo: denyAll{}}).refusal(netip.MustParseAddr("192.0.2.1")); !denied ||
+		reason != "not here" {
+		t.Errorf("a geo refusal carries its message: %v %q", denied, reason)
+	}
+	if geoGate(nil) != nil || geoGate(&geoaclopts.Options{}) != nil {
+		t.Error("an absent or uncompiled geo ACL gates nothing")
 	}
 }

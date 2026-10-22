@@ -23,11 +23,11 @@ import (
 	"time"
 )
 
-// retainFactor keeps this many windows of segments, so a client that read a manifest just before it moved can
+// this many windows of segments are kept, so a client that read a manifest just before it moved can
 // still fetch what it listed
 const retainFactor = 2
 
-// segment is one track's media for one segment number: its chunks in order, which are written out one by one
+// one track's media for one segment number: its chunks in order, which are written out one by one
 type segment struct {
 	number   int64
 	start    time.Time
@@ -37,7 +37,7 @@ type segment struct {
 	complete bool
 }
 
-// track collects one encoded track into numbered segments; segment numbers count segments from the Unix epoch
+// one encoded track, collected into numbered segments; segment numbers count segments from the Unix epoch
 type track struct {
 	kind      string
 	rendition Rendition
@@ -101,8 +101,8 @@ func (t *track) Chunk(c Chunk) {
 	}
 }
 
-// completeLocked finishes the segment in progress and drops segments past the retention
 func (t *track) completeLocked() {
+	// finishes the segment in progress and drops segments past the retention
 	s := t.cur
 	if s == nil {
 		return
@@ -124,8 +124,8 @@ func (t *track) notifyLocked() {
 	t.changed = make(chan struct{})
 }
 
-// finish completes the last segment once the encoder has delivered everything
 func (t *track) finish() {
+	// completes the last segment once the encoder has delivered everything
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.completeLocked()
@@ -133,8 +133,8 @@ func (t *track) finish() {
 	t.notifyLocked()
 }
 
-// window returns up to n of the newest complete segments, oldest first
 func (t *track) window(n int) []*segment {
+	// returns up to n of the newest complete segments, oldest first
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	from := max(t.newest-int64(n)+1, t.oldest)
@@ -147,8 +147,8 @@ func (t *track) window(n int) []*segment {
 	return out
 }
 
-// segment returns segment number, waiting up to wait for it to complete when it is the next one or two due
 func (t *track) segment(ctx context.Context, number int64, wait time.Duration) *segment {
+	// returns segment number, waiting up to wait for it to complete when it is the next one or two due
 	t.mu.Lock()
 	soon := number > t.newest && number <= t.newest+2 && !t.finished
 	t.mu.Unlock()

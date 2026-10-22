@@ -65,7 +65,7 @@ func (t *Tone) Samples(from int64, n int) []byte {
 	return b
 }
 
-// sampleAt is the number of the first audio sample of frame n
 func (t timeline) sampleAt(n int64) int64 {
+	// the number of the first audio sample of frame n
 	return n/t.fps*SampleRate + n%t.fps*SampleRate/t.fps
 }

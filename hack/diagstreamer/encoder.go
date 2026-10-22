@@ -77,7 +77,7 @@ type Encoder interface {
 	Close() error
 }
 
-// ffmpeg is an Encoder running one ffmpeg process: the top rendition's frames on stdin, samples on fd 3 and the
+// an Encoder running one ffmpeg process: the top rendition's frames on stdin, samples on fd 3 and the
 // other renditions' frames after it, then either one muxed fragmented MP4 on stdout or one output per track
 type ffmpeg struct {
 	cmd     *exec.Cmd
@@ -92,7 +92,7 @@ type ffmpeg struct {
 	videoIn []io.WriteCloser
 }
 
-// feed writes one input from its own goroutine, through a short queue of reused buffers; ffmpeg reads its inputs
+// one input, written from its own goroutine through a short queue of reused buffers; ffmpeg reads its inputs
 // interleaved, so a single writer blocked on one pipe would deadlock against ffmpeg waiting on the other
 type feed struct {
 	w     io.WriteCloser
@@ -127,8 +127,8 @@ func (f *feed) run() {
 	_ = f.w.Close()
 }
 
-// write queues a copy of b, blocking only while the queue is full
 func (f *feed) write(b []byte) error {
+	// queues a copy of b, blocking only while the queue is full
 	select {
 	case <-f.done:
 		return f.err
@@ -148,8 +148,8 @@ func (f *feed) write(b []byte) error {
 	}
 }
 
-// close drains the queue and closes the pipe
 func (f *feed) close() error {
+	// drains the queue and closes the pipe
 	close(f.queue)
 	<-f.done
 	return f.err
@@ -166,9 +166,9 @@ func microseconds(d time.Duration) string {
 	return strconv.FormatInt(d.Microseconds(), 10)
 }
 
-// movflags makes ffmpeg write CMAF fragments per chunk; a muxed output fragments by duration, since
-// frag_every_frame there repeats the audio decode time in video-only fragments
 func movflags(cfg *Config, muxed bool) []string {
+	// makes ffmpeg write CMAF fragments per chunk; a muxed output fragments by duration, since
+	// frag_every_frame there repeats the audio decode time in video-only fragments
 	flags := "empty_moov+default_base_moof+frag_keyframe+cmaf"
 	switch {
 	case cfg.Chunk > 0:
@@ -198,7 +198,7 @@ func audioArgs(cfg *Config) []string {
 	}
 }
 
-// fds places the pipes: fd 3 carries samples, the lower renditions' frames follow, then one output per rendition
+// where the pipes go: fd 3 carries samples, the lower renditions' frames follow, then one output per rendition
 // and the audio output; with one rendition, video goes out on fd 4 and audio on fd 5
 type fds struct {
 	rungs int
@@ -238,8 +238,8 @@ func inputArgs(cfg *Config, ladder []Rendition) (args []string, video []int, aud
 	return args, video, audio
 }
 
-// muxedArgs makes one fragmented MP4 holding the top rendition and the audio, written to stdout
 func muxedArgs(cfg *Config) []string {
+	// makes one fragmented MP4 holding the top rendition and the audio, written to stdout
 	ladder := cfg.Ladder()[:1]
 	args, video, audio := inputArgs(cfg, ladder)
 	args = append(args, "-map", strconv.Itoa(video[0])+":v")
@@ -253,8 +253,8 @@ func muxedArgs(cfg *Config) []string {
 	return append(args, "-f", "mp4", "pipe:1")
 }
 
-// trackArgs makes one fragmented MP4 per track: each rendition's video, then the audio
 func trackArgs(cfg *Config) []string {
+	// makes one fragmented MP4 per track: each rendition's video, then the audio
 	ladder := cfg.Ladder()
 	f := fds{rungs: len(ladder)}
 	args, video, audio := inputArgs(cfg, ladder)
@@ -439,8 +439,8 @@ func (e *ffmpeg) Close() error {
 	return nil
 }
 
-// readTrack splits one fragmented MP4 into its initialization segment and chunks
 func readTrack(r io.Reader, kind string, sink TrackSink) error {
+	// splits one fragmented MP4 into its initialization segment and chunks
 	br := bufio.NewReaderSize(r, 1<<16)
 	var init, pending []byte
 	for {
@@ -479,7 +479,7 @@ func readTrack(r io.Reader, kind string, sink TrackSink) error {
 	}
 }
 
-// limitedWriter keeps the first limit bytes written, so a chatty process cannot grow memory without bound
+// a writer keeping the first limit bytes written, so a chatty process cannot grow memory without bound
 type limitedWriter struct {
 	mu    sync.Mutex
 	buf   bytes.Buffer

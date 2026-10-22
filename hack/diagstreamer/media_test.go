@@ -44,16 +44,16 @@ func avcMoov() []byte {
 	return testMoov(mdhd, mkbox(codecAVC1, zeros(78), mkbox(boxAvcC, []byte{1, 0x64, 0x00, 0x1f, 0xff})))
 }
 
-// keyMoof has two samples of 3000 under tfhd defaults that mark samples non-sync, the first overridden to sync
 func keyMoof(decode uint64) []byte {
+	// has two samples of 3000 under tfhd defaults that mark samples non-sync, the first overridden to sync
 	tfhd := fullbox(boxTfhd, 0, tfhdBaseOffsetPresent|tfhdDurationPresent|tfhdFlagsPresent, u32(1), u64(0),
 		u32(3000), u32(sampleIsNonSync))
 	trun := fullbox(boxTrun, 0, trunFirstFlagsPresent, u32(2), u32(0))
 	return mkbox(boxMoof, fullbox("mfhd", 0, 0, u32(1)), mkbox(boxTraf, tfhd, fullbox(boxTfdt, 1, 0, u64(decode)), trun))
 }
 
-// deltaMoof carries per-sample durations, sizes and flags, the first sample non-sync
 func deltaMoof(decode uint32) []byte {
+	// carries per-sample durations, sizes and flags, the first sample non-sync
 	samples := append(append(u32(1000), u32(10)...), u32(sampleIsNonSync)...)
 	samples = append(samples, append(append(u32(2000), u32(10)...), u32(0)...)...)
 	trun := fullbox(boxTrun, 0, trunDurationPresent|trunSizePresent|trunFlagsPresent, u32(2), samples)

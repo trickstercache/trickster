@@ -326,3 +326,20 @@ func TestNamespaceCounting(t *testing.T) {
 		t.Error("a removed listener hears nothing more")
 	}
 }
+
+func TestHeldDatagramsBounded(t *testing.T) {
+	s := &subscriber{t: &track{r: &Relay{}}}
+	o := &object{}
+	for range maxHeldDatagrams + 1 {
+		if !s.holdDatagram(o, nil, 0) {
+			t.Fatal("a pending subscription holds its datagrams")
+		}
+	}
+	if len(s.dgHeld) != maxHeldDatagrams {
+		t.Errorf("held %d datagrams", len(s.dgHeld))
+	}
+	s.state.Store(uint32(subDone))
+	if s.holdDatagram(o, nil, 0) {
+		t.Error("an ended subscription holds a datagram")
+	}
+}

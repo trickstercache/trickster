@@ -49,7 +49,7 @@ const (
 	nanosPerSecond = int64(time.Second)
 )
 
-// timeline counts frames from the Unix epoch at the stream's frame rate, so frame and segment numbers follow the
+// frames are counted from the Unix epoch at the stream's frame rate, so frame and segment numbers follow the
 // wall clock and a restarted generator numbers a moment as it did before
 type timeline struct {
 	fps, perSegment, perChunk int64
@@ -63,8 +63,8 @@ func (t timeline) at(n int64) time.Time {
 	return time.Unix(n/t.fps, (n%t.fps)*nanosPerSecond/t.fps).UTC()
 }
 
-// frameAt is the number of the frame showing at at
 func (t timeline) frameAt(at time.Time) int64 {
+	// the number of the frame on screen at time at
 	return at.Unix()*t.fps + int64(at.Nanosecond())*t.fps/nanosPerSecond
 }
 
@@ -72,20 +72,20 @@ func (t timeline) segment(n int64) int64 {
 	return n / t.perSegment
 }
 
-// swatch is a named background color
+// a named background color
 type swatch struct {
 	name    string
 	r, g, b uint8
 }
 
-// label names the color with its RGB value and the BT.709 limited-range codes the encoder is given, so equipment
-// downstream can be checked against them
 func (s swatch) label() string {
+	// names the color with its RGB value and the BT.709 limited-range codes the encoder is given, so equipment
+	// downstream can be checked against them
 	c := rgb(s.r, s.g, s.b)
 	return fmt.Sprintf("Background: %s #%02X%02X%02X  Y %d Cb %d Cr %d", s.name, s.r, s.g, s.b, c.y, c.cb, c.cr)
 }
 
-// palette is the backgrounds the stream cycles through: dark enough for white text, distinct from each other
+// the backgrounds the stream cycles through: dark enough for white text, distinct from each other
 var palette = []swatch{
 	{"Navy", 0x1b, 0x2a, 0x41},
 	{"Indigo", 0x3d, 0x1e, 0x6d},
@@ -156,8 +156,8 @@ func formatBitrate(bps int) string {
 	return fmt.Sprintf("%d kb/s", bps/1000)
 }
 
-// px scales a size in pixels at 720 lines to the frame's height, never below one pixel
 func (r *Renderer) px(v int) int {
+	// scales a size in pixels at 720 lines to the frame's height, never below one pixel
 	return max(v*r.scale/layoutLines, 1)
 }
 
@@ -257,15 +257,15 @@ func (r *Renderer) clock(n int64, at time.Time, seg int64) {
 	c.rect(w/2-half, sweepTop, w/2-half+int(frac*float64(2*half)), sweepTop+r.px(sweepPx), white)
 }
 
-// timecode is the frame's time of day as HH:MM:SS:FF
 func (r *Renderer) timecode(n int64) string {
+	// the frame's time of day as HH:MM:SS:FF
 	inDay := n % (secondsPerDay * r.tl.fps)
 	s := inDay / r.tl.fps
 	return fmt.Sprintf("%02d:%02d:%02d:%02d", s/3600, s/60%60, s%60, inDay%r.tl.fps)
 }
 
-// flash lights a box for the first tenth of each second, in step with the audio's beep
 func (r *Renderer) flash(n int64) {
+	// lights a box for the first tenth of each second, in step with the audio's beep
 	m, size, b := r.px(marginPx), r.px(flashPx), r.px(shadowPx)
 	x, y := r.cfg.Width-m-size, m
 	col := gray
@@ -290,8 +290,8 @@ func (r *Renderer) caption(at time.Time, bottom int) {
 	c.text(w/2-tw/2, y, is, text, white)
 }
 
-// captionText is the caption shown during the second holding at, burned in and carried by the caption tracks
 func captionText(title string, at time.Time) string {
+	// the caption shown during the second holding at, burned in and carried by the caption tracks
 	return at.Truncate(time.Second).Format(time.TimeOnly) + " UTC - " + title
 }
 
@@ -300,7 +300,7 @@ func (r *Renderer) FrameAt(at time.Time) int64 {
 	return r.tl.frameAt(at)
 }
 
-// barLevel makes 75% color bars, as in SMPTE EG 1: each component is 0 or 191 of 255
+// 75% color bars, as in SMPTE EG 1: each component is 0 or 191 of 255
 const barLevel = 191
 
 var (
@@ -315,9 +315,9 @@ var (
 	}
 )
 
-// testBars draws the classic color bars: seven 75% bars over a strip of the reverse bars, which show a hue,
-// saturation or level error downstream at a glance
 func (r *Renderer) testBars() {
+	// draws the classic color bars: seven 75% bars over a strip of the reverse bars, which show a hue,
+	// saturation or level error downstream at a glance
 	strip := max(r.rowH/barsStripShare, 2)
 	main := r.rowH - strip
 	for i := range topBars {

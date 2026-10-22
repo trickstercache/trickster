@@ -970,7 +970,9 @@ func validateIPACLPlacements(c *config.Config) error {
 			return fmt.Errorf("backend %q path %q uses ip acl %q with action drop, which is not valid "+
 				"when the backend is served over http", backendName, path.Path, path.IPACLName)
 		}
-		if backend.IPACL != nil && servesNativeListener(c, backend, nativeListeners) {
+		// a moq listener judges each session by the acl of the backend it is routed to
+		if backend.IPACL != nil && !strings.EqualFold(backend.Provider, providers.MoQ) &&
+			servesNativeListener(c, backend, nativeListeners) {
 			addWarning(c, fmt.Sprintf("backend %q has ip acl %q and is served by a native listener: "+
 				"native sessions are judged by the listener acl only, though a ClickHouse native listener "+
 				"judges each query by this list, from the session's address",

@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
+	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 )
 
@@ -380,5 +381,45 @@ func TestTrackStatus(t *testing.T) {
 	req, _ = cl.Open(context.Background(), &message.TrackStatus{Track: track("missing")}, newRec(), nil)
 	if m, _ = req.Response(context.Background()); m.Kind() != message.KindRequestError {
 		t.Errorf("an unknown track: %+v", m)
+	}
+}
+
+func TestSpillKeptApartAcrossRelays(t *testing.T) {
+	caches := map[string]func(*testing.T) (cache.Cache, *atomic.Int32){
+		"memory": func(*testing.T) (cache.Cache, *atomic.Int32) { return newMemoryCache() },
+		"bbolt":  newBoltCache,
+	}
+	for name, newCache := range caches {
+		t.Run(name, func(t *testing.T) {
+			// two backends' relays share one cache, and their tracks share a scope and a name
+			c, stores := newCache(t)
+			hs := []*harness{
+				newHarness(t, relay.Options{LiveEdgeGroups: 1, Spill: true, CacheNamespace: "tenant-a"}, c),
+				newHarness(t, relay.Options{LiveEdgeGroups: 1, Spill: true, CacheNamespace: "tenant-b"}, c),
+			}
+			clients := make([]*session.Session, len(hs))
+			for i, h := range hs {
+				clients[i] = h.client()
+				req, r := subscribe(t, clients[i], "video", message.Params{})
+				subscribed(t, req)
+				// group 0 leaves the one-group live edge, and spills, once group 1 arrives
+				for g := range uint64(2) {
+					before := r.count()
+					h.o.publish(t, "video", g, objs(fmt.Sprintf("tenant%d-g%d", i, g))...)
+					eventually(t, "the published object", func() bool { return r.count() == before+1 })
+				}
+				eventually(t, "the spilled group", func() bool { return stores.Load() >= int32(i+1) })
+			}
+			// the second relay's spill of group 0 neither replaced the first's nor became readable through it
+			for i, cl := range clients {
+				freq, fr := fetch(t, cl, "video", fetchRange(0, 0, 0, math.MaxUint64))
+				if _, payloads := fetched(t, freq, fr); !slices.Equal(payloads, []string{fmt.Sprintf("tenant%d-g0", i)}) {
+					t.Errorf("relay %d fetched %v", i, payloads)
+				}
+				if asks := hs[i].o.fetchAsks(); len(asks) != 0 {
+					t.Errorf("relay %d's own spilled group serves from the cache, but it fetched %+v", i, asks)
+				}
+			}
+		})
 	}
 }

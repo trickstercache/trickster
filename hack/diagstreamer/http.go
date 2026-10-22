@@ -73,8 +73,8 @@ func (s *Streamer) Handler() http.Handler {
 	return mux
 }
 
-// manifestCC lets a cache in front hold a manifest for at most half a segment, as live origins usually do
 func (s *Streamer) manifestCC() string {
+	// lets a cache in front hold a manifest for at most half a segment, as live origins usually do
 	return "public, max-age=" + strconv.Itoa(max(int(s.cfg.Segment.Seconds()/2), 1))
 }
 
@@ -184,8 +184,8 @@ func (s *Streamer) media(w http.ResponseWriter, contentType string, b []byte) {
 	_, _ = w.Write(b)
 }
 
-// serveText builds a caption segment for any segment number from the stream's start to the one now playing
 func (s *Streamer) serveText(w http.ResponseWriter, r *http.Request) {
+	// builds a caption segment for any segment number from the stream's start to the one now playing
 	if !s.cfg.Captions {
 		http.NotFound(w, r)
 		return

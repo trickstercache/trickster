@@ -19,6 +19,7 @@ package quicdial
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"net"
 	"strconv"
 	"testing"
@@ -125,6 +126,15 @@ func TestDialErrors(t *testing.T) {
 	defer cancel()
 	if _, err := DialAddr(ctx, "no-port", nil, nil); err == nil {
 		t.Error("an address without a port is refused")
+	}
+	if _, err := DialAddr(ctx, "localhost:no-such-service", nil, nil); err == nil {
+		t.Error("an unknown service is refused")
+	}
+	// resolution stops with the dial's context
+	canceled, stop := context.WithCancel(context.Background())
+	stop()
+	if _, err := DialAddr(canceled, "quicdial.invalid:443", nil, nil); !errors.Is(err, context.Canceled) {
+		t.Errorf("a canceled dial resolves nothing: %v", err)
 	}
 	// nothing listens on the port, so the handshake gives up when the context does
 	pc, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})

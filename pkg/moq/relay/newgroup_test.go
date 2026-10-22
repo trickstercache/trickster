@@ -161,6 +161,28 @@ func TestUpstreamSubscriptionRenewed(t *testing.T) {
 	}
 }
 
+func TestRenewalOutlivesPlainAnswer(t *testing.T) {
+	h := newHarness(t, relay.Options{}, nil)
+	h.o.subExpires = 40
+	h.o.plainForward.Store(true)
+	req, _ := subscribe(t, h.client(), "video", message.Params{})
+	subscribed(t, req)
+	var p message.Params
+	p.SetForward(false)
+	if _, err := req.Update(p); err != nil {
+		t.Fatal(err)
+	}
+	for u := recv(t, h.o.updates, "the pausing update"); !u.Params.Has(message.ParamForward); {
+		u = recv(t, h.o.updates, "the pausing update")
+	}
+	// the answer to the pause carries no EXPIRES, which leaves the subscription expiring as before
+	for renewals := 0; renewals < 2; {
+		if u := recv(t, h.o.updates, "a renewal"); !u.Params.Has(message.ParamForward) {
+			renewals++
+		}
+	}
+}
+
 func TestNewGroupRequestsWhileSubscribing(t *testing.T) {
 	h := newHarness(t, relay.Options{}, nil)
 	dynamicGroups(t, h)

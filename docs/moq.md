@@ -127,9 +127,11 @@ connection goes to the listener whose protocol it negotiated, and each keeps its
 certificates and routes. A `moq` listener never shares a port with a `protocol: udp`
 listener.
 
-The listener's `ip_acl_name` is judged when a connection arrives, since QUIC has no TCP accept,
-and the geo ACL of the backends it serves gates the session the same way. A backend's own
-`ip_acl_name` does not apply to native sessions.
+The listener's `ip_acl_name` is judged when a connection arrives, since QUIC has no TCP accept.
+Once the session's `SETUP` routes it to a backend, it is judged by that backend's `ip_acl_name`
+and `geo_acl_name`, or by those of the backend path its `PATH` matches, which replace them as
+they do for HTTP requests (`none` clears one). Backends sharing a listener therefore keep
+their own lists. A session one refuses closes with `UNAUTHORIZED`.
 
 ### The `moq` backend
 
@@ -211,7 +213,8 @@ Each track's newest `live_edge.groups` groups stay in memory, within a backend-w
 `live_edge.max_size_bytes` budget that evicts the oldest groups first. Objects are stored once
 and forwarded cut-through as their bytes arrive, so every subscriber and the cache share one
 copy. A group leaving the live edge spills to `cache_name` as one entry, by reference in a
-memory cache. It lives for the track's `MAX_CACHE_DURATION` less the oldest object's age,
+memory cache. Its key includes the backend's name, so backends sharing a cache never read or
+overwrite each other's groups, even for tracks of the same name. It lives for the track's `MAX_CACHE_DURATION` less the oldest object's age,
 capped by `max_ttl`. An object past its `MAX_CACHE_DURATION` is unknown again in both tiers and
 is not forwarded. Spilled groups are indexed in memory, so after a restart a persistent cache's
 groups are fetched from the origin again rather than found. A track found malformed (a duplicate
@@ -250,7 +253,8 @@ leaves, so a returning viewer finds it warm.
 
 When the upstream gives an `EXPIRES`, the relay asks to extend the subscription before it
 elapses, with an empty `REQUEST_UPDATE` at three quarters of the time given. A new `EXPIRES` in
-the answer schedules the next renewal. The relay never ends a downstream subscription on a
+the answer schedules the next renewal; an answer without one, such as to a `FORWARD` change,
+leaves the pending renewal as it was. The relay never ends a downstream subscription on a
 timer, so it sends no `EXPIRES` downstream.
 
 `NEW_GROUP_REQUEST` reaches the publisher as the spec requires of relays:
@@ -459,7 +463,7 @@ The Kubernetes controller serves MoQT through a Gateway listener with the protoc
 One command runs a harness: moq-dev's relay as the origin, `hack/diagstreamer` publishing a live
 test pattern into it, and Trickster in the foreground with
 `docs/developer/environment/trickster-config/moq.yaml`. A second opens a player page, which
-Trickster serves at `https://localhost:8483/player/`, in a Chrome profile that trusts the
+Trickster serves at `https://localhost:8583/player/`, in a Chrome profile that trusts the
 development certificate. The page lists the broadcasts the relay announces and plays the selected
 one with moq-dev's `<moq-watch>` element, loaded from a CDN:
 
@@ -469,7 +473,9 @@ make developer-moq-browser
 ```
 
 `ARGS` passes flags to Trickster, as in `make developer-moq ARGS="-log-level debug"`. The
-integration stack's relay publishes the same UDP port, so stop it first if it is running.
+harness's Trickster listens on ports 8580 to 8590, clear of `make serve-dev`'s, so the two can
+run side by side. The integration stack's relay publishes the same UDP port as the harness's, so
+stop it first if it is running.
 
 The developer environment's `moq` profile runs moq-dev's relay on UDP 10443, which serves as an
 origin, and `make dev-certs` writes a self-signed certificate for `localhost`:

@@ -35,26 +35,36 @@ type renewer struct {
 }
 
 func (rn *renewer) schedule(p *message.Params, renew func()) {
-	// the request is extended at three quarters of the time its sender gave (§9.20.16); an EXPIRES of 0, or none,
-	// means it does not expire, which cancels any renewal pending
+	// the request is extended at three quarters of the time its sender gave (§9.20.16); an EXPIRES of 0 means it
+	// no longer expires, and an answer without one, such as to a FORWARD update, leaves the renewal pending
+	if !p.Has(message.ParamExpires) {
+		return
+	}
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
+	rn.cancelLocked()
+	if rn.stopped || p.Expires == 0 {
+		return
+	}
+	rn.timer = time.AfterFunc(millis(p.Expires)/renewDenominator*renewNumerator, renew)
+}
+
+func (rn *renewer) cancel() {
+	rn.mu.Lock()
+	defer rn.mu.Unlock()
+	rn.cancelLocked()
+}
+
+func (rn *renewer) cancelLocked() {
 	if rn.timer != nil {
 		rn.timer.Stop()
 		rn.timer = nil
 	}
-	if rn.stopped || !p.Has(message.ParamExpires) || p.Expires == 0 {
-		return
-	}
-	rn.timer = time.AfterFunc(millis(p.Expires)/renewDenominator*renewNumerator, renew)
 }
 
 func (rn *renewer) stop() {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 	rn.stopped = true
-	if rn.timer != nil {
-		rn.timer.Stop()
-		rn.timer = nil
-	}
+	rn.cancelLocked()
 }

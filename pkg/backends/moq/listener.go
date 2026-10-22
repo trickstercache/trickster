@@ -20,6 +20,7 @@ import (
 	"context"
 	"maps"
 	"net"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -71,6 +72,33 @@ type routeEntry struct {
 	client backends.Backend
 	hosts  []string
 	paths  []string
+	judge  sessionJudge   // the backend's own acls
+	judges []sessionJudge // each path's, in the order of paths
+}
+
+type sessionJudge struct {
+	ipacl *ipacl.List
+	geo   backends.SessionGate
+}
+
+func (j sessionJudge) refusal(client netip.Addr) (string, bool) {
+	// a session routed to a backend, or one of its paths, passes the acls its HTTP requests there would
+	if j.ipacl != nil && j.ipacl.Check(client) != ipacl.Allow {
+		return "", true
+	}
+	if j.geo != nil {
+		if d := j.geo.Admit(client); d != nil {
+			return d.Message, true
+		}
+	}
+	return "", false
+}
+
+func (e *routeEntry) judgeFor(path int) sessionJudge {
+	if path >= 0 && path < len(e.judges) {
+		return e.judges[path]
+	}
+	return e.judge
 }
 
 type routeTable struct {
@@ -81,40 +109,48 @@ type routeTable struct {
 var _ backends.RouteResolver = (*routeTable)(nil)
 
 func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecision, bool) {
+	_, _, d, ok := rt.resolve(in)
+	return d, ok
+}
+
+func (rt *routeTable) resolve(in backends.RouteInput) (*routeEntry, int, backends.RouteDecision, bool) {
 	// a backend naming the session's host wins, then one matching it by wildcard, then one naming no host, each by
-	// its longest path prefix; a listener with one backend serves every session with it
+	// its longest path prefix; a listener with one backend serves every session with it. The path matched, or -1
+	// for none, picks the acls that judge the session.
 	if rt == nil || len(rt.entries) == 0 {
-		return backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
+		return nil, -1, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
 	}
-	if len(rt.entries) == 1 {
-		return backends.RouteDecision{
-			Target:  backends.RouteTarget{Backend: rt.entries[0].client},
-			Outcome: backends.RouteOutcomeDefault,
-		}, true
-	}
-	host := hostOnly(in.Authority)
 	path := in.Path
 	if path == "" {
 		path = rootPath
 	}
-	best, bestScore := -1, -1
+	if len(rt.entries) == 1 {
+		e := &rt.entries[0]
+		_, at := matchPrefix(e.paths, path)
+		return e, at, backends.RouteDecision{
+			Target:  backends.RouteTarget{Backend: e.client},
+			Outcome: backends.RouteOutcomeDefault,
+		}, true
+	}
+	host := hostOnly(in.Authority)
+	best, bestAt, bestScore := -1, -1, -1
 	for i, e := range rt.entries {
 		rank := hostRank(e.hosts, host)
 		if rank < 0 {
 			continue
 		}
-		plen := longestPrefix(e.paths, path)
+		plen, at := matchPrefix(e.paths, path)
 		if plen < 0 {
 			continue
 		}
 		if score := plen + rank<<20; score > bestScore {
-			best, bestScore = i, score
+			best, bestAt, bestScore = i, at, score
 		}
 	}
 	if best < 0 {
-		return backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
+		return nil, -1, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
 	}
-	return backends.RouteDecision{
+	return &rt.entries[best], bestAt, backends.RouteDecision{
 		Target:  backends.RouteTarget{Backend: rt.entries[best].client},
 		Outcome: backends.RouteOutcomeSelected,
 	}, true
@@ -143,22 +179,25 @@ func hostOnly(authority string) string {
 	return strings.ToLower(strings.TrimSuffix(authority, "."))
 }
 
-func longestPrefix(prefixes []string, path string) int {
+func matchPrefix(prefixes []string, path string) (int, int) {
+	// the length of the longest prefix matching the path and its index, -1 when none is listed and the root serves;
 	// a prefix matches the path itself or a path below it, never a sibling that merely starts with it
-	best := -1
 	if len(prefixes) == 0 {
-		prefixes = []string{rootPath}
+		return len(rootPath), -1
 	}
-	for _, p := range prefixes {
+	best, at := -1, -1
+	for i, p := range prefixes {
 		switch {
 		case p == path, p == rootPath:
 		case strings.HasPrefix(path, p) && (strings.HasSuffix(p, rootPath) || path[len(p)] == '/'):
 		default:
 			continue
 		}
-		best = max(best, len(p))
+		if len(p) > best {
+			best, at = len(p), i
+		}
 	}
-	return best
+	return best, at
 }
 
 type server struct {
@@ -218,7 +257,7 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 	}
 	defer s.wg.Done()
 	defer s.active.Add(-1)
-	r := &routed{srv: s, client: client.String(), sni: conn.ConnectionState().TLS.ServerName}
+	r := &routed{srv: s, addr: client, client: client.String(), sni: conn.ConnectionState().TLS.ServerName}
 	sess, err := session.New(session.FromQUIC(conn), session.Options{
 		Role: session.RoleServer, Codec: c, Handler: r, OnSetup: r.route,
 		HandshakeTimeout: time.Duration(s.opts.HandshakeTimeout), MaxRequests: s.opts.MaxRequestsPerSession,
@@ -357,6 +396,7 @@ func (s *server) ProtocolRestartKey() string {
 type routed struct {
 	departure
 	srv     *server
+	addr    netip.Addr
 	client  string
 	sni     string
 	handler session.Handler
@@ -366,6 +406,7 @@ type routed struct {
 	release  func()
 	drop     func()
 	refused  bool
+	denied   bool
 	finished bool
 }
 
@@ -378,7 +419,7 @@ func (r *routed) route(_ *session.Session, setup *message.Setup) error {
 	if !setup.HasPath {
 		path = rootPath
 	}
-	d, ok := r.srv.routes.Load().ResolveRoute(backends.RouteInput{Authority: authority, Path: path})
+	e, at, d, ok := r.srv.routes.Load().resolve(backends.RouteInput{Authority: authority, Path: path})
 	rb, isRelay := d.Target.Backend.(relayBackend)
 	// the connection can close while its SETUP is routed, so the session's teardown may already have run
 	r.mu.Lock()
@@ -389,6 +430,15 @@ func (r *routed) route(_ *session.Session, setup *message.Setup) error {
 		}
 		r.refused = !r.finished
 		return &message.SessionError{Code: message.CodeInvalidPath, Reason: "no backend serves this path"}
+	}
+	// the session is judged by the acls of the backend and path it reached, which a listener serving several
+	// backends cannot judge before SETUP names one
+	if reason, denied := e.judgeFor(at).refusal(r.addr); denied {
+		if d.Release != nil {
+			d.Release()
+		}
+		r.denied = true
+		return &message.SessionError{Code: message.CodeUnauthorized, Reason: reason}
 	}
 	r.backend, r.release = rb.Name(), d.Release
 	r.handler = rb.Relay().Handler(rb.Scope())
@@ -409,8 +459,11 @@ func (r *routed) backendName() string {
 func (r *routed) result(otherwise string) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.refused {
+	switch {
+	case r.refused:
 		return resultNoRoute
+	case r.denied:
+		return resultRefused
 	}
 	return otherwise
 }

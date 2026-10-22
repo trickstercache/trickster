@@ -77,14 +77,7 @@ func compileMoQRoutes(doc *document, routes []ir.Route, idx index, opts *kubecfg
 		if !ok || len(group.Members) == 0 {
 			continue
 		}
-		eff := resolve(opts, idx.policy(rule))
-		compileMoQRule(doc, r, group, listeners, eff)
-		for _, name := range listeners {
-			// a moq listener judges its sessions by its own ip acl; one on a backend would go unread
-			if l := doc.Listeners[name]; l != nil && l.IPACLName == "" {
-				l.IPACLName = eff.ipACLName
-			}
-		}
+		compileMoQRule(doc, r, group, listeners, resolve(opts, idx.policy(rule)))
 	}
 }
 
@@ -114,7 +107,9 @@ func compileMoQRule(doc *document, r ir.Route, group ir.BackendGroup, listeners 
 	name := GroupName(group)
 	edge := &backendDoc{
 		Provider: providers.MoQ, ListenerNames: listeners, Hosts: r.Hostnames, CacheName: eff.cacheName,
-		GeoACLName: eff.geoACLName,
+		// a moq listener judges each session by the acls of the backend it is routed to, so routes sharing the
+		// listener keep their own
+		GeoACLName: eff.geoACLName, IPACLName: eff.ipACLName,
 	}
 	moqOrigins(doc.Backends, name, group, listeners, eff, "", edge)
 	doc.Backends[name] = edge

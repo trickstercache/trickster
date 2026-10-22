@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	pl "github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
@@ -400,6 +401,61 @@ type denyAll struct{}
 
 func (denyAll) Admit(netip.Addr) *backends.Denial {
 	return &backends.Denial{Reason: backends.DenialLocation, Message: "not here"}
+}
+
+type compiledGeo struct {
+	gate backends.SessionGate
+}
+
+func (compiledGeo) Name() string                        { return "test-geo" }
+func (g compiledGeo) SessionGate() backends.SessionGate { return g.gate }
+
+func refusedWith(t *testing.T, s *session.Session, err error) uint64 {
+	t.Helper()
+	if err == nil {
+		select {
+		case <-s.Done():
+			err = s.Err()
+		case <-time.After(wait):
+			t.Fatal("the session was admitted")
+		}
+	}
+	ce, ok := errors.AsType[*session.CloseError](err)
+	if !ok {
+		t.Fatalf("closed with %v", err)
+	}
+	return ce.Code
+}
+
+func TestBackendACLsJudgeSessions(t *testing.T) {
+	// backends sharing a listener each judge the sessions routed to them, whatever the others admit
+	org := startOrigin(t)
+	open := newBackendWith(t, "open", "moqt://"+org.addr+"/open", func(o *bo.Options) {
+		o.Hosts = []string{"open.example.com"}
+	})
+	geo := newBackendWith(t, "geo", "moqt://"+org.addr+"/geo", func(o *bo.Options) {
+		o.Hosts = []string{"geo.example.com"}
+		o.GeoACLName, o.GeoACLOptions = "test-geo", &geoaclopts.Options{Compiled: compiledGeo{denyAll{}}}
+	})
+	// a list with no entries takes its default verdict, deny, for every address
+	list, _, err := ipacl.Compile(ipacl.Options{Name: "deny-all"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed := newBackendWith(t, "listed", "moqt://"+org.addr+"/listed", func(o *bo.Options) {
+		o.Hosts = []string{"listed.example.com"}
+		o.IPACLName, o.IPACL = "deny-all", list
+	})
+	st := startListener(t, mo.NewListener(), open, geo, listed)
+	if _, err = dial(t, st.addr, "open.example.com"); err != nil {
+		t.Fatalf("a backend with no acl admits the session: %v", err)
+	}
+	for _, authority := range []string{"geo.example.com", "listed.example.com"} {
+		s, err := dial(t, st.addr, authority)
+		if code := refusedWith(t, s, err); code != uint64(message.CodeUnauthorized) {
+			t.Errorf("%s: refused with %#x, want UNAUTHORIZED", authority, code)
+		}
+	}
 }
 
 func TestListenerUpdates(t *testing.T) {

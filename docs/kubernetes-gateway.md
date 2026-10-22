@@ -76,7 +76,7 @@ data:
 | `sticky_secret` | the name of a Secret, in the ConfigMap's namespace and labeled `trickstercache.org/sticky-key`, whose `key` entry keys every session token the class's ALBs issue; see [The session key](#the-session-key) |
 | `http3` | `true` or `false`: whether the class's `HTTPS` listeners also serve HTTP/3, on the same port number over UDP, which WebTransport sessions need; `kubernetes.defaults.http3` when unset, which is `true` unless set. Gateways of several classes sharing a port take the oldest Gateway's setting, and the others are told by Event |
 
-A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, and stream route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
+A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, stream, and MoQ route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
 
 A non-empty `rate_limiter_name` is copied onto the generated HTTP and gRPC route backends, in both routing modes. It is not copied onto stream route backends, pool members, endpoint templates, mirrors, or generated listeners. An empty value leaves `kubernetes.defaults.rate_limiter_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a limiter a generated HTTP route cannot use, cannot be honored: that class is not served. Another class keeps the parameters it can honor.
 
@@ -753,10 +753,11 @@ origin's certificate is not verified, trusting the cluster network as a
 plaintext HTTP backend does, and with one it is verified against the
 policy's CA certificates and hostname. A relay always addresses the
 Service's cluster IP, whatever the routing mode, since it keeps each track
-on one origin for as long as it relays it. On a native listener, the class's
-`ip_acl_name` (else `kubernetes.defaults.ip_acl_name`) judges each session at
-the listener, which reads no backend's list, and a geo ACL gates the
-generated backend as on any other route.
+on one origin for as long as it relays it. On a native listener, each
+route's generated backend carries the class's `ip_acl_name` (else
+`kubernetes.defaults.ip_acl_name`) and its geo ACL, as on any other route,
+and a session is judged by the lists of the backend it is routed to, so
+routes sharing the listener keep their own.
 
 A client reaches a UDP port only where the Service in front of the
 controller publishes it. [gateway-service.yaml](../deploy/kube/gateway-service.yaml)

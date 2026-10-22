@@ -85,8 +85,8 @@ func TestCompileMoQUDPRoute(t *testing.T) {
 	)
 	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
-	require.Equal(t, &listenerDoc{Protocol: ir.ProtocolMoQ, Port: 443, TLSRuntimeCerts: true, IPACLName: "office"},
-		doc.Listeners[moqListenerName], "a moq listener judges its sessions by the class's access list")
+	require.Equal(t, &listenerDoc{Protocol: ir.ProtocolMoQ, Port: 443, TLSRuntimeCerts: true},
+		doc.Listeners[moqListenerName], "a moq listener judges its sessions by their backends' access lists")
 
 	live := doc.Backends[GroupName(m.Backends[0])]
 	require.NotNil(t, live, "backends: %v", doc.Backends)
@@ -96,7 +96,7 @@ func TestCompileMoQUDPRoute(t *testing.T) {
 	require.Equal(t, []string{"live.example.com"}, live.Hosts)
 	require.Equal(t, "30s", live.MaxTTL)
 	require.True(t, live.TLS.InsecureSkipVerify, "an origin no BackendTLSPolicy names is trusted to the cluster")
-	require.Empty(t, live.IPACLName, "the access list is the listener's")
+	require.Equal(t, "office", live.IPACLName, "each route's backend carries its own access list")
 
 	vod := doc.Backends[GroupName(m.Backends[1])]
 	require.Empty(t, vod.OriginURL)

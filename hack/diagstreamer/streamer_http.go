@@ -88,8 +88,8 @@ func (s *Streamer) Run(ctx context.Context) error {
 	return err
 }
 
-// tracks lists the media tracks in manifest order
 func (s *Streamer) tracks() []*track {
+	// lists the media tracks in manifest order
 	if s.audio == nil {
 		return s.videos
 	}
@@ -105,8 +105,8 @@ func (s *Streamer) rendition(name string) *track {
 	return nil
 }
 
-// ready waits until every track has its initialization segment
 func (s *Streamer) ready(ctx context.Context) bool {
+	// waits until every track has its initialization segment
 	wait := time.NewTimer(2*s.cfg.Segment + 2*time.Second)
 	defer wait.Stop()
 	for _, t := range s.tracks() {

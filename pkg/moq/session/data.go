@@ -18,6 +18,7 @@ package session
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -54,11 +55,78 @@ func (s *Session) registerAlias(alias uint64, r *Request) error {
 	waiters := s.waiting[alias]
 	delete(s.waiting, alias)
 	s.parked -= len(waiters)
+	early := s.early[alias]
+	if early != nil {
+		delete(s.early, alias)
+		s.earlyCount -= len(early)
+	}
 	s.mu.Unlock()
 	for _, ch := range waiters {
 		ch <- r
 	}
+	if early != nil {
+		go s.deliverEarly(r, early, time.Now())
+	}
 	return nil
+}
+
+type earlyDatagram struct {
+	b       []byte
+	arrived time.Time
+}
+
+func (s *Session) routeDatagram(alias uint64, b []byte) *Request {
+	// a datagram can overtake the SUBSCRIBE_OK or PUBLISH that names its alias, so it is kept briefly for it
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if r, ok := s.aliases[alias]; ok {
+		return r
+	}
+	now := time.Now()
+	if t, ok := s.tombstones[alias]; ok && now.Sub(t) < tombstoneTTL {
+		return nil
+	}
+	if s.earlyCount >= maxEarlyDatagrams {
+		s.expireEarlyLocked(now)
+		if s.earlyCount >= maxEarlyDatagrams {
+			return nil
+		}
+	}
+	s.early[alias] = append(s.early[alias], earlyDatagram{b: bytes.Clone(b), arrived: now})
+	s.earlyCount++
+	return nil
+}
+
+func (s *Session) expireEarlyLocked(now time.Time) {
+	for alias, ds := range s.early {
+		kept := ds[:0]
+		for _, d := range ds {
+			if now.Sub(d.arrived) < s.opts.UnknownAliasWait {
+				kept = append(kept, d)
+			}
+		}
+		s.earlyCount -= len(ds) - len(kept)
+		if len(kept) == 0 {
+			delete(s.early, alias)
+		} else {
+			s.early[alias] = kept
+		}
+	}
+}
+
+func (s *Session) deliverEarly(r *Request, early []earlyDatagram, registered time.Time) {
+	d, ok := r.awaitData()
+	if !ok {
+		return
+	}
+	for _, e := range early {
+		if registered.Sub(e.arrived) >= s.opts.UnknownAliasWait {
+			continue
+		}
+		// it parsed as it arrived
+		dg, _ := s.codec.ParseDatagram(e.b)
+		d.HandleDatagram(r, &dg)
+	}
 }
 
 func trackOf(m message.Message) message.FullTrackName {
@@ -259,9 +327,7 @@ func (s *Session) receiveDatagrams() {
 			s.fail(err)
 			return
 		}
-		s.mu.Lock()
-		r := s.aliases[dg.TrackAlias]
-		s.mu.Unlock()
+		r := s.routeDatagram(dg.TrackAlias, b)
 		if r == nil {
 			continue
 		}

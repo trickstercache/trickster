@@ -33,12 +33,15 @@ import (
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
@@ -210,6 +213,39 @@ func boundBackends(c *config.Config, listenerName string) []string {
 	return out
 }
 
+type sessionGater interface {
+	SessionGate() backends.SessionGate
+}
+
+func geoGate(o *geoaclopts.Options) backends.SessionGate {
+	// a geo ACL is compiled before listeners are built or updated
+	if o == nil {
+		return nil
+	}
+	if g, ok := o.Compiled.(sessionGater); ok {
+		return g.SessionGate()
+	}
+	return nil
+}
+
+func pathJudge(backend sessionJudge, p *po.Options) sessionJudge {
+	// a path's acl replaces its backend's, and none clears it
+	j := backend
+	switch {
+	case p.IPACLName == reserved.ReferenceNone:
+		j.ipacl = nil
+	case p.IPACL != nil:
+		j.ipacl = p.IPACL
+	}
+	switch {
+	case p.GeoACLName == reserved.ReferenceNone:
+		j.geo = nil
+	case p.GeoACLOptions != nil:
+		j.geo = geoGate(p.GeoACLOptions)
+	}
+	return j
+}
+
 func routesFor(request native.BuildRequest) *routeTable {
 	rt := &routeTable{}
 	if l := request.Listener; l != nil && l.MoQ != nil {
@@ -222,7 +258,7 @@ func routesFor(request native.BuildRequest) *routeTable {
 			continue
 		}
 		o := request.Config.Backends[name]
-		e := routeEntry{name: name, client: client}
+		e := routeEntry{name: name, client: client, judge: sessionJudge{ipacl: o.IPACL, geo: geoGate(o.GeoACLOptions)}}
 		for _, h := range o.Hosts {
 			e.hosts = append(e.hosts, strings.ToLower(strings.TrimSuffix(h, ".")))
 		}
@@ -236,6 +272,7 @@ func routesFor(request native.BuildRequest) *routeTable {
 				patterns++
 			default:
 				e.paths = append(e.paths, p.Path)
+				e.judges = append(e.judges, pathJudge(e.judge, p))
 			}
 		}
 		if patterns > 0 && len(e.paths) == 0 {

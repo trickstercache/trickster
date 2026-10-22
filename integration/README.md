@@ -101,8 +101,9 @@ share one Trickster instance per group and run as sequential subtests. Cache-sen
 reload, lifecycle, and invalid-configuration scenarios retain isolated fixtures.
 Each fixture boots on a unique port range to avoid TCP TIME_WAIT races between tests. Tests that need the full
 developer config use `configHarness()` to clone it with swapped ports. The
-helper reserves random frontend, metrics, management, and MySQL listener ports
-until immediately before Trickster starts. Their addresses are exposed on the
+helper reserves random frontend, TLS, metrics, management, and MySQL listener
+ports until immediately before Trickster starts, so a local Trickster on the
+default ports cannot collide with the suite. Their addresses are exposed on the
 returned harness.
 
 ## Structure
@@ -176,8 +177,8 @@ each assertion so that timing can't change its outcome:
 ## Adding a new test
 
 1. If you only need standard backends (prom, clickhouse, etc.), use
-   `configHarness(t)` to clone the developer config and reserve all four of its
-   listener ports.
+   `configHarness(t)` to clone the developer config and reserve its listener
+   ports.
 2. If you need custom backends (ALB pools, rule routing, etc.), add a static
    YAML under `testdata/configs/` and load it with `staticConfigHarness(t,
    path)` so its listener ports are reserved.

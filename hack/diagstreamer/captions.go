@@ -41,7 +41,7 @@ const (
 	textBandwidth    = 1000
 )
 
-// identity is the unity transformation matrix boxes carry
+// the unity transformation matrix boxes carry
 var identity = [9]uint32{fixedPointOne, 0, 0, 0, fixedPointOne, 0, 0, 0, 0x40000000}
 
 func u16(v uint16) []byte { return binary.BigEndian.AppendUint16(nil, v) }
@@ -76,8 +76,8 @@ func matrix() []byte {
 
 func zeros(n int) []byte { return make([]byte, n) }
 
-// wvttInit is the initialization segment of the DASH caption track
 func wvttInit() []byte {
+	// the initialization segment of the DASH caption track
 	ftyp := mkbox(boxFtyp, []byte("iso6"), u32(0), []byte("iso6cmfcdash"))
 	mvhd := fullbox("mvhd", 0, 0, u32(0), u32(0), u32(textTimescale), u32(0), u32(fixedPointOne),
 		u16(fixedPointVolume), zeros(10), matrix(), zeros(24), u32(textTrackID+1))
@@ -95,8 +95,8 @@ func wvttInit() []byte {
 	return append(ftyp, mkbox(boxMoov, mvhd, trak, mvex)...)
 }
 
-// cueTimes lists the starts of the one-second cues of segment number n
 func (s *Streamer) cueTimes(n int64) []time.Time {
+	// lists the starts of the one-second cues of segment number n
 	start := s.p.startTime().Add(time.Duration(n-s.video.startSeg) * s.cfg.Segment)
 	count := int(s.cfg.Segment / time.Second)
 	out := make([]time.Time, count)
@@ -106,8 +106,8 @@ func (s *Streamer) cueTimes(n int64) []time.Time {
 	return out
 }
 
-// mediaOffset is how far into the stream's media timeline at falls
 func (s *Streamer) mediaOffset(at time.Time) time.Duration {
+	// how far into the stream's media timeline at falls
 	return at.Sub(s.p.startTime())
 }
 
@@ -115,9 +115,9 @@ func vttTimestamp(d time.Duration) string {
 	return time.Unix(0, 0).UTC().Add(d).Format(vttTimeLayout)
 }
 
-// webVTTSegment is the HLS caption segment for segment number n; cue times are on the media timeline, which
-// starts at zero with the first frame, as the fragments' decode times do
 func (s *Streamer) webVTTSegment(n int64) string {
+	// the HLS caption segment for segment number n; cue times are on the media timeline, which
+	// starts at zero with the first frame, as the fragments' decode times do
 	var b strings.Builder
 	b.WriteString(vttHeader + "\nX-TIMESTAMP-MAP=MPEGTS:0,LOCAL:00:00:00.000\n\n")
 	for _, at := range s.cueTimes(n) {
@@ -128,8 +128,8 @@ func (s *Streamer) webVTTSegment(n int64) string {
 	return b.String()
 }
 
-// wvttSegment is the DASH caption segment for segment number n: one sample per cue, each a vttc box
 func (s *Streamer) wvttSegment(n int64) []byte {
+	// the DASH caption segment for segment number n: one sample per cue, each a vttc box
 	cues := s.cueTimes(n)
 	samples := make([][]byte, len(cues))
 	entries := make([]byte, 0, 8*len(cues))
@@ -153,8 +153,8 @@ func (s *Streamer) wvttSegment(n int64) []byte {
 	return append(moof, mkbox(boxMdat, samples...)...)
 }
 
-// subtitlesPlaylist lists the HLS caption segments alongside the video's window
 func (s *Streamer) subtitlesPlaylist() string {
+	// lists the HLS caption segments alongside the video's window
 	segs := s.video.window(s.cfg.Window)
 	var b strings.Builder
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", hlsVersion, s.targetDuration())

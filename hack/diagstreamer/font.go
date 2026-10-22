@@ -24,7 +24,7 @@ const (
 	glyphOn      = '#'
 )
 
-// glyphs is a 5x7 bitmap font for printable ASCII; a rune it lacks is drawn as '?'
+// a 5x7 bitmap font for printable ASCII; a rune it lacks is drawn as '?'
 var glyphs = map[rune][glyphHeight]string{
 	' ':  {".....", ".....", ".....", ".....", ".....", ".....", "....."},
 	'!':  {"..#..", "..#..", "..#..", "..#..", "..#..", ".....", "..#.."},
@@ -123,7 +123,7 @@ var glyphs = map[rune][glyphHeight]string{
 	'~':  {".....", ".....", ".#...", "#.#.#", "...#.", ".....", "....."},
 }
 
-// glyphBits holds each glyph as rows of bits, the leftmost column in the highest of the low five bits
+// each glyph as rows of bits, the leftmost column in the highest of the low five bits
 var glyphBits = func() map[rune][glyphHeight]uint8 {
 	out := make(map[rune][glyphHeight]uint8, len(glyphs))
 	for r, rows := range glyphs {
@@ -147,8 +147,8 @@ func glyph(r rune) [glyphHeight]uint8 {
 	return glyphBits['?']
 }
 
-// textWidth is the width in pixels of s drawn at scale, without the trailing gap
 func textWidth(s string, scale int) int {
+	// the width in pixels of s drawn at scale, without the trailing gap
 	n := 0
 	for range s {
 		n++

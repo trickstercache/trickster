@@ -27,8 +27,8 @@ import (
 //go:embed assets/trickster-vertical.png
 var logoPNG []byte
 
-// logoSprite scales the Trickster vertical logo, mark over wordmark, to height pixels tall
 func logoSprite(height int) (*sprite, error) {
+	// scales the Trickster vertical logo, mark over wordmark, to height pixels tall
 	src, err := png.Decode(bytes.NewReader(logoPNG))
 	if err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func logoSprite(height int) (*sprite, error) {
 	return newSprite(downscale(src, lw, lh)), nil
 }
 
-// downscale resizes src to w by h by averaging the premultiplied samples each output pixel covers
 func downscale(src image.Image, w, h int) *image.RGBA {
+	// resizes src to w by h by averaging the premultiplied samples each output pixel covers
 	b := src.Bounds()
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	sw, sh := b.Dx(), b.Dy()

@@ -67,8 +67,8 @@ const (
 
 var errBoxFormat = errors.New("malformed ISO BMFF box")
 
-// readBox reads one whole box, header included, from r
 func readBox(r *bufio.Reader) (string, []byte, error) {
+	// reads one whole box, header included, from r
 	hdr, err := r.Peek(boxHeader)
 	if err != nil {
 		if errors.Is(err, io.EOF) && len(hdr) == 0 {
@@ -95,8 +95,8 @@ func readBox(r *bufio.Reader) (string, []byte, error) {
 	return typ, b, nil
 }
 
-// children walks the boxes inside a container box's payload, calling fn with each child's type and whole bytes
 func children(payload []byte, fn func(typ string, b []byte) error) error {
+	// walks the boxes inside a container box's payload, calling fn with each child's type and whole bytes
 	for len(payload) > 0 {
 		if len(payload) < boxHeader {
 			return errBoxFormat
@@ -120,8 +120,8 @@ func children(payload []byte, fn func(typ string, b []byte) error) error {
 	return nil
 }
 
-// find returns the first box at the path below a container's payload
 func find(payload []byte, path ...string) []byte {
+	// returns the first box at the path below a container's payload
 	var out []byte
 	_ = children(payload, func(typ string, b []byte) error {
 		if typ != path[0] {
@@ -139,8 +139,8 @@ func find(payload []byte, path ...string) []byte {
 
 var errStop = errors.New("stop")
 
-// trackInfo reads the timescale and codec of the single track an init segment's moov describes
 func trackInfo(moov []byte) (timescale uint32, codec string, err error) {
+	// reads the timescale and codec of the single track an init segment's moov describes
 	mdia := find(moov[boxHeader:], boxTrak, boxMdia)
 	if mdia == nil {
 		return 0, "", fmt.Errorf("%w: no trak/mdia", errBoxFormat)
@@ -184,8 +184,8 @@ func trackInfo(moov []byte) (timescale uint32, codec string, err error) {
 	return timescale, codec, nil
 }
 
-// fragmentTiming reads a moof's base decode time, total duration and whether its first sample is a sync sample
 func fragmentTiming(moof []byte) (decodeTime, duration uint64, key bool, err error) {
+	// reads a moof's base decode time, total duration and whether its first sample is a sync sample
 	traf := find(moof[boxHeader:], boxTraf)
 	if traf == nil {
 		return 0, 0, false, fmt.Errorf("%w: no traf", errBoxFormat)

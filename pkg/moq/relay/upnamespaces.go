@@ -273,7 +273,7 @@ func (u *upPrefix) attempt() (bool, error) {
 	u.req = req
 	u.mu.Unlock()
 	defer func() {
-		u.renew.schedule(&message.Params{}, nil)
+		u.renew.cancel()
 		u.mu.Lock()
 		u.req, u.sess = nil, nil
 		u.mu.Unlock()

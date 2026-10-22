@@ -129,7 +129,7 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			MaxTTL: time.Duration(o.MaxTTL), FillTimeout: time.Duration(m.FillTimeout), Prewarm: m.Upstream.Prewarm,
 			Linger: time.Duration(m.Upstream.Linger), MaxObjectSize: m.MaxObjectSizeBytes,
 			MaxGapFetches: m.Upstream.MaxGapFetches, ReconnectBackoff: time.Duration(m.Upstream.ReconnectBackoff),
-			Metrics: relayMetrics(name),
+			Metrics: relayMetrics(name), CacheNamespace: name,
 		}, up, sh)
 		if sh.dialer != nil {
 			sh.unwatch = append(sh.unwatch, sh.dialer.origin.watch(sh.relay))

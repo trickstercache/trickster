@@ -69,7 +69,7 @@ func clamp8(v float64) uint8 {
 	return uint8(v + 0.5)
 }
 
-// canvas is one yuv420p frame: the luma plane then both chroma planes, contiguous so it is written in one call
+// one yuv420p frame: the luma plane then both chroma planes, contiguous so it is written in one call
 type canvas struct {
 	w, h      int
 	buf       []byte
@@ -103,8 +103,8 @@ func (c *canvas) clip(x0, y0, x1, y1 int) (int, int, int, int, bool) {
 	return x0, y0, x1, y1, x0 < x1 && y0 < y1
 }
 
-// rect fills [x0, x1) by [y0, y1); chroma samples follow the luma rows and columns they cover
 func (c *canvas) rect(x0, y0, x1, y1 int, col ycc) {
+	// fills [x0, x1) by [y0, y1); chroma samples follow the luma rows and columns they cover
 	x0, y0, x1, y1, ok := c.clip(x0, y0, x1, y1)
 	if !ok {
 		return
@@ -119,8 +119,8 @@ func (c *canvas) rect(x0, y0, x1, y1 int, col ycc) {
 	}
 }
 
-// shade darkens [x0, x1) by [y0, y1) toward black, keeping keep/256 of its brightness and color
 func (c *canvas) shade(x0, y0, x1, y1, keep int) {
+	// darkens [x0, x1) by [y0, y1) toward black, keeping keep/256 of its brightness and color
 	x0, y0, x1, y1, ok := c.clip(x0, y0, x1, y1)
 	if !ok {
 		return
@@ -142,8 +142,8 @@ func (c *canvas) shade(x0, y0, x1, y1, keep int) {
 	}
 }
 
-// text draws s with its top-left at x, y, each font pixel a scale-by-scale square
 func (c *canvas) text(x, y, scale int, s string, col ycc) {
+	// draws s with its top-left at x, y, each font pixel a scale-by-scale square
 	for _, r := range s {
 		g := glyph(r)
 		for gy, bits := range g {
@@ -158,8 +158,8 @@ func (c *canvas) text(x, y, scale int, s string, col ycc) {
 	}
 }
 
-// label draws s with a one-unit drop shadow, so it reads on any background
 func (c *canvas) label(x, y, scale, shadow int, s string, col ycc) {
+	// draws s with a one-unit drop shadow, so it reads on any background
 	c.text(x+shadow, y+shadow, scale, s, black)
 	c.text(x, y, scale, s, col)
 }
@@ -171,8 +171,8 @@ func (c *canvas) image() *image.YCbCr {
 	}
 }
 
-// rgba converts the frame with the BT.709 limited-range matrix it was drawn in, for snapshots
 func (c *canvas) rgba() *image.RGBA {
+	// converts the frame with the BT.709 limited-range matrix it was drawn in, for snapshots
 	out := image.NewRGBA(image.Rect(0, 0, c.w, c.h))
 	cw := c.w / 2
 	for y := range c.h {
@@ -184,7 +184,7 @@ func (c *canvas) rgba() *image.RGBA {
 	return out
 }
 
-// sprite is an image with alpha, prepared in the frame's color space so drawing it is a blend per sample
+// an image with alpha, prepared in the frame's color space so drawing it is a blend per sample
 type sprite struct {
 	w, h       int
 	y, ya      []byte
@@ -237,8 +237,8 @@ func blend(dst, src, alpha uint8) uint8 {
 	return uint8((int(src)*int(alpha) + int(dst)*(255-int(alpha)) + 127) / 255) //nolint:gosec // a blend of two bytes
 }
 
-// draw blends the sprite with its top-left at x, y, rounded down to even coordinates so chroma lines up
 func (c *canvas) draw(s *sprite, x, y int) {
+	// blends the sprite with its top-left at x, y, rounded down to even coordinates so chroma lines up
 	x, y = x&^1, y&^1
 	for sy := range s.h {
 		dy := y + sy

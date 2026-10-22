@@ -34,7 +34,7 @@ const (
 	shutdownTimeout   = 5 * time.Second
 )
 
-// producer renders frames and tone samples in step with the wall clock and feeds them to an encoder
+// frames and tone samples, rendered in step with the wall clock and fed to an encoder
 type producer struct {
 	cfg   Config
 	tl    timeline
@@ -75,13 +75,13 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// startTime is when the first encoded frame is shown
 func (p *producer) startTime() time.Time {
+	// when the first encoded frame is shown
 	return p.tl.at(p.start)
 }
 
-// run feeds frames from p.start until ctx ends or frames frames have been written, when frames is positive
 func (p *producer) run(ctx context.Context, enc Encoder, frames int64) error {
+	// feeds frames from p.start until ctx ends or frames frames have been written, when frames is positive
 	lagged := false
 	for n := p.start; frames <= 0 || n < p.start+frames; n++ {
 		at := p.tl.at(n)

@@ -100,7 +100,13 @@ func sessionGateFor(c *config.Config, listenerName string) backends.SessionGate 
 	if c == nil {
 		return nil
 	}
-	for _, b := range c.Backends {
+	if lo := c.Listeners[listenerName]; lo != nil && lo.Protocol == listenerconfig.ProtocolMoQ {
+		// a moq listener routes sessions among several backends, so each is judged by its own backend's acls once
+		// its SETUP names one; one backend's here would judge them all
+		return nil
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		b := c.Backends[name]
 		if b == nil || b.IsTemplate || !b.UsesListener(listenerName) {
 			continue
 		}

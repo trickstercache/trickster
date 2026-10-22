@@ -1,19 +1,24 @@
 # The MoQ harness's Trickster, run by make developer-moq from the root of the repo. moq-dev's relay
-# (moq_relay in the compose file) is the origin, and diagstreamer_moq publishes diagstreamer.hang into it.
+# (moq_relay in the compose file) is the origin, and diagstreamer_moq publishes diagstreamer.hang into it. Its
+# ports are clear of the developer Trickster's (make serve-dev), so both can run at once.
 #
-#   native QUIC:   moqt://localhost:8490/
-#   WebTransport:  https://localhost:8483/demo/
-#   player:        https://localhost:8483/player/ (make developer-moq-browser opens it)
+#   native QUIC:   moqt://localhost:8590/
+#   WebTransport:  https://localhost:8583/demo/
+#   player:        https://localhost:8583/player/ (make developer-moq-browser opens it)
 
 listeners:
   moq1:
     protocol: moq
-    port: 8490
+    port: 8590
   default:
-    port: 8480
-    tls_port: 8483
+    port: 8580
+    tls_port: 8583
     http3:
       enabled: true
+  metrics:
+    port: 8581
+  mgmt:
+    port: 8584
 
 backends:
   demo:

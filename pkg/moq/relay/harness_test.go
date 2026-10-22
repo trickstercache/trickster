@@ -135,6 +135,7 @@ type origin struct {
 	nsExpires     uint64
 	nsRenewals    atomic.Int32
 	subExpires    uint64
+	plainForward  atomic.Bool
 	endOnUpdate   atomic.Bool
 	subscribeAsks chan *message.Subscribe
 	trackAsks     chan *session.Request
@@ -493,7 +494,7 @@ func (h *originReq) HandleMessage(r *session.Request, m message.Message) {
 	}
 	h.o.updates <- u
 	answer := &message.RequestOK{}
-	if h.o.subExpires > 0 {
+	if h.o.subExpires > 0 && (!h.o.plainForward.Load() || !u.Params.Has(message.ParamForward)) {
 		answer.Params.SetExpires(h.o.subExpires)
 	}
 	_ = r.Send(answer)

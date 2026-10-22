@@ -63,6 +63,40 @@ func TestUnknownAliasRouting(t *testing.T) {
 		}
 	})
 
+	t.Run("datagram parked until its alias is known", func(t *testing.T) {
+		s, p := rawPeer(t, session.RoleClient, long)
+		h := newRecorder()
+		if _, err := s.Open(context.Background(), &message.Subscribe{Track: track("v", "ns")}, h, h); err != nil {
+			t.Fatal(err)
+		}
+		st, _, _ := p.acceptBidi()
+		dg, _ := p.c.AppendDatagram(nil, &message.Datagram{TrackAlias: 5, Object: 1, Payload: []byte("early")})
+		_ = p.conn.SendDatagram(dg)
+		time.Sleep(20 * time.Millisecond)
+		p.write(st, &message.SubscribeOK{TrackAlias: 5})
+		if d := recv(t, h.datagrams, "datagram"); string(d.Payload) != "early" || d.Object != 1 {
+			t.Errorf("datagram %+v", d)
+		}
+	})
+
+	t.Run("stale datagram discarded", func(t *testing.T) {
+		s, p := rawPeer(t, session.RoleClient, func(o *session.Options) { o.UnknownAliasWait = 20 * time.Millisecond })
+		h := newRecorder()
+		if _, err := s.Open(context.Background(), &message.Subscribe{Track: track("v", "ns")}, h, h); err != nil {
+			t.Fatal(err)
+		}
+		st, _, _ := p.acceptBidi()
+		stale, _ := p.c.AppendDatagram(nil, &message.Datagram{TrackAlias: 5, Payload: []byte("stale")})
+		_ = p.conn.SendDatagram(stale)
+		time.Sleep(60 * time.Millisecond)
+		p.write(st, &message.SubscribeOK{TrackAlias: 5})
+		live, _ := p.c.AppendDatagram(nil, &message.Datagram{TrackAlias: 5, Object: 1, Payload: []byte("live")})
+		_ = p.conn.SendDatagram(live)
+		if d := recv(t, h.datagrams, "datagram"); string(d.Payload) != "live" {
+			t.Errorf("a datagram older than the alias wait is delivered: %q", d.Payload)
+		}
+	})
+
 	t.Run("never named", func(t *testing.T) {
 		_, p := rawPeer(t, session.RoleClient, nil)
 		st := p.openUni(subgroupBytes(t, p.c, 9, "x"))

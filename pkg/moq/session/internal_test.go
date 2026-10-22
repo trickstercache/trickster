@@ -240,3 +240,30 @@ func TestKindSet(t *testing.T) {
 		}
 	}
 }
+
+func TestEarlyDatagramsBounded(t *testing.T) {
+	s := &Session{
+		tombstones: make(map[uint64]time.Time), aliases: make(map[uint64]*Request),
+		early: make(map[uint64][]earlyDatagram), opts: Options{UnknownAliasWait: time.Second},
+	}
+	s.tombstones[1] = time.Now()
+	if s.routeDatagram(1, []byte("x")); s.earlyCount != 0 {
+		t.Error("a datagram for an ended subscription is kept")
+	}
+	old := time.Now().Add(-2 * time.Second)
+	for i := range maxEarlyDatagrams {
+		s.early[uint64(i%2)+2] = append(s.early[uint64(i%2)+2], earlyDatagram{arrived: old})
+	}
+	s.earlyCount = maxEarlyDatagrams
+	s.early[2][0].arrived = time.Now()
+	s.routeDatagram(4, []byte("y"))
+	if s.earlyCount != 2 || len(s.early[2]) != 1 || len(s.early[4]) != 1 || s.early[3] != nil {
+		t.Errorf("expired datagrams are swept when the table fills: %d kept in %d aliases", s.earlyCount, len(s.early))
+	}
+	for i := range maxEarlyDatagrams - 2 {
+		s.routeDatagram(5, []byte{byte(i)})
+	}
+	if s.routeDatagram(6, []byte("z")); s.earlyCount != maxEarlyDatagrams || s.early[6] != nil {
+		t.Errorf("a full table of fresh datagrams takes no more: %d", s.earlyCount)
+	}
+}

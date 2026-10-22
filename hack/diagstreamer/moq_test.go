@@ -67,8 +67,8 @@ func avcInit() []byte {
 	return append(mkbox(boxFtyp, []byte("iso6")), avcMoov()...)
 }
 
-// moqStreamer is a test stream whose tracks carry real initialization segments, as the catalogs read them
 func moqStreamer(t *testing.T, cfg Config, segments int) *Streamer {
+	// a test stream whose tracks carry real initialization segments, as the catalogs read them
 	t.Helper()
 	s := testStreamer(t, cfg, time.Minute, 0)
 	for _, v := range s.videos {
@@ -250,8 +250,8 @@ func (r *relaySide) groups() int {
 	return len(r.objects)
 }
 
-// moqPair connects a publisher, as a client, to a session the test drives as the relay
 func moqPair(t *testing.T, p *moqPublisher) *session.Session {
+	// connects a publisher, as a client, to a session the test drives as the relay
 	t.Helper()
 	c, _ := codec.ForDraft(22)
 	cc, sc := memconn.Pair()

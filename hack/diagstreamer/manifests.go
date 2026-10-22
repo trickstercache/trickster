@@ -30,8 +30,8 @@ const (
 	subtitlesGroup = "subs"
 )
 
-// multivariantPlaylist is the HLS entry point: the video variant with its audio and subtitle renditions
 func (s *Streamer) multivariantPlaylist() string {
+	// the HLS entry point: the video variant with its audio and subtitle renditions
 	var b strings.Builder
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-INDEPENDENT-SEGMENTS\n", hlsVersion)
 	attrs := ""
@@ -58,21 +58,21 @@ func videoPlaylist(r Rendition) string {
 	return KindVideo + "-" + r.Name() + playlistExt
 }
 
-// trackPath is where a track's media sits below the stream: a video rendition has a directory of its own
 func trackPath(t *track) string {
+	// where a track's media sits below the stream: a video rendition has a directory of its own
 	if t.kind == KindVideo {
 		return t.kind + "/" + t.rendition.Name()
 	}
 	return t.kind
 }
 
-// targetDuration is the HLS target duration: every segment's duration, rounded, is at most this
 func (s *Streamer) targetDuration() int {
+	// the HLS target duration: every segment's duration, rounded, is at most this
 	return max(int(math.Ceil(s.cfg.Segment.Seconds())), 1)
 }
 
-// mediaPlaylist lists a track's newest complete segments
 func (s *Streamer) mediaPlaylist(t *track) string {
+	// lists a track's newest complete segments
 	segs := t.window(s.cfg.Window)
 	var b strings.Builder
 	fmt.Fprintf(&b, "#EXTM3U\n#EXT-X-VERSION:%d\n#EXT-X-TARGETDURATION:%d\n", hlsVersion, s.targetDuration())
@@ -88,8 +88,8 @@ func (s *Streamer) mediaPlaylist(t *track) string {
 	return b.String()
 }
 
-// mediaPath is a segment's URL relative to the manifests, which sit one directory below the media
 func (s *Streamer) mediaPath(kind, name string) string {
+	// a segment's URL relative to the manifests, which sit one directory below the media
 	return "../" + mediaDir + "/" + s.streamID + "/" + kind + "/" + name
 }
 
@@ -97,9 +97,9 @@ func segmentName(n int64) string {
 	return fmt.Sprintf("%d%s", n, segmentExt)
 }
 
-// mpd is the dynamic DASH manifest. The period starts with the stream, so segment number N begins N segments
-// after the Unix epoch and each track's decode time counts from the period start.
 func (s *Streamer) mpd(now time.Time) string {
+	// the dynamic DASH manifest. The period starts with the stream, so segment number N begins N segments
+	// after the Unix epoch and each track's decode time counts from the period start.
 	segDur := s.cfg.Segment
 	periodStart := s.p.startTime().Sub(time.Unix(0, 0))
 	depth := time.Duration(s.cfg.Window) * segDur
