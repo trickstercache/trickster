@@ -141,6 +141,7 @@ their own lists. A session one refuses closes with `UNAUTHORIZED`.
 | `hosts`, `paths` | any, `/` | the AUTHORITY and PATH, or the WebTransport request's host and path, the backend serves |
 | `cache_name` | `default` | the cache older groups spill to |
 | `max_ttl` | `25h` | the most a spilled group lives, and its lifetime when its track sets no `MAX_CACHE_DURATION` |
+| `negative_cache_name` | `default` | the [negative cache](./negative-caching.md) whose `404` TTL keeps an origin's `DOES_NOT_EXIST` refusal of a track; see [Caching](#caching) |
 | `tls` | | the certificate served to clients, and the origin's verification |
 | `moq.upstream.alb` | | an alb of `moq` backends to reach the origins through, in place of `origin_url`; see [Origin pools](#origin-pools) |
 | `moq.upstream.drafts` | `[22, 21, 20, 19, 18, 17]` | drafts offered to the origin, most preferred first |
@@ -214,12 +215,30 @@ Each track's newest `live_edge.groups` groups stay in memory, within a backend-w
 and forwarded cut-through as their bytes arrive, so every subscriber and the cache share one
 copy. A group leaving the live edge spills to `cache_name` as one entry, by reference in a
 memory cache. Its key includes the backend's name, so backends sharing a cache never read or
-overwrite each other's groups, even for tracks of the same name. It lives for the track's `MAX_CACHE_DURATION` less the oldest object's age,
-capped by `max_ttl`. An object past its `MAX_CACHE_DURATION` is unknown again in both tiers and
+overwrite each other's groups, even for tracks of the same name. It lives for the track's
+`MAX_CACHE_DURATION` less the oldest object's age, capped by `max_ttl`. An object past its `MAX_CACHE_DURATION` is unknown again in both tiers and
 is not forwarded. Spilled groups are indexed in memory, so after a restart a persistent cache's
 groups are fetched from the origin again rather than found. A track found malformed (a duplicate
 object differing from the first copy, or an object past the end of its group or track) is
 dropped uncached and its subscribers end with `MALFORMED_TRACK`.
+
+An origin's `DOES_NOT_EXIST` refusal of a track is MoQ's `404`. It is kept for the `404` TTL of
+the backend's `negative_cache_name`, and answers SUBSCRIBE, FETCH and TRACK_STATUS for the track
+without asking the origin again. The default negative cache is empty, so nothing is kept unless
+configured:
+
+```yaml
+negative_caches:
+  default:
+    '404': 3s
+```
+
+Only the origin's refusal is kept. A namespace publisher's is not, and neither are codes that
+depend on the requester or pass on their own (`UNAUTHORIZED`, the token codes, `TIMEOUT`,
+`INTERNAL_ERROR`, `EXCESSIVE_LOAD`). A PUBLISH of the track, or a namespace arriving that covers
+it, forgets the refusal at once, so a stream that starts after its viewers ask is served as soon
+as it is published or announced. A backend keeps at most 4096 refusals. Clients that keep asking
+for names that do not exist are a matter for [rate limiting](#limits).
 
 `FETCH` and fills (-20 and later) are served from the live edge and the cache where a group is
 known in full. Each run of groups between them is fetched upstream with one request, in the
@@ -430,6 +449,12 @@ with `GOAWAY_TIMEOUT`.
 | rendezvous wait | `RENDEZVOUS_TIMEOUT`, at most 30 seconds |
 | data streams waiting for an unknown track alias | 64 per session, each for at most 2 seconds |
 | namespaces | 32 fields and 4096 bytes |
+| remembered `DOES_NOT_EXIST` refusals | 4096 per backend |
+
+To limit clients by address, put a [rate limiter](./rate-limiting.md) keyed on `client_ip` on the
+HTTPS listener, or on the backend, that WebTransport sessions arrive through. It counts each
+session's CONNECT as a request. A native `moq` listener cannot name a rate limiter yet, so limit
+native QUIC sessions per address in front of Trickster, at a firewall or load balancer.
 
 ## Metrics and logs
 

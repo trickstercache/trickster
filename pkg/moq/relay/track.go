@@ -576,7 +576,10 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 		return l, p, nil
 	}
 	t.mu.Unlock()
-	sess, release, err := t.upstreamSession(ctx)
+	if err := t.r.negs.refusal(t); err != nil && len(t.r.publishersFor(t.scope, t.name.Namespace)) == 0 {
+		return nil, nil, err
+	}
+	sess, release, origin, err := t.upstreamSession(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -604,7 +607,11 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 		t.mu.Unlock()
 		return l, props, nil
 	case *message.RequestError:
-		return nil, nil, &requestError{code: v.Code, reason: v.Reason}
+		err = &requestError{code: v.Code, reason: v.Reason}
+		if origin {
+			t.r.negs.record(t, err)
+		}
+		return nil, nil, err
 	}
 	return nil, nil, errUpstream
 }
@@ -719,7 +726,11 @@ func (u *upstreamSub) open(forward bool) {
 			t.upstreamEnded(u, cause)
 		}
 	case *message.RequestError:
-		t.upstreamEnded(u, &requestError{code: v.Code, reason: v.Reason})
+		err := &requestError{code: v.Code, reason: v.Reason}
+		if u.target == nil {
+			t.r.negs.record(t, err)
+		}
+		t.upstreamEnded(u, err)
 	}
 }
 

@@ -243,7 +243,7 @@ func TestIndexMoQ(t *testing.T) {
 		ignored = append(ignored, strings.Fields(pr.Detail)[0])
 	}
 	require.Equal(t, []string{
-		"spec.handler", "spec.negativeCacheName", "spec.timeout", "spec.collapsedForwarding", "spec.cacheKeyParams",
+		"spec.handler", "spec.timeout", "spec.collapsedForwarding", "spec.cacheKeyParams",
 		"spec.cacheKeyHeaders", "spec.requestHeaders", "spec.responseHeaders", "spec.healthMode",
 		"spec.loadBalancingKey", "spec.sticky", "spec.resultHeader", "spec.stepAlignment", "spec.cors",
 	}, ignored)

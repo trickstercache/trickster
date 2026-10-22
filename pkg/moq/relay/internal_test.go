@@ -21,6 +21,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -341,5 +342,44 @@ func TestHeldDatagramsBounded(t *testing.T) {
 	s.state.Store(uint32(subDone))
 	if s.holdDatagram(o, nil, 0) {
 		t.Error("an ended subscription holds a datagram")
+	}
+}
+
+func TestNegativesBounded(t *testing.T) {
+	var n negatives
+	n.ttl.Store(int64(time.Minute))
+	refused := &requestError{code: message.RequestDoesNotExist, reason: "gone"}
+	tracks := make([]*track, maxNegatives+1)
+	for i := range tracks {
+		tracks[i] = &track{key: strconv.Itoa(i), name: message.FullTrackName{Namespace: wire.Namespace{[]byte("live")}}}
+	}
+	for _, tr := range tracks[:maxNegatives] {
+		n.record(tr, refused)
+	}
+	n.record(tracks[maxNegatives], refused)
+	if n.refusal(tracks[maxNegatives]) != nil || n.refusal(tracks[0]) == nil {
+		t.Error("a full table of live refusals takes no more")
+	}
+	// an expired refusal is swept to make room, and answers nothing itself
+	n.mu.Lock()
+	e := n.m[tracks[1].key]
+	e.until = time.Now().Add(-time.Second)
+	n.m[tracks[1].key] = e
+	n.mu.Unlock()
+	n.record(tracks[maxNegatives], refused)
+	if n.refusal(tracks[maxNegatives]) == nil || n.refusal(tracks[1]) != nil {
+		t.Error("expired refusals are swept when the table fills")
+	}
+	n.record(tracks[1], errUpstream)
+	if n.refusal(tracks[1]) != nil {
+		t.Error("only DOES_NOT_EXIST is kept")
+	}
+	n.forget(tracks[0])
+	if n.refusal(tracks[0]) != nil {
+		t.Error("a forgotten refusal answers nothing")
+	}
+	n.forgetUnder(wire.Namespace{[]byte("live")})
+	if n.count.Load() != 0 {
+		t.Errorf("%d refusals left under a namespace that arrived", n.count.Load())
 	}
 }

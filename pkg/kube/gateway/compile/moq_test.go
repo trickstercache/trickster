@@ -73,7 +73,7 @@ func udpGroup(name string, members ...ir.BackendMember) ir.BackendGroup {
 func TestCompileMoQUDPRoute(t *testing.T) {
 	opts := serviceOpts(t)
 	opts.Defaults.IPACLName = "office"
-	policy := &ir.Policy{Name: "relay", MaxTTLMS: 30000, LoadBalancing: albnames.MechanismP2C}
+	policy := &ir.Policy{Name: "relay", MaxTTLMS: 30000, LoadBalancing: albnames.MechanismP2C, NegativeCacheName: "brief"}
 	verified := moqMember(0, "verified", 1)
 	verified.TLS = &ir.BackendTLS{Hostname: "origin.example.com", CACertificates: []string{"a", "b"}}
 	system := moqMember(1, "system", 1)
@@ -95,6 +95,7 @@ func TestCompileMoQUDPRoute(t *testing.T) {
 	require.Equal(t, []string{moqListenerName}, live.ListenerNames)
 	require.Equal(t, []string{"live.example.com"}, live.Hosts)
 	require.Equal(t, "30s", live.MaxTTL)
+	require.Equal(t, "brief", live.NegativeCacheName, "an origin's DOES_NOT_EXIST is kept by the policy's negative cache")
 	require.True(t, live.TLS.InsecureSkipVerify, "an origin no BackendTLSPolicy names is trusted to the cluster")
 	require.Equal(t, "office", live.IPACLName, "each route's backend carries its own access list")
 

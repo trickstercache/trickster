@@ -144,6 +144,7 @@ func (r *Relay) attachPublisher(scope Scope, req *session.Request, m *message.Pu
 		t.fromOrigin = true
 		t.mu.Unlock()
 	}
+	r.negs.forget(t)
 	r.m.publishers(1)
 	if err := req.Send(&message.RequestOK{}); err != nil {
 		t.upstreamEnded(u, err)

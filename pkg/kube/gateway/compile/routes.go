@@ -97,8 +97,8 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 		// a moq relay accepts WebTransport sessions on the matched paths; the HTTP filters and overrides have
 		// no request of their own to apply to, since a session is one CONNECT
 		edge := &backendDoc{
-			Provider: providers.MoQ, CacheName: meff.cacheName, AuthenticatorName: meff.authenticatorName,
-			AccessLog: meff.accessLogFor(), TracingConfigName: meff.tracingName,
+			Provider: providers.MoQ, CacheName: meff.cacheName, NegativeCacheName: meff.negativeCacheName,
+			AuthenticatorName: meff.authenticatorName, AccessLog: meff.accessLogFor(), TracingConfigName: meff.tracingName,
 		}
 		attach(edge)
 		edge.CacheKeyPrefix = ""

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"net/url"
 	"sync"
@@ -31,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
@@ -456,6 +458,20 @@ func TestBackendACLsJudgeSessions(t *testing.T) {
 			t.Errorf("%s: refused with %#x, want UNAUTHORIZED", authority, code)
 		}
 	}
+}
+
+func TestNegativeTTLFrom404(t *testing.T) {
+	// DOES_NOT_EXIST is MoQ's 404, so the backend's negative cache entry for 404 is how long a refusal is kept
+	c := newBackendWith(t, "neg", "moqt://127.0.0.1:1/neg", func(o *bo.Options) {
+		o.NegativeCache = negative.Lookup{http.StatusNotFound: time.Minute, http.StatusInternalServerError: time.Hour}
+	})
+	if c.negTTL != time.Minute {
+		t.Errorf("negative TTL %v", c.negTTL)
+	}
+	if plain := newBackend(t, "plain", "moqt://127.0.0.1:1/plain"); plain.negTTL != 0 {
+		t.Errorf("a backend with no 404 entry keeps refusals for %v", plain.negTTL)
+	}
+	RetireClients(backends.Backends{"neg": c})
 }
 
 func TestListenerUpdates(t *testing.T) {

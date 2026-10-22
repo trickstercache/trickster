@@ -105,6 +105,7 @@ func (r *Relay) addNamespacePublisher(p *nsPublisher) {
 	}
 	n.pubs = append(n.pubs, p)
 	n.mu.Unlock()
+	r.negs.forgetUnder(p.prefix)
 	if p.sess == nil {
 		return
 	}

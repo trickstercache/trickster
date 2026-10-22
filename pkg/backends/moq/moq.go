@@ -64,6 +64,7 @@ type Client struct {
 	sh     *shared
 	scope  relay.Scope
 	access relay.Access
+	negTTL time.Duration
 }
 
 var (
@@ -95,6 +96,8 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 	if cl.access, err = accessFor(name, m); err != nil {
 		return cl, err
 	}
+	// an origin's DOES_NOT_EXIST is MoQ's 404, so the backend's negative cache entry for 404 is how long it is kept
+	cl.negTTL = o.NegativeCache[http.StatusNotFound]
 	sh, err := sharedFor(name, relayKey(o), func() (*shared, error) {
 		sh := &shared{}
 		var up relay.Upstream
@@ -139,6 +142,7 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 		}
 		// a relay that outlives a reload takes the new policy when the reload commits, in RetireClients
 		sh.relay.SetAccess(cl.access)
+		sh.relay.SetNegativeTTL(cl.negTTL)
 		return sh, nil
 	})
 	if err != nil {

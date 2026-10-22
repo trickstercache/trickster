@@ -247,7 +247,6 @@ func ignoredByMoQ(s Spec) []string {
 		set  bool
 	}{
 		{"handler", s.Handler != ""},
-		{"negativeCacheName", s.NegativeCacheName != ""},
 		{"timeout", s.Timeout != ""},
 		{"collapsedForwarding", s.CollapsedForwarding != ""},
 		{"cacheKeyParams", s.CacheKeyParams != nil},

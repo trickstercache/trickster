@@ -107,6 +107,7 @@ func compileMoQRule(doc *document, r ir.Route, group ir.BackendGroup, listeners 
 	name := GroupName(group)
 	edge := &backendDoc{
 		Provider: providers.MoQ, ListenerNames: listeners, Hosts: r.Hostnames, CacheName: eff.cacheName,
+		NegativeCacheName: eff.negativeCacheName,
 		// a moq listener judges each session by the acls of the backend it is routed to, so routes sharing the
 		// listener keep their own
 		GeoACLName: eff.geoACLName, IPACLName: eff.ipACLName,

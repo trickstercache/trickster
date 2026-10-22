@@ -203,14 +203,15 @@ func (sh *shared) shutdown() {
 	}
 }
 
-// RetireClients commits a configuration's clients: each relay they keep takes their access policy and origin alb, and
-// every relay they no longer use is retired, closing once its sessions end
+// RetireClients commits a configuration's clients: each relay they keep takes their access policy, negative cache TTL
+// and origin alb, and every relay they no longer use is retired, closing once its sessions end
 func RetireClients(current backends.Backends) {
 	keep := make(map[*shared]struct{})
 	for _, c := range current {
 		if mc, ok := c.(*Client); ok && mc.sh != nil {
 			keep[mc.sh] = struct{}{}
 			mc.sh.relay.SetAccess(mc.access)
+			mc.sh.relay.SetNegativeTTL(mc.negTTL)
 			if p := mc.sh.pool; p != nil {
 				var picker lb.Picker
 				if pp, ok := current[p.alb].(interface{ Picker() lb.Picker }); ok {

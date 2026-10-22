@@ -183,12 +183,13 @@ of the route with or without a policy, it relays native QUIC sessions. A policy 
 Service makes a relay of every HTTPRoute rule that reaches only MoQ origins. See
 [kubernetes-gateway.md](./kubernetes-gateway.md#moq-relays) for both kinds of listener.
 
-A relay applies three fields: `cacheName`, the cache that groups leaving its in-memory
+A relay applies four fields: `cacheName`, the cache that groups leaving its in-memory
 live edge are kept in; `maxTTL`, how long a kept group lives at most (the backend default of
-25 hours unless set);
-and `loadBalancing`, how a rule with several backendRefs places each track on one of them
+25 hours unless set); `negativeCacheName`, whose `404` entry keeps an origin's
+`DOES_NOT_EXIST` refusal of a track (see [MoQ caching](./moq.md#caching)); and
+`loadBalancing`, how a rule with several backendRefs places each track on one of them
 (`rr`, `p2c`, `lc` or `hrw`, `hrw` unless set). The others shape HTTP requests and
-responses, which a session has none of: `handler`, `negativeCacheName`, `timeout`,
+responses, which a session has none of: `handler`, `timeout`,
 `collapsedForwarding`, `cacheKeyParams`, `cacheKeyHeaders`, `requestHeaders`,
 `responseHeaders`, `cors`, `healthMode`, `loadBalancingKey`, `sticky`, `resultHeader` and
 `stepAlignment`. Each one set is reported by Event, and the rest of the policy applies.

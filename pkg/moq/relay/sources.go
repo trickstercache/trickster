@@ -83,6 +83,9 @@ func (t *track) startPullLocked(forward bool) error {
 		if t.r.up == nil {
 			return errNoUpstream
 		}
+		if err := t.r.negs.refusal(t); err != nil {
+			return err
+		}
 		targets = []*session.Session{nil}
 	}
 	t.pendingLocked()
@@ -482,31 +485,31 @@ func (t *track) publisherArrived(sess *session.Session) {
 	t.mu.Unlock()
 }
 
-func (t *track) upstreamSession(ctx context.Context) (*session.Session, func(error), error) {
+func (t *track) upstreamSession(ctx context.Context) (*session.Session, func(error), bool, error) {
 	// the session an upstream FETCH or TRACK_STATUS goes to: a source's, else a namespace publisher's, else an
-	// origin's (§7.6); the release is called once the request ends
+	// origin's (§7.6), reporting which; the release is called once the request ends
 	t.mu.Lock()
 	for _, u := range t.ups {
 		if s := u.session(); u.live && s != nil {
 			t.mu.Unlock()
-			return s, noRelease, nil
+			return s, noRelease, false, nil
 		}
 	}
 	t.mu.Unlock()
 	if targets := t.r.publishersFor(t.scope, t.name.Namespace); len(targets) > 0 {
-		return targets[0], noRelease, nil
+		return targets[0], noRelease, false, nil
 	}
 	if t.r.up == nil {
-		return nil, nil, errNoUpstream
+		return nil, nil, false, errNoUpstream
 	}
 	sess, release, err := t.r.up.Session(ctx, t.scope, t.name)
 	if err != nil {
-		return nil, nil, errUpstream
+		return nil, nil, true, errUpstream
 	}
 	if release == nil {
 		release = noRelease
 	}
-	return sess, release, nil
+	return sess, release, true, nil
 }
 
 func noRelease(error) {}

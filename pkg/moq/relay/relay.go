@@ -147,8 +147,9 @@ type Relay struct {
 	spillCh chan spillJob
 	wg      sync.WaitGroup
 
-	acc atomic.Pointer[Access]
-	ns  namespaces
+	acc  atomic.Pointer[Access]
+	negs negatives
+	ns   namespaces
 }
 
 // New returns a relay whose tracks come from up and spill to the cache c resolves; up may be nil for a relay

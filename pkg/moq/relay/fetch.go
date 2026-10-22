@@ -297,7 +297,7 @@ func (j *fetchJob) gapFailed(ctx context.Context, end wire.Location) error {
 }
 
 func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*session.Request, func(error), error) {
-	sess, release, err := j.t.upstreamSession(ctx)
+	sess, release, _, err := j.t.upstreamSession(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
