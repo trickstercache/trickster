@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -36,6 +38,7 @@ const (
 	planeHTTP = "http"
 	planeTCP  = "tcp"
 	planeUDP  = "udp"
+	planeMoQ  = "moq"
 )
 
 // RateLimiters validates every named limiter before attachments are resolved.
@@ -54,7 +57,8 @@ func bindListenerRateLimit(c *config.Config, name string, options *listener.Opti
 	if def == nil {
 		return fmt.Errorf("listener %q references undefined rate limiter %q", name, options.RateLimiterName)
 	}
-	if providerregistry.NativeListeners().Get(options.Protocol) != nil {
+	// a moq listener counts its sessions; the other native listeners have no hook
+	if options.Protocol != listener.ProtocolMoQ && providerregistry.NativeListeners().Get(options.Protocol) != nil {
 		return fmt.Errorf("listener %q with protocol %q cannot use rate limiter %q: native listeners "+
 			"have no rate-limit hook", name, options.Protocol, options.RateLimiterName)
 	}
@@ -99,9 +103,17 @@ func validateRateLimitPlacements(c *config.Config) error {
 		if backend == nil {
 			continue
 		}
+		// a moq backend's limiter counts its sessions' requests, whichever transport they arrive by
+		isMoQ := strings.EqualFold(backend.Provider, providers.MoQ)
 		if err := checkRouteRateLimit(backendName, "", backend.RateLimiterName, backend.RateLimiter,
-			backend, nil, httpBackends.Contains(backendName)); err != nil {
+			backend, nil, isMoQ || httpBackends.Contains(backendName)); err != nil {
 			return err
+		}
+		if isMoQ && backend.RateLimiter != nil {
+			if err := checkAttachment(fmt.Sprintf("backend %q", backendName), backend.RateLimiter, planeMoQ, false,
+				flowkey.StreamListener{}, false); err != nil {
+				return err
+			}
 		}
 		if backend.RateLimiter != nil {
 			note(backend.RateLimiterName, planeHTTP)
@@ -161,8 +173,14 @@ func checkAttachment(where string, opts *rlopts.Options, plane string, listenerS
 	hasAuth bool,
 ) error {
 	for _, key := range opts.KeySources {
-		readable := key.OnHTTP()
-		if plane != planeHTTP {
+		var readable bool
+		switch plane {
+		case planeHTTP:
+			readable = key.OnHTTP()
+		case planeMoQ:
+			// a MoQ session's address is all a moq limiter reads; it has no authenticated user
+			readable = key.Kind == flowkey.KeyClientIP
+		default:
 			readable = key.OnStream(stream)
 		}
 		if !readable {
@@ -179,8 +197,9 @@ func checkAttachment(where string, opts *rlopts.Options, plane string, listenerS
 				where, opts.Name)
 		}
 	}
-	if plane == planeHTTP && opts.Action == rlopts.ActionClose {
-		return fmt.Errorf("%s uses rate limiter %q with action close, which is not valid on HTTP", where, opts.Name)
+	if (plane == planeHTTP || plane == planeMoQ) && opts.Action == rlopts.ActionClose {
+		return fmt.Errorf("%s uses rate limiter %q with action close, which is not valid on %s", where, opts.Name,
+			plane)
 	}
 	return nil
 }
@@ -193,6 +212,8 @@ func unitMatches(unit, plane string) bool {
 		return unit == rlopts.UnitConnections
 	case planeUDP:
 		return unit == rlopts.UnitSessions || unit == rlopts.UnitDatagrams
+	case planeMoQ:
+		return unit == rlopts.UnitSessions
 	default:
 		return false
 	}
@@ -206,6 +227,8 @@ func listenerPlane(options *listener.Options) (string, error) {
 		return planeTCP, nil
 	case listener.ProtocolUDP:
 		return planeUDP, nil
+	case listener.ProtocolMoQ:
+		return planeMoQ, nil
 	default:
 		return "", fmt.Errorf("protocol %q cannot carry a rate limiter", options.Protocol)
 	}

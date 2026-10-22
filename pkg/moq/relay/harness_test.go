@@ -748,6 +748,7 @@ type rec struct {
 	payloads  []string
 	messages  chan message.Message
 	closes    chan error
+	fetchOpen chan struct{}
 	fetchDone chan struct{}
 	datagrams chan got
 }
@@ -755,7 +756,7 @@ type rec struct {
 func newRec() *rec {
 	return &rec{
 		messages: make(chan message.Message, 64), closes: make(chan error, 4),
-		fetchDone: make(chan struct{}, 8), datagrams: make(chan got, 256),
+		fetchOpen: make(chan struct{}, 8), fetchDone: make(chan struct{}, 8), datagrams: make(chan got, 256),
 	}
 }
 
@@ -802,6 +803,7 @@ func (r *rec) HandleSubgroup(_ *session.Request, in *session.IncomingSubgroup) {
 }
 
 func (r *rec) HandleFetch(_ *session.Request, in *session.IncomingFetch) {
+	r.fetchOpen <- struct{}{}
 	defer func() { r.fetchDone <- struct{}{} }()
 	for {
 		fo, err := in.Next()

@@ -21,8 +21,11 @@ package accesslog
 import (
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
@@ -93,6 +96,26 @@ func NewLogger(o *alo.Options, instanceID int,
 	}
 	track(l)
 	return l, nil
+}
+
+// ForBackend returns a backend's access logger. A backend with its own access_log block uses it exclusively, even
+// when that block disables logging, and one without inherits fallback. It returns nil when logging is off, or when
+// the logger cannot be built, which is logged.
+func ForBackend(own, fallback *alo.Options, instanceID int, backend, provider string) *Logger {
+	o := own
+	if o == nil {
+		o = fallback
+	}
+	if !o.IsEnabled() {
+		return nil
+	}
+	l, err := NewLogger(o, instanceID, backend, provider)
+	if err != nil {
+		logger.Error("access logger creation failed; access logging disabled",
+			logging.Pairs{keys.BackendName: backend, keys.Error: err.Error()})
+		return nil
+	}
+	return l
 }
 
 // Log writes the request described by the Fields to the configured logs

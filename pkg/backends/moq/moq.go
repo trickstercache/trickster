@@ -56,15 +56,20 @@ func implementation(configured string) string {
 
 var errNoOrigin = errors.New("moq backend has no origin to probe")
 
-const poolProbeText = "moq backend reaches its origins through alb backend %q, whose members are probed instead"
+const (
+	poolProbeText = "moq backend reaches its origins through alb backend %q, whose members are probed instead"
+	// the handler routing serves at the backend's health path
+	handlerHealth = "health"
+)
 
 // Client implements the MoQ backend provider
 type Client struct {
 	backends.Backend
-	sh     *shared
-	scope  relay.Scope
-	access relay.Access
-	negTTL time.Duration
+	sh      *shared
+	scope   relay.Scope
+	access  relay.Access
+	negTTL  time.Duration
+	limiter *limiter // counts the backend's requests per client, on native and WebTransport sessions alike
 }
 
 var (
@@ -98,6 +103,7 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 	}
 	// an origin's DOES_NOT_EXIST is MoQ's 404, so the backend's negative cache entry for 404 is how long it is kept
 	cl.negTTL = o.NegativeCache[http.StatusNotFound]
+	cl.limiter = newLimiter(o.RateLimiter)
 	sh, err := sharedFor(name, relayKey(o), func() (*shared, error) {
 		sh := &shared{}
 		var up relay.Upstream
@@ -185,9 +191,12 @@ func (c *Client) Scope() relay.Scope {
 	return c.scope
 }
 
-// RegisterHandlers registers the handler that accepts WebTransport sessions on HTTP listeners
+// RegisterHandlers registers the handler that accepts WebTransport sessions on HTTP listeners, and the one that
+// reports the backend's health on the metrics listener
 func (c *Client) RegisterHandlers(handlers.Lookup) {
-	c.Backend.RegisterHandlers(handlers.Lookup{providers.MoQ: http.HandlerFunc(c.serveWebTransport)})
+	c.Backend.RegisterHandlers(handlers.Lookup{
+		providers.MoQ: http.HandlerFunc(c.serveWebTransport), handlerHealth: http.HandlerFunc(c.HealthHandler),
+	})
 }
 
 // DefaultPathConfigs returns the path that accepts WebTransport sessions on HTTP listeners when the backend

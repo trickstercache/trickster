@@ -472,3 +472,35 @@ func TestDispatchWithoutMemberClosesConnection(t *testing.T) {
 	default:
 	}
 }
+
+func TestAdmitRefusesBeforeHandshake(t *testing.T) {
+	// a member's Admit judges the clients of its own protocol, and no other member's
+	port := freeUDPPort(t)
+	ha, hb := newFakeHandler(), newFakeHandler()
+	var asked atomic.Int32
+	oa := member(t, ha, hostA, alpnA)
+	oa.Admit = func(remote net.Addr) bool {
+		asked.Add(1)
+		return remote == nil
+	}
+	ma, err := Join(loopback, port, oa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Join(loopback, port, member(t, hb, hostB, alpnB)); err != nil {
+		t.Fatal(err)
+	}
+	if c, err := dial(t, ma.LocalAddr(), hostA, alpnA); err == nil {
+		_ = c.CloseWithError(0, "")
+		t.Error("a client the member refuses completes its handshake")
+	}
+	if asked.Load() != 1 {
+		t.Errorf("Admit was asked %d times", asked.Load())
+	}
+	c, err := dial(t, ma.LocalAddr(), hostB, alpnB)
+	if err != nil {
+		t.Fatalf("another member's client is refused: %v", err)
+	}
+	awaitConn(t, hb)
+	_ = c.CloseWithError(0, "")
+}

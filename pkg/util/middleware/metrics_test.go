@@ -23,6 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 )
@@ -145,4 +146,18 @@ func TestResponseObserverStatusClassBounds(t *testing.T) {
 	if got := observer.StatusClass(); got != "0xx" {
 		t.Errorf("invalid status class = %q, want 0xx", got)
 	}
+}
+
+func TestDecorateLeavesConnectDurationsOut(t *testing.T) {
+	// a CONNECT lasts as long as the session it opens, so it is counted but not timed as a request
+	const backend, provider, route = "wt-backend", "moq", "/live"
+	h := Decorate(backend, provider, route, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodConnect, route, nil))
+	expectCounter(backend, provider, http.MethodConnect, "2xx", 1)(t, "", route)
+	m := &dto.Metric{}
+	hist := metrics.FrontendRequestDuration.WithLabelValues(backend, provider, http.MethodConnect, route, "2xx")
+	require.NoError(t, hist.(prometheus.Metric).Write(m))
+	require.Zero(t, m.GetHistogram().GetSampleCount(), "no duration is observed for a CONNECT")
 }

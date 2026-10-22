@@ -203,6 +203,22 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 			"the class's geo ACL judges HTTP requests only, and cannot gate a stream route")
 		return
 	}
+	// a MoQ session carries no HTTP credentials, so a class's authenticator cannot guard it, and the route is
+	// refused rather than served unauthenticated
+	units = slices.DeleteFunc(units, func(u *unit) bool {
+		name := t.authenticatorOf(u.policy)
+		if u.protocol != ir.ProtocolMoQ || name == "" {
+			return false
+		}
+		t.reject(src, "authenticator %q judges HTTP requests only, so the route is not served on MoQ listener %q",
+			name, u.listeners[0])
+		return true
+	})
+	if len(units) == 0 {
+		report.refuseAll(gwapiv1.RouteReasonUnsupportedValue,
+			"the class's authenticator judges HTTP requests only, and cannot guard a MoQ session")
+		return
+	}
 	for i, u := range units {
 		group := t.streamBackendGroup(src, i, in.HTTPRoute.Namespace, u.protocol, in.rules[0],
 			report, t.routingModeOf(u.policy))

@@ -200,8 +200,16 @@ func newBackendWith(t *testing.T, name, origin string, mutate func(*bo.Options))
 
 func startListener(t *testing.T, lo *mo.ListenerOptions, clients ...*Client) *stack {
 	t.Helper()
+	return startListenerWith(t, lo, nil, clients...)
+}
+
+func startListenerWith(t *testing.T, lo *mo.ListenerOptions, edit func(*listener.Options), clients ...*Client) *stack {
+	t.Helper()
 	c := config.NewConfig()
 	opts := &listener.Options{Protocol: listener.ProtocolMoQ, ListenAddress: "127.0.0.1", MoQ: lo}
+	if edit != nil {
+		edit(opts)
+	}
 	c.Listeners["moq1"] = opts
 	all := backends.Backends{}
 	c.Backends = bo.Lookup{}

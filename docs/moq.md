@@ -127,11 +127,33 @@ connection goes to the listener whose protocol it negotiated, and each keeps its
 certificates and routes. A `moq` listener never shares a port with a `protocol: udp`
 listener.
 
-The listener's `ip_acl_name` is judged when a connection arrives, since QUIC has no TCP accept.
-Once the session's `SETUP` routes it to a backend, it is judged by that backend's `ip_acl_name`
-and `geo_acl_name`, or by those of the backend path its `PATH` matches, which replace them as
-they do for HTTP requests (`none` clears one). Backends sharing a listener therefore keep
-their own lists. A session one refuses closes with `UNAUTHORIZED`.
+The listener's `ip_acl_name` is judged on the client's first packet, before its TLS handshake, so a
+refused client costs no handshake; `drop` and `reject` both refuse it there, since QUIC cannot
+leave a client unanswered. Its decisions are counted in `trickster_ip_acl_decisions_total` with
+`scope="listener"`. The listener's `rate_limiter_name` (see [Limits](#limits)) is judged once the
+handshake has verified the client's address. Once the session's `SETUP` routes it to a backend, it
+is judged by that backend's `ip_acl_name` (counted with `scope="backend"`) and `geo_acl_name`, so
+backends sharing a listener keep their own lists. A session one refuses closes with
+`UNAUTHORIZED`, and is logged at debug.
+
+A reload judges the sessions already open by the new lists: the listener's `ip_acl_name`, and
+the `ip_acl_name` and `geo_acl_name` of each session's backend, over native QUIC and WebTransport
+alike. A session the new lists refuse is closed with `UNAUTHORIZED`. A WebTransport session is
+not judged again by its HTTPS listener's lists. The listener's `path_normalization` applies to
+the `PATH` of a `SETUP` before it is routed, and a path it refuses closes the session with
+`MALFORMED_PATH`. Settings that shape TCP connections and HTTP requests (`connections_limit`,
+the request timeouts and body limits, `max_header_bytes`, `proxy_protocol`, `trusted_proxies`)
+have no effect on a `moq` listener, and are warned of at load.
+
+Every path of a `moq` backend reaches the same tracks, whichever path a session named, so a
+path cannot carry its own `ip_acl_name`, `geo_acl_name`, `authenticator_name` or
+`rate_limiter_name`: one would guard nothing a session on another path could not reach. Serve
+tracks that need other lists from a backend of their own, or grant them by namespace with
+[tokens](#authorization). A path with a handler of its own answers HTTP requests, and keeps
+its lists. A backend served by a `moq` listener cannot name an `authenticator_name` either,
+since a native session carries no HTTP credentials; authorize its sessions with tokens.
+`cors`, `response_headers` and `mirrors` have no effect on a session, and a request rewriter or
+`request_headers` reaches only a WebTransport session's CONNECT; each is warned of at load.
 
 ### The `moq` backend
 
@@ -356,7 +378,9 @@ must prefix the request's, so a grant for `live` covers `live/studio` but not `v
 no namespace covers every namespace. The file is read again when it changes, checked at most
 once a second; a file that no longer parses keeps its last grants, and one that cannot be read
 at load fails the backend. A WebTransport CONNECT is also subject to the route's
-`authenticator_name`, before any MoQT request is made.
+`authenticator_name`, before any MoQT request is made. A native session carries no HTTP
+credentials, so a backend that a `moq` listener serves cannot name an authenticator, and tokens
+are how its sessions are authorized.
 
 ## Origin pools
 
@@ -401,6 +425,11 @@ The routed backend dials each member on a session of its own, apart from the mem
 own relay, so the two never share a Track Alias. A `SUBSCRIBE_NAMESPACE` or `SUBSCRIBE_TRACKS`
 it forwards goes to the member the prefix places, and what that member's origin publishes on the
 session reaches the routed backend's subscribers.
+
+A member listed on an HTTP listener is reachable there at `/<member name>/`, as any backend is,
+and judged by its own lists rather than the routed backend's; give members
+`path_routing_disabled: true` so only the routed backend serves sessions. The Kubernetes
+controller does so for the members it generates.
 
 ## Priorities
 
@@ -451,10 +480,42 @@ with `GOAWAY_TIMEOUT`.
 | namespaces | 32 fields and 4096 bytes |
 | remembered `DOES_NOT_EXIST` refusals | 4096 per backend |
 
-To limit clients by address, put a [rate limiter](./rate-limiting.md) keyed on `client_ip` on the
-HTTPS listener, or on the backend, that WebTransport sessions arrive through. It counts each
-session's CONNECT as a request. A native `moq` listener cannot name a rate limiter yet, so limit
-native QUIC sessions per address in front of Trickster, at a firewall or load balancer.
+[Rate limiters](./rate-limiting.md) keyed on `client_ip`, or on no key for one bucket, limit
+clients by address:
+
+- A `moq` listener's `rate_limiter_name` counts its sessions (unit `sessions`), each judged when
+  its connection arrives, after the listener's `ip_acl_name`. A session over the limit is closed
+  before it begins.
+- A `moq` backend's `rate_limiter_name` counts the `SUBSCRIBE`, `FETCH` and `TRACK_STATUS`
+  requests of its sessions (unit `requests`), native and WebTransport alike, so a client's
+  sessions share one budget. A request over the limit is refused with `EXCESSIVE_LOAD`, and a
+  Retry Interval of the wait until it could pass.
+- WebTransport sessions also pass the HTTPS listener's limiter, and the backend's counts each
+  CONNECT as a request too.
+
+```yaml
+rate_limiters:
+  moq-sessions:
+    keys: [client_ip]
+    limit: 20
+    window: 1m
+  moq-requests:
+    keys: [client_ip]
+    limit: 600
+    window: 1m
+listeners:
+  moq1:
+    protocol: moq
+    port: 443
+    rate_limiter_name: moq-sessions
+backends:
+  live:
+    provider: moq
+    rate_limiter_name: moq-requests
+```
+
+Only `client_ip` is a key a MoQ limiter can read, and `close` is not an action it takes. Their
+decisions are counted in `trickster_ratelimit_decisions_total` with `plane="moq"`.
 
 ## Metrics and logs
 
@@ -475,6 +536,20 @@ native QUIC sessions per address in front of Trickster, at a firewall or load ba
 Track and namespace names are never labels. Spilled groups count in the cache's own
 `trickster_cache_*` metrics. Each session's close is logged at info with its listener, backend,
 draft, transport, client, duration and reason.
+
+A native session writes one line to its backend's `access_log` when it ends, as a request does,
+with the method `SETUP`, the session's `PATH` as the path, its `AUTHORITY` as the host, the
+negotiated ALPN (such as `moqt-22`) as the protocol, and the session's duration; it has no
+status, which is logged as `0`. With the backend's `tracing_name`, each native session is one
+`moq session` span carrying `moq.backend`, `moq.authority`, `moq.path` and `client.address`, and
+`moq.end` with why it ended. A WebTransport session is logged and traced as its CONNECT request,
+and since a CONNECT lasts as long as its session, it is counted in
+`trickster_frontend_requests_total` but not timed in `trickster_frontend_requests_duration_seconds`.
+
+A `moq` backend's health is served at `/trickster/health/<backend name>` on the metrics listener,
+as the result of its origin probe. Purging by path does not apply to a `moq` backend, whose cache
+entries are groups of tracks rather than responses to paths, and is refused; spilled groups
+expire by `max_ttl`.
 
 ## Kubernetes
 

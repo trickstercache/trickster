@@ -19,6 +19,7 @@ package moq
 import (
 	"context"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strconv"
@@ -92,7 +93,12 @@ func (c *Client) serveWebTransport(w http.ResponseWriter, r *http.Request) {
 	// the relay outlives a reload that retires it while this session uses it
 	c.sh.hold()
 	defer c.sh.drop()
-	handler := &leavable{Handler: c.Relay().Handler(c.Scope())}
+	client := tctx.ClientIP(r.Context())
+	if client == "" {
+		client = clientip.PeerIP(r.RemoteAddr)
+	}
+	addr, _ := netip.ParseAddr(client)
+	handler := &leavable{Handler: limitRequests(c.Relay().Handler(c.Scope()), c.limiter, addr)}
 	sess, err := session.New(session.FromWebTransport(wts), session.Options{
 		Role: session.RoleServer, Codec: cd, WebTransport: true, Handler: handler,
 		HandshakeTimeout: mo.DefaultHandshakeTimeout, MaxRequests: mo.DefaultMaxRequestsPerSession,
@@ -111,10 +117,8 @@ func (c *Client) serveWebTransport(w http.ResponseWriter, r *http.Request) {
 		observeSession(listenerName, backend, transportWebTransport, draft, resultFailed)
 		return
 	}
-	client := tctx.ClientIP(r.Context())
-	if client == "" {
-		client = clientip.PeerIP(r.RemoteAddr)
-	}
+	c.sh.trackWT(sess, addr)
+	defer c.sh.untrackWT(sess)
 	start := time.Now()
 	observeSession(listenerName, backend, transportWebTransport, draft, resultOK)
 	activeSessions(listenerName, backend, 1)

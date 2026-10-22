@@ -48,6 +48,8 @@ var (
 	ErrNoCerts = errors.New("quicmux: a member must have a certificate source")
 	// ErrALPNInUse is returned when a protocol is already served by another member of the endpoint
 	ErrALPNInUse = errors.New("quicmux: protocol already served at this address")
+	// ErrRefused aborts the handshake of a client the serving member's Admit refuses
+	ErrRefused = errors.New("quicmux: client refused")
 )
 
 // Handler serves the connections an endpoint hands to one listener
@@ -72,6 +74,9 @@ type MemberOptions struct {
 	TLS *tls.Config
 	// QUIC carries the transport settings the listener needs; an endpoint serves the widest of its members'
 	QUIC *quic.Config
+	// Admit, when set, judges a client by its address before its handshake, which a refused client does not
+	// complete; it must not count anything, since the address is not yet verified
+	Admit func(remote net.Addr) bool
 }
 
 func (o *MemberOptions) validate() error {
@@ -310,8 +315,23 @@ func (e *endpoint) publish() {
 	e.snap.Store(s)
 }
 
-func (e *endpoint) tlsConfigFor(*tls.ClientHelloInfo) (*tls.Config, error) {
-	return e.snap.Load().tls, nil
+func (e *endpoint) tlsConfigFor(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+	s := e.snap.Load()
+	if m := s.negotiated(hello.SupportedProtos); m != nil && m.opts.Admit != nil && hello.Conn != nil &&
+		!m.opts.Admit(hello.Conn.RemoteAddr()) {
+		return nil, ErrRefused
+	}
+	return s.tls, nil
+}
+
+func (s *snapshot) negotiated(offered []string) *Member {
+	// the member serving the protocol the handshake will settle on: the endpoint's first that the client offers
+	for _, p := range s.tls.NextProtos {
+		if slices.Contains(offered, p) {
+			return s.byALPN[p]
+		}
+	}
+	return nil
 }
 
 func (e *endpoint) quicConfigFor(*quic.ClientInfo) (*quic.Config, error) {

@@ -25,7 +25,9 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 )
 
@@ -268,5 +270,132 @@ func TestMoQUpstreamALB(t *testing.T) {
 				t.Fatalf("got %v, want an error containing %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestMoQAuthenticatorOnNativeListener(t *testing.T) {
+	// a native session carries no HTTP credentials, so a backend's authenticator cannot judge it
+	c := moqConfig()
+	c.Backends["live"].AuthenticatorName = "basic"
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "authenticator_name") {
+		t.Errorf("an authenticator on a backend a moq listener serves is refused: %v", err)
+	}
+	// over WebTransport alone, the CONNECT carries credentials the authenticator judges
+	c = moqConfig()
+	c.Backends["live"].AuthenticatorName = "basic"
+	c.Backends["live"].ListenerNames = []string{"default"}
+	if err := Listeners(c); err != nil && strings.Contains(err.Error(), "authenticator_name") {
+		t.Errorf("an authenticator on a WebTransport backend is kept: %v", err)
+	}
+}
+
+func TestMoQRateLimits(t *testing.T) {
+	define := func(edit func(*rlopts.Options), keys ...string) *rlopts.Options {
+		o := &rlopts.Options{Name: "per-ip", Limit: 5, Keys: keys}
+		if edit != nil {
+			edit(o)
+		}
+		if err := o.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	onListener := func(o *rlopts.Options) error {
+		c := moqConfig()
+		c.RateLimiters = rlopts.Lookup{o.Name: o}
+		c.Listeners["moq1"].RateLimiterName = o.Name
+		return Listeners(c)
+	}
+	onBackend := func(o *rlopts.Options) error {
+		c := moqConfig()
+		c.RateLimiters = rlopts.Lookup{o.Name: o}
+		c.Backends["live"].RateLimiterName, c.Backends["live"].RateLimiter = o.Name, o
+		return Listeners(c)
+	}
+	// a moq listener counts sessions by client address, and a moq backend the requests of its sessions
+	if err := onListener(define(nil, "client_ip")); err != nil {
+		t.Errorf("a moq listener's session limiter: %v", err)
+	}
+	if err := onListener(define(func(o *rlopts.Options) { o.Unit = rlopts.UnitSessions })); err != nil {
+		t.Errorf("a moq listener's limiter with one bucket: %v", err)
+	}
+	if err := onBackend(define(nil, "client_ip")); err != nil {
+		t.Errorf("a native-only moq backend's request limiter: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		attach func(*rlopts.Options) error
+		o      *rlopts.Options
+		want   string
+	}{
+		"listener requests": {onListener, define(func(o *rlopts.Options) { o.Unit = rlopts.UnitRequests }),
+			"not valid for this plane"},
+		"listener sni":   {onListener, define(nil, "sni"), "cannot read"},
+		"listener close": {onListener, define(func(o *rlopts.Options) { o.Action = rlopts.ActionClose }), "close"},
+		"backend path":   {onBackend, define(nil, "path"), "cannot read"},
+		"backend sessions": {onBackend, define(func(o *rlopts.Options) { o.Unit = rlopts.UnitSessions }),
+			"not valid for this plane"},
+	} {
+		if err := tc.attach(tc.o); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want %q", name, err, tc.want)
+		}
+	}
+}
+
+func TestMoQListenerIgnoredSettings(t *testing.T) {
+	warned := func(edit func(*listener.Options)) string {
+		c := moqConfig()
+		// a loaded listener starts from the defaults, which warn of nothing
+		l := listener.New("moq1")
+		l.Protocol, l.ListenPort = listener.ProtocolMoQ, 10443
+		if edit != nil {
+			edit(l)
+		}
+		c.Listeners["moq1"] = l
+		if err := Listeners(c); err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range c.LoaderWarnings {
+			if strings.Contains(w, "no effect on a moq listener") {
+				return w
+			}
+		}
+		return ""
+	}
+	if w := warned(nil); w != "" {
+		t.Errorf("a listener left at its defaults is warned of: %s", w)
+	}
+	w := warned(func(l *listener.Options) {
+		l.ProxyProtocol, l.TrustedProxies, l.ConnectionsLimit = true, []string{"10.0.0.0/8"}, 5
+	})
+	for _, field := range []string{"proxy_protocol", "trusted_proxies", "connections_limit"} {
+		if !strings.Contains(w, field) {
+			t.Errorf("%s is not warned of: %q", field, w)
+		}
+	}
+}
+
+func TestMoQBackendIgnoredSettings(t *testing.T) {
+	c := moqConfig()
+	b := c.Backends["live"]
+	b.CORS, b.ReqRewriterName = &corso.Options{}, "rw"
+	b.Paths = po.List{{Path: "/live", ResponseHeaders: map[string]string{"X-A": "1"},
+		RequestHeaders: map[string]string{"X-B": "2"}}}
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	var sessionless, connectOnly string
+	for _, w := range c.LoaderWarnings {
+		switch {
+		case strings.Contains(w, "have no effect on MoQ sessions"):
+			sessionless = w
+		case strings.Contains(w, "apply only to a WebTransport session's CONNECT"):
+			connectOnly = w
+		}
+	}
+	if !strings.Contains(sessionless, "cors") || !strings.Contains(sessionless, `path "/live" response_headers`) {
+		t.Errorf("settings no session reads: %q", sessionless)
+	}
+	if !strings.Contains(connectOnly, "req_rewriter_name") || !strings.Contains(connectOnly, `path "/live" request_headers`) {
+		t.Errorf("settings only a CONNECT reads: %q", connectOnly)
 	}
 }

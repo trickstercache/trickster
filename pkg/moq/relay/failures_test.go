@@ -239,6 +239,8 @@ func TestFetchCanceledWhileObjectInProgress(t *testing.T) {
 	if _, ok := response(t, freq).(*message.FetchOK); !ok {
 		t.Fatal("FETCH refused")
 	}
+	// the fetch stream opens after FETCH_OK, and a cancellation that overtook it would leave none to end
+	recv(t, fr.fetchOpen, "the fetch stream")
 	freq.Cancel(message.ResetCancelled)
 	recv(t, fr.fetchDone, "the fetch stream to end")
 	fr.mu.Lock()

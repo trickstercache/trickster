@@ -21,6 +21,7 @@ import (
 	"maps"
 	"net"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -36,13 +37,20 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 
 	"github.com/quic-go/quic-go"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -59,6 +67,16 @@ const (
 	logKeyDuration = "duration"
 
 	reasonShuttingDown = "shutting down"
+
+	// a native session's access log line names the message that opened it, as an HTTP one names its method
+	methodSetup = "SETUP"
+
+	spanSession       = "moq session"
+	attrMoQBackend    = "moq.backend"
+	attrMoQAuthority  = "moq.authority"
+	attrMoQPath       = "moq.path"
+	attrMoQEnd        = "moq.end"
+	attrClientAddress = "client.address"
 )
 
 type relayBackend interface {
@@ -72,19 +90,25 @@ type routeEntry struct {
 	client backends.Backend
 	hosts  []string
 	paths  []string
-	judge  sessionJudge   // the backend's own acls
-	judges []sessionJudge // each path's, in the order of paths
+	judge  sessionJudge
+	log    *accesslog.Logger
+	tracer *tracing.Tracer
 }
 
 type sessionJudge struct {
-	ipacl *ipacl.List
-	geo   backends.SessionGate
+	ipacl     *ipacl.List
+	decisions *metrics.IPACLDecision
+	geo       backends.SessionGate
 }
 
 func (j sessionJudge) refusal(client netip.Addr) (string, bool) {
-	// a session routed to a backend, or one of its paths, passes the acls its HTTP requests there would
-	if j.ipacl != nil && j.ipacl.Check(client) != ipacl.Allow {
-		return "", true
+	// a session routed to a backend passes the acls its HTTP requests would
+	if j.ipacl != nil {
+		allowed := j.ipacl.Check(client) == ipacl.Allow
+		j.decisions.Observe(allowed)
+		if !allowed {
+			return "", true
+		}
 	}
 	if j.geo != nil {
 		if d := j.geo.Admit(client); d != nil {
@@ -94,63 +118,75 @@ func (j sessionJudge) refusal(client netip.Addr) (string, bool) {
 	return "", false
 }
 
-func (e *routeEntry) judgeFor(path int) sessionJudge {
-	if path >= 0 && path < len(e.judges) {
-		return e.judges[path]
-	}
-	return e.judge
+type routeTable struct {
+	entries    []routeEntry
+	goAway     string
+	sessions   *limiter // the listener's, counting sessions per client
+	decisions  *metrics.IPACLDecision
+	normalizer *normalize.Normalizer
 }
 
-type routeTable struct {
-	entries []routeEntry
-	goAway  string
+func (rt *routeTable) entry(backend string) *routeEntry {
+	if rt == nil {
+		return nil
+	}
+	for i := range rt.entries {
+		if rt.entries[i].name == backend {
+			return &rt.entries[i]
+		}
+	}
+	return nil
 }
 
 var _ backends.RouteResolver = (*routeTable)(nil)
 
+func (rt *routeTable) sessionLimiter() *limiter {
+	if rt == nil {
+		return nil
+	}
+	return rt.sessions
+}
+
 func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecision, bool) {
-	_, _, d, ok := rt.resolve(in)
+	_, d, ok := rt.resolve(in)
 	return d, ok
 }
 
-func (rt *routeTable) resolve(in backends.RouteInput) (*routeEntry, int, backends.RouteDecision, bool) {
+func (rt *routeTable) resolve(in backends.RouteInput) (*routeEntry, backends.RouteDecision, bool) {
 	// a backend naming the session's host wins, then one matching it by wildcard, then one naming no host, each by
-	// its longest path prefix; a listener with one backend serves every session with it. The path matched, or -1
-	// for none, picks the acls that judge the session.
+	// its longest path prefix; a listener with one backend serves every session with it
 	if rt == nil || len(rt.entries) == 0 {
-		return nil, -1, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
-	}
-	path := in.Path
-	if path == "" {
-		path = rootPath
+		return nil, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
 	}
 	if len(rt.entries) == 1 {
-		e := &rt.entries[0]
-		_, at := matchPrefix(e.paths, path)
-		return e, at, backends.RouteDecision{
-			Target:  backends.RouteTarget{Backend: e.client},
+		return &rt.entries[0], backends.RouteDecision{
+			Target:  backends.RouteTarget{Backend: rt.entries[0].client},
 			Outcome: backends.RouteOutcomeDefault,
 		}, true
 	}
 	host := hostOnly(in.Authority)
-	best, bestAt, bestScore := -1, -1, -1
+	path := in.Path
+	if path == "" {
+		path = rootPath
+	}
+	best, bestScore := -1, -1
 	for i, e := range rt.entries {
 		rank := hostRank(e.hosts, host)
 		if rank < 0 {
 			continue
 		}
-		plen, at := matchPrefix(e.paths, path)
+		plen := longestPrefix(e.paths, path)
 		if plen < 0 {
 			continue
 		}
 		if score := plen + rank<<20; score > bestScore {
-			best, bestAt, bestScore = i, at, score
+			best, bestScore = i, score
 		}
 	}
 	if best < 0 {
-		return nil, -1, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
+		return nil, backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
 	}
-	return &rt.entries[best], bestAt, backends.RouteDecision{
+	return &rt.entries[best], backends.RouteDecision{
 		Target:  backends.RouteTarget{Backend: rt.entries[best].client},
 		Outcome: backends.RouteOutcomeSelected,
 	}, true
@@ -179,25 +215,22 @@ func hostOnly(authority string) string {
 	return strings.ToLower(strings.TrimSuffix(authority, "."))
 }
 
-func matchPrefix(prefixes []string, path string) (int, int) {
-	// the length of the longest prefix matching the path and its index, -1 when none is listed and the root serves;
+func longestPrefix(prefixes []string, path string) int {
 	// a prefix matches the path itself or a path below it, never a sibling that merely starts with it
+	best := -1
 	if len(prefixes) == 0 {
-		return len(rootPath), -1
+		prefixes = []string{rootPath}
 	}
-	best, at := -1, -1
-	for i, p := range prefixes {
+	for _, p := range prefixes {
 		switch {
 		case p == path, p == rootPath:
 		case strings.HasPrefix(path, p) && (strings.HasSuffix(p, rootPath) || path[len(p)] == '/'):
 		default:
 			continue
 		}
-		if len(p) > best {
-			best, at = len(p), i
-		}
+		best = max(best, len(p))
 	}
-	return best, at
+	return best
 }
 
 type server struct {
@@ -234,10 +267,18 @@ func QUICConfig(o *mo.ListenerOptions) *quic.Config {
 
 func (s *server) ServeQUIC(conn *quic.Conn) {
 	client := clientip.FromNetAddr(conn.RemoteAddr())
+	// the endpoint refused a listed client before its handshake; this catches a list a reload swapped since
 	if list := s.ipacl.Load(); list != nil && list.Check(client) != ipacl.Allow {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeUnauthorized), "")
 		observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
 		return
+	}
+	if lim := s.routes.Load().sessionLimiter(); lim != nil {
+		if ok, _ := lim.admit(lim.keyFor(client)); !ok {
+			_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeInternalError), reasonRateLimited)
+			observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
+			return
+		}
 	}
 	if d := s.gate.Admit(client); d != nil {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeUnauthorized), d.Message)
@@ -277,12 +318,14 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 	}
 	defer s.untrack(sess)
 	draft := strconv.Itoa(c.Draft())
+	start := time.Now()
 	if err = sess.Start(context.Background()); err != nil {
 		observeSession(s.listenerName, r.backendName(), transportQUIC, draft, r.result(resultFailed))
 		r.done()
+		// a session routed before its start failed still ends its span and is logged
+		s.record(r, conn, sess, c, start)
 		return
 	}
-	start := time.Now()
 	backend := r.backendName()
 	observeSession(s.listenerName, backend, transportQUIC, draft, resultOK)
 	activeSessions(s.listenerName, backend, 1)
@@ -295,6 +338,7 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 	<-sess.Done()
 	activeSessions(s.listenerName, backend, -1)
 	r.done()
+	s.record(r, conn, sess, c, start)
 	logger.Info("moq session closed", logging.Pairs{
 		keys.ListenerName: s.listenerName, keys.BackendName: backend, keys.Draft: draft, logKeyClient: r.client,
 		keys.Transport: transportQUIC, logKeyDuration: time.Since(start).String(), logKeyReason: sessionEnd(sess.Err()),
@@ -306,6 +350,72 @@ func sessionEnd(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func (s *server) admitPeer(remote net.Addr) bool {
+	// a client the listener's list refuses is turned away before its handshake, counted and logged; nothing else is
+	// judged there, since the address is not yet verified
+	list := s.ipacl.Load()
+	if list == nil {
+		return true
+	}
+	client := clientip.FromNetAddr(remote)
+	allowed := list.Check(client) == ipacl.Allow
+	if rt := s.routes.Load(); rt != nil {
+		rt.decisions.Observe(allowed)
+	}
+	if !allowed {
+		observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
+		if logger.DebugEnabled() {
+			logger.Debug("moq connection refused by the listener's ip acl", logging.Pairs{
+				keys.ListenerName: s.listenerName, logKeyClient: client.String(),
+			})
+		}
+	}
+	return allowed
+}
+
+func (s *server) record(r *routed, conn *quic.Conn, sess *session.Session, c *codec.Codec, start time.Time) {
+	// one access log line and one span per session, through the backend's newest logger, since a reload closes
+	// the one the session began with
+	r.mu.Lock()
+	backend, authority, path, span := r.backend, r.authority, r.path, r.span
+	r.span = nil
+	r.mu.Unlock()
+	if span != nil {
+		if err := sess.Err(); err != nil {
+			span.SetAttributes(attribute.String(attrMoQEnd, err.Error()))
+		}
+		span.End()
+	}
+	if backend == "" {
+		return
+	}
+	e := s.routes.Load().entry(backend)
+	if e == nil || e.log == nil {
+		return
+	}
+	f := &format.Fields{
+		StartTime: start, Duration: time.Since(start), ClientIP: r.client, RemoteIP: r.client, Method: methodSetup,
+		RequestURI: path, Path: path, Host: authority, Proto: c.ALPN(),
+	}
+	if la := conn.LocalAddr(); la != nil {
+		f.LocalIP, f.LocalPort, _ = net.SplitHostPort(la.String())
+	}
+	e.log.Log(f)
+}
+
+func (s *server) rejudge() {
+	// a reload's lists reach the sessions already open: one they no longer admit is closed
+	list, rt := s.ipacl.Load(), s.routes.Load()
+	s.mu.Lock()
+	sessions := maps.Clone(s.sessions)
+	s.mu.Unlock()
+	for sess, r := range sessions {
+		if reason, denied := r.rejudged(list, rt); denied {
+			_ = sess.Close(message.CodeUnauthorized, reason)
+		}
+	}
 }
 
 func (s *server) admit() bool {
@@ -375,9 +485,11 @@ func (s *server) Shutdown(ctx context.Context) error {
 }
 
 func (s *server) UpdateRouteResolver(r backends.RouteResolver) {
-	// only new sessions are matched against the new routes; open ones keep the backend they have
+	// only new sessions are matched against the new routes; open ones keep the backend they have, and are judged
+	// again by its new lists
 	if rt, ok := r.(*routeTable); ok {
 		s.routes.Store(rt)
+		s.rejudge()
 	}
 }
 
@@ -387,6 +499,7 @@ func (s *server) UpdateSessionGate(g backends.SessionGate) {
 
 func (s *server) UpdateIPACL(list *ipacl.List) {
 	s.ipacl.Store(list)
+	s.rejudge()
 }
 
 func (s *server) ProtocolRestartKey() string {
@@ -401,13 +514,16 @@ type routed struct {
 	sni     string
 	handler session.Handler
 
-	mu       sync.Mutex
-	backend  string
-	release  func()
-	drop     func()
-	refused  bool
-	denied   bool
-	finished bool
+	mu        sync.Mutex
+	backend   string
+	authority string
+	path      string
+	span      trace.Span
+	release   func()
+	drop      func()
+	refused   bool
+	denied    bool
+	finished  bool
 }
 
 func (r *routed) route(_ *session.Session, setup *message.Setup) error {
@@ -419,7 +535,15 @@ func (r *routed) route(_ *session.Session, setup *message.Setup) error {
 	if !setup.HasPath {
 		path = rootPath
 	}
-	e, at, d, ok := r.srv.routes.Load().resolve(backends.RouteInput{Authority: authority, Path: path})
+	rt := r.srv.routes.Load()
+	path, ok := rt.normalized(path)
+	if !ok {
+		r.mu.Lock()
+		r.refused = !r.finished
+		r.mu.Unlock()
+		return &message.SessionError{Code: message.CodeMalformedPath, Reason: "the path is refused"}
+	}
+	e, d, ok := rt.resolve(backends.RouteInput{Authority: authority, Path: path})
 	rb, isRelay := d.Target.Backend.(relayBackend)
 	// the connection can close while its SETUP is routed, so the session's teardown may already have run
 	r.mu.Lock()
@@ -431,23 +555,64 @@ func (r *routed) route(_ *session.Session, setup *message.Setup) error {
 		r.refused = !r.finished
 		return &message.SessionError{Code: message.CodeInvalidPath, Reason: "no backend serves this path"}
 	}
-	// the session is judged by the acls of the backend and path it reached, which a listener serving several
-	// backends cannot judge before SETUP names one
-	if reason, denied := e.judgeFor(at).refusal(r.addr); denied {
+	// the session is judged by the acls of the backend it reached, which a listener serving several backends cannot
+	// judge before SETUP names one
+	if reason, denied := e.judge.refusal(r.addr); denied {
 		if d.Release != nil {
 			d.Release()
 		}
 		r.denied = true
+		if logger.DebugEnabled() {
+			logger.Debug("moq session refused by its backend's acls", logging.Pairs{
+				keys.ListenerName: r.srv.listenerName, keys.BackendName: e.name, logKeyClient: r.client,
+			})
+		}
 		return &message.SessionError{Code: message.CodeUnauthorized, Reason: reason}
+	}
+	r.authority, r.path = authority, path
+	if e.tracer != nil {
+		_, r.span = e.tracer.Start(context.Background(), spanSession, trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(attribute.String(attrMoQBackend, e.name), attribute.String(attrMoQAuthority, authority),
+				attribute.String(attrMoQPath, path), attribute.String(attrClientAddress, r.client)))
 	}
 	r.backend, r.release = rb.Name(), d.Release
 	r.handler = rb.Relay().Handler(rb.Scope())
-	if c, isClient := rb.(*Client); isClient && c.sh != nil {
-		// the relay outlives a reload that retires it while this session uses it
-		c.sh.hold()
-		r.drop = c.sh.drop
+	if c, isClient := rb.(*Client); isClient {
+		r.handler = limitRequests(r.handler, c.limiter, r.addr)
+		if c.sh != nil {
+			// the relay outlives a reload that retires it while this session uses it
+			c.sh.hold()
+			r.drop = c.sh.drop
+		}
 	}
 	return nil
+}
+
+func (r *routed) rejudged(list *ipacl.List, rt *routeTable) (string, bool) {
+	if list != nil && list.Check(r.addr) != ipacl.Allow {
+		return "", true
+	}
+	// a session still being routed, or one whose backend the reload removed, has no new lists to meet
+	if e := rt.entry(r.backendName()); e != nil {
+		return e.judge.refusal(r.addr)
+	}
+	return "", false
+}
+
+func (rt *routeTable) normalized(path string) (string, bool) {
+	// a SETUP PATH is normalized as the listener normalizes an HTTP request's, before it is routed
+	if rt == nil || rt.normalizer == nil || !strings.HasPrefix(path, rootPath) {
+		return path, true
+	}
+	// parsed as a request's target is, so a leading // stays part of the path rather than naming a host
+	u, err := url.ParseRequestURI(path)
+	if err != nil {
+		return path, true
+	}
+	if !rt.normalizer.Normalize(u) {
+		return "", false
+	}
+	return u.Path, true
 }
 
 func (r *routed) backendName() string {

@@ -19,6 +19,7 @@ package moq
 import (
 	"net/netip"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -56,8 +57,8 @@ func TestLongestPrefix(t *testing.T) {
 		{[]string{"/vod"}, "/live", -1},
 	}
 	for _, tc := range tests {
-		if got, _ := matchPrefix(tc.prefixes, tc.path); got != tc.want {
-			t.Errorf("matchPrefix(%v, %q) = %d, want %d", tc.prefixes, tc.path, got, tc.want)
+		if got := longestPrefix(tc.prefixes, tc.path); got != tc.want {
+			t.Errorf("longestPrefix(%v, %q) = %d, want %d", tc.prefixes, tc.path, got, tc.want)
 		}
 	}
 }
@@ -173,6 +174,28 @@ func TestValidateBackendRefusals(t *testing.T) {
 			t.Errorf("%s is refused", name)
 		}
 	}
+	// every path of a moq backend reaches the same tracks, so a path's own list would guard nothing
+	for field, set := range map[string]func(*po.Options){
+		"ip_acl_name":        func(p *po.Options) { p.IPACLName = "office" },
+		"geo_acl_name":       func(p *po.Options) { p.GeoACLName = reserved.ReferenceNone },
+		"authenticator_name": func(p *po.Options) { p.AuthenticatorName = "basic" },
+		"rate_limiter_name":  func(p *po.Options) { p.RateLimiterName = "edge" },
+	} {
+		o := backend("moqt://origin.example.com/", func(o *bo.Options) {
+			p := &po.Options{Path: "/private"}
+			set(p)
+			o.Paths = po.List{p}
+		})
+		if err := a.ValidateBackend(o); err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("a path's %s is refused: %v", field, err)
+		}
+	}
+	local := backend("moqt://origin.example.com/", func(o *bo.Options) {
+		o.Paths = po.List{{Path: "/health", HandlerName: "health", IPACLName: "office"}}
+	})
+	if err := a.ValidateBackend(local); err != nil {
+		t.Errorf("a local handler's path answers HTTP requests, and keeps its own lists: %v", err)
+	}
 	o := backend("", nil)
 	o.MoQ = nil
 	if err := a.ValidateBackend(o); err != nil || o.MoQ == nil {
@@ -230,63 +253,43 @@ func TestAdapterContract(t *testing.T) {
 }
 
 func TestRouteJudges(t *testing.T) {
-	// a path's acl replaces its backend's, none clears it, and a path naming neither takes the backend's
-	backendList, _, err := ipacl.Compile(ipacl.Options{Name: "backend"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	pathList, _, err := ipacl.Compile(ipacl.Options{Name: "path"})
+	// a session is judged by the acls of the backend it is routed to
+	list, _, err := ipacl.Compile(ipacl.Options{Name: "backend"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	geo := &geoaclopts.Options{Compiled: compiledGeo{denyAll{}}}
 	o := bo.New()
-	o.Name, o.Provider, o.ListenerNames = "live", "moq", []string{"moq1"}
-	o.IPACLName, o.IPACL, o.GeoACLName, o.GeoACLOptions = "backend", backendList, "geo", geo
-	o.Paths = po.List{
-		{Path: "/inherit"},
-		{Path: "/cleared", IPACLName: reserved.ReferenceNone, GeoACLName: reserved.ReferenceNone},
-		{Path: "/own", IPACLName: "path", IPACL: pathList},
-	}
+	o.Name, o.Provider, o.ListenerNames, o.Hosts = "live", "moq", []string{"moq1"}, []string{"live.example.com"}
+	o.IPACLName, o.IPACL, o.GeoACLName, o.GeoACLOptions = "backend", list, "geo", geo
+	other := bo.New()
+	other.Name, other.Provider, other.ListenerNames, other.Hosts = "other", "moq", []string{"moq1"}, []string{"x"}
 	c := config.NewConfig()
-	c.Backends = bo.Lookup{"live": o, "other": func() *bo.Options {
-		other := bo.New()
-		other.Name, other.Provider, other.ListenerNames, other.Hosts = "other", "moq", []string{"moq1"}, []string{"x"}
-		return other
-	}()}
+	c.Backends = bo.Lookup{"live": o, "other": other}
 	rt := routesFor(native.BuildRequest{Config: c, ListenerName: "moq1",
 		BackendClients: backends.Backends{"live": namedBackend{name: "live"}, "other": namedBackend{name: "other"}}})
-	judged := func(path string) sessionJudge {
-		e, at, _, ok := rt.resolve(backends.RouteInput{Authority: "live.example.com", Path: path})
-		if !ok || e.name != "live" {
-			t.Fatalf("%s did not route to live", path)
+	judged := func(authority string) sessionJudge {
+		e, _, ok := rt.resolve(backends.RouteInput{Authority: authority, Path: "/"})
+		if !ok {
+			t.Fatalf("%s did not route", authority)
 		}
-		return e.judgeFor(at)
+		return e.judge
 	}
-	if j := judged("/inherit/x"); j.ipacl != backendList || j.geo == nil {
-		t.Errorf("a path naming no acl takes the backend's: %+v", j)
+	if j := judged("live.example.com"); j.ipacl != list || j.geo == nil {
+		t.Errorf("the backend's acls judge its sessions: %+v", j)
 	}
-	if j := judged("/cleared"); j.ipacl != nil || j.geo != nil {
-		t.Errorf("none clears the backend's acls: %+v", j)
+	if j := judged("x"); j.ipacl != nil || j.geo != nil {
+		t.Errorf("a backend naming no acl admits every session: %+v", j)
 	}
-	if j := judged("/own"); j.ipacl != pathList || j.geo == nil {
-		t.Errorf("a path's own list replaces the backend's alone: %+v", j)
-	}
-	if e, _, _, _ := rt.resolve(backends.RouteInput{Authority: "x", Path: "/"}); e.judgeFor(-1).ipacl != nil {
-		t.Error("a backend naming no acl, and no paths, admits every session")
-	}
-	if e := &rt.entries[slices.IndexFunc(rt.entries, func(e routeEntry) bool { return e.name == "live" })]; e.judgeFor(-1).ipacl != backendList {
-		t.Error("a session matching no listed path is judged by the backend's acls")
-	}
-	if _, denied := judged("/cleared").refusal(netip.MustParseAddr("192.0.2.1")); denied {
-		t.Error("a path with its acls cleared admits every session")
-	}
-	if reason, denied := judged("/inherit").refusal(netip.MustParseAddr("192.0.2.1")); !denied || reason != "" {
+	client := netip.MustParseAddr("192.0.2.1")
+	if reason, denied := judged("live.example.com").refusal(client); !denied || reason != "" {
 		t.Errorf("the backend's list refuses first, without a reason: %v %q", denied, reason)
 	}
-	if reason, denied := (sessionJudge{geo: denyAll{}}).refusal(netip.MustParseAddr("192.0.2.1")); !denied ||
-		reason != "not here" {
+	if reason, denied := (sessionJudge{geo: denyAll{}}).refusal(client); !denied || reason != "not here" {
 		t.Errorf("a geo refusal carries its message: %v %q", denied, reason)
+	}
+	if _, denied := judged("x").refusal(client); denied {
+		t.Error("no acl refuses nothing")
 	}
 	if geoGate(nil) != nil || geoGate(&geoaclopts.Options{}) != nil {
 		t.Error("an absent or uncompiled geo ACL gates nothing")

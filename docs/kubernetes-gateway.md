@@ -757,7 +757,11 @@ on one origin for as long as it relays it. On a native listener, each
 route's generated backend carries the class's `ip_acl_name` (else
 `kubernetes.defaults.ip_acl_name`) and its geo ACL, as on any other route,
 and a session is judged by the lists of the backend it is routed to, so
-routes sharing the listener keep their own.
+routes sharing the listener keep their own. A native session carries no
+HTTP credentials, so a class with an `authenticator_name` (or
+`kubernetes.defaults.authenticator_name`) does not serve its MoQ UDPRoutes:
+each is refused with `UnsupportedValue` rather than served
+unauthenticated. Serve them from a class without one.
 
 A client reaches a UDP port only where the Service in front of the
 controller publishes it. [gateway-service.yaml](../deploy/kube/gateway-service.yaml)

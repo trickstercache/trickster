@@ -47,7 +47,7 @@ When both are set, each judges the request. Naming the same limiter on the liste
 
 The same limiter name is one set of buckets everywhere it is attached, for as long as its keys, IPv6 prefix, window, limit, and `max_keys` stay the same. `missing_key`, `max_keys_action`, `action`, the HTTP response, and `policy_headers` can change on reload while those buckets stay.
 
-`unit` says what an event is: `requests`, `connections`, `sessions`, or `datagrams`. Leave it unset when the limiter is attached on more than one plane. An unset unit uses `requests` on HTTP, `connections` on `tcp` and `tls`, and `sessions` on `udp`, and those events share one quota. A limiter attached on more than one plane with `unit` set fails to load. `close` is valid only on stream listeners. A native listener (`mysql`, `postgres`, `clickhouse`, `flight-sql`) cannot name a limiter.
+`unit` says what an event is: `requests`, `connections`, `sessions`, or `datagrams`. Leave it unset when the limiter is attached on more than one plane. An unset unit uses `requests` on HTTP, `connections` on `tcp` and `tls`, and `sessions` on `udp`, and those events share one quota. A limiter attached on more than one plane with `unit` set fails to load. `close` is valid only on stream listeners. A native listener (`mysql`, `postgres`, `clickhouse`, `flight-sql`) cannot name a limiter. A `moq` listener can: it counts sessions, by `client_ip` or in one bucket, and a `moq` backend's limiter counts its sessions' MoQT requests; see [Media over QUIC](./moq.md#limits).
 
 A cache hit is still an event: the limiter judges the request before the cache.
 
@@ -129,7 +129,7 @@ A reload that keeps the limiter's name, keys, IPv6 prefix, window, limit, and `m
 
 ## Metrics
 
-`trickster_ratelimit_decisions_total` counts each decision. The labels are `limiter`, `plane` (`http` or `stream`), and `result`:
+`trickster_ratelimit_decisions_total` counts each decision. The labels are `limiter`, `plane` (`http`, `stream` or `moq`), and `result`:
 
 | `result` | Meaning |
 |---|---|

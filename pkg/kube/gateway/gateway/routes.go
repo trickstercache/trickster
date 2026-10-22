@@ -1012,6 +1012,16 @@ func (t *translator) geoACLOf(policy string) string {
 	return ""
 }
 
+func (t *translator) authenticatorOf(policy string) string {
+	if p := t.policies.Get(policy); p != nil && p.AuthenticatorName != "" {
+		return p.AuthenticatorName
+	}
+	if o := t.cfg.Options; o != nil && o.Defaults != nil {
+		return o.Defaults.AuthenticatorName
+	}
+	return ""
+}
+
 func (t *translator) providerOf(names ...string) string {
 	// the provider the named policies, least specific first, leave in force
 	var provider string

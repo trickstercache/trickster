@@ -33,15 +33,17 @@ import (
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
-	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
-	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
@@ -96,6 +98,9 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 		return err
 	}
 	webTransportPaths(o)
+	if err := pathAccessLists(o); err != nil {
+		return err
+	}
 	if o.OriginURL != "" && o.MoQ.Upstream.ALB != "" {
 		return errors.New("origin_url and moq.upstream.alb are exclusive")
 	}
@@ -108,6 +113,29 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 	}
 	if u.Hostname() == "" {
 		return fmt.Errorf("moq origin_url %q names no host", o.OriginURL)
+	}
+	return nil
+}
+
+func pathAccessLists(o *bo.Options) error {
+	// every path of a moq backend reaches the same tracks, so a list on one path would guard nothing a session on
+	// another path could not reach; a path with a handler of its own answers HTTP requests, and keeps its own
+	for _, p := range o.Paths {
+		if p == nil || p.HandlerName != providers.MoQ {
+			continue
+		}
+		for _, f := range []struct{ field, value string }{
+			{"ip_acl_name", p.IPACLName},
+			{"geo_acl_name", p.GeoACLName},
+			{"authenticator_name", p.AuthenticatorName},
+			{"rate_limiter_name", p.RateLimiterName},
+		} {
+			if f.value != "" {
+				return fmt.Errorf("backend %q path %q: %s does not apply to a moq path, since every path of a "+
+					"moq backend reaches the same tracks; set it on the backend, or serve the tracks it guards from "+
+					"a backend of their own", o.Name, p.Path, f.field)
+			}
+		}
 	}
 	return nil
 }
@@ -186,7 +214,7 @@ func (*nativeListenerAdapter) Join(request native.BuildRequest, name string, cer
 	srv.ipacl.Store(o.IPACL)
 	return quicmux.Join(o.ListenAddress, o.ListenPort, quicmux.MemberOptions{
 		Name: name, ALPNs: codec.ALPNs(o.MoQ.Drafts), Handler: srv, Certs: certs, TLS: tlsConfig,
-		QUIC: QUICConfig(o.MoQ),
+		QUIC: QUICConfig(o.MoQ), Admit: srv.admitPeer,
 	})
 }
 
@@ -213,6 +241,33 @@ func boundBackends(c *config.Config, listenerName string) []string {
 	return out
 }
 
+func judgeOf(o *bo.Options) sessionJudge {
+	return sessionJudge{
+		ipacl: o.IPACL, decisions: ipaclDecisions(o.IPACLName, metrics.IPACLScopeBackend), geo: geoGate(o.GeoACLOptions),
+	}
+}
+
+func ipaclDecisions(name, scope string) *metrics.IPACLDecision {
+	if name == "" {
+		return nil
+	}
+	return metrics.NewIPACLDecision(name, scope)
+}
+
+func accessLogDefault(c *config.Config) *alo.Options {
+	if c == nil {
+		return nil
+	}
+	return c.AccessLog
+}
+
+func instanceID(c *config.Config) int {
+	if c != nil && c.Main != nil {
+		return c.Main.InstanceID
+	}
+	return 0
+}
+
 type sessionGater interface {
 	SessionGate() backends.SessionGate
 }
@@ -228,29 +283,18 @@ func geoGate(o *geoaclopts.Options) backends.SessionGate {
 	return nil
 }
 
-func pathJudge(backend sessionJudge, p *po.Options) sessionJudge {
-	// a path's acl replaces its backend's, and none clears it
-	j := backend
-	switch {
-	case p.IPACLName == reserved.ReferenceNone:
-		j.ipacl = nil
-	case p.IPACL != nil:
-		j.ipacl = p.IPACL
-	}
-	switch {
-	case p.GeoACLName == reserved.ReferenceNone:
-		j.geo = nil
-	case p.GeoACLOptions != nil:
-		j.geo = geoGate(p.GeoACLOptions)
-	}
-	return j
-}
-
 func routesFor(request native.BuildRequest) *routeTable {
 	rt := &routeTable{}
-	if l := request.Listener; l != nil && l.MoQ != nil {
-		// read when the listener stops, so a reload changes it without restarting the listener
-		rt.goAway = l.MoQ.GoAwayURI
+	if l := request.Listener; l != nil {
+		// read when the listener stops, and when a session arrives, so a reload changes them without restarting it
+		if l.MoQ != nil {
+			rt.goAway = l.MoQ.GoAwayURI
+		}
+		rt.sessions = newLimiter(l.RateLimiter)
+		rt.decisions = ipaclDecisions(l.IPACLName, metrics.IPACLScopeListener)
+		if n := normalize.New(l.PathNormalization); n.Enabled() {
+			rt.normalizer = n
+		}
 	}
 	for _, name := range boundBackends(request.Config, request.ListenerName) {
 		client := request.BackendClients.Get(name)
@@ -258,7 +302,11 @@ func routesFor(request native.BuildRequest) *routeTable {
 			continue
 		}
 		o := request.Config.Backends[name]
-		e := routeEntry{name: name, client: client, judge: sessionJudge{ipacl: o.IPACL, geo: geoGate(o.GeoACLOptions)}}
+		e := routeEntry{
+			name: name, client: client, judge: judgeOf(o), tracer: request.Tracers[o.TracingConfigName],
+			log: accesslog.ForBackend(o.AccessLog, accessLogDefault(request.Config), instanceID(request.Config), name,
+				providers.MoQ),
+		}
 		for _, h := range o.Hosts {
 			e.hosts = append(e.hosts, strings.ToLower(strings.TrimSuffix(h, ".")))
 		}
@@ -272,7 +320,6 @@ func routesFor(request native.BuildRequest) *routeTable {
 				patterns++
 			default:
 				e.paths = append(e.paths, p.Path)
-				e.judges = append(e.judges, pathJudge(e.judge, p))
 			}
 		}
 		if patterns > 0 && len(e.paths) == 0 {

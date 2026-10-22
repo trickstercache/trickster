@@ -167,3 +167,13 @@ spec:
 	})
 	containing(t, problems, "UDPRoute/data/dns", "provider moq is not applied", "only a trickstercache.org/moq listener")
 }
+
+func TestTranslateMoQAuthenticator(t *testing.T) {
+	// a MoQ session carries no HTTP credentials, so a class with an authenticator refuses its MoQ routes rather
+	// than serving them unauthenticated
+	model, problems, _ := translateFixture(t, "moq", func(o *kubecfg.Options) { o.Defaults.AuthenticatorName = "gateway-auth" })
+	for _, r := range model.Routes {
+		require.NotEqual(t, ir.ProtocolMoQ, r.Protocol, "route %s is served", r.Source.Name)
+	}
+	containing(t, problems, "UDPRoute/media/live", `authenticator "gateway-auth" judges HTTP requests only`)
+}

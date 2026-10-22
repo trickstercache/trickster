@@ -55,10 +55,7 @@ func New(o *options.Options, protocol string, flowACL bool) l4.Admission {
 		}
 	}
 	a := &admission{
-		lim: ratelimit.Lookup(o.Name, ratelimit.Shape{
-			Keys: ratelimit.EncodeKeys(o.Keys), IPv6Prefix: o.IPv6Prefix,
-			Window: time.Duration(o.Window), Limit: uint32(o.Limit), MaxKeys: o.MaxKeys, // #nosec G115 -- Validate bounds limit to uint32
-		}, ratelimit.Policy{Missing: missingOf(o.MissingKey), OnFull: onFullOf(o.MaxKeysAction)}),
+		lim:     ratelimit.LookupOptions(o),
 		extract: extractor(o), stage: stageOf(o.KeySources, unit, flowACL),
 		count: o.Action == options.ActionCount, close: o.Action == options.ActionClose,
 		decisions: metrics.NewRateLimitDecision(o.Name, planeStream),
@@ -173,18 +170,4 @@ func extractor(o *options.Options) func(l4.Flow) (uint64, bool) {
 		v := comp(f)
 		return v.Hash, v.OK
 	}
-}
-
-func missingOf(v string) ratelimit.MissingKey {
-	if v == options.MissingShared {
-		return ratelimit.MissingShared
-	}
-	return ratelimit.MissingExempt
-}
-
-func onFullOf(v string) ratelimit.MaxKeysAction {
-	if v == options.OnFullReject {
-		return ratelimit.MaxKeysReject
-	}
-	return ratelimit.MaxKeysAllow
 }

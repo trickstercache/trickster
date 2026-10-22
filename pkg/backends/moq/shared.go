@@ -18,7 +18,9 @@ package moq
 
 import (
 	"fmt"
+	"maps"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 	"sync"
@@ -30,7 +32,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
+	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 )
 
 type shared struct {
@@ -48,6 +52,7 @@ type shared struct {
 	sessions int
 	retired  bool
 	closed   bool
+	wt       map[*session.Session]netip.Addr // open WebTransport sessions, judged again when a reload commits
 }
 
 var (
@@ -137,6 +142,33 @@ func (sh *shared) admitWebTransport(limit int) bool {
 	return true
 }
 
+func (sh *shared) trackWT(s *session.Session, client netip.Addr) {
+	sh.mu.Lock()
+	if sh.wt == nil {
+		sh.wt = make(map[*session.Session]netip.Addr)
+	}
+	sh.wt[s] = client
+	sh.mu.Unlock()
+}
+
+func (sh *shared) untrackWT(s *session.Session) {
+	sh.mu.Lock()
+	delete(sh.wt, s)
+	sh.mu.Unlock()
+}
+
+func (sh *shared) rejudgeWT(j sessionJudge) {
+	// a reload's lists reach the WebTransport sessions already open: one they no longer admit is closed
+	sh.mu.Lock()
+	open := maps.Clone(sh.wt)
+	sh.mu.Unlock()
+	for s, client := range open {
+		if reason, denied := j.refusal(client); denied {
+			_ = s.Close(message.CodeUnauthorized, reason)
+		}
+	}
+}
+
 func (sh *shared) hold() {
 	sh.mu.Lock()
 	sh.sessions++
@@ -212,6 +244,9 @@ func RetireClients(current backends.Backends) {
 			keep[mc.sh] = struct{}{}
 			mc.sh.relay.SetAccess(mc.access)
 			mc.sh.relay.SetNegativeTTL(mc.negTTL)
+			if o := mc.Configuration(); o != nil {
+				mc.sh.rejudgeWT(judgeOf(o))
+			}
 			if p := mc.sh.pool; p != nil {
 				var picker lb.Picker
 				if pp, ok := current[p.alb].(interface{ Picker() lb.Picker }); ok {

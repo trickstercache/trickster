@@ -24,7 +24,7 @@ The following metrics are available for polling with any Trickster configuration
     * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
-* `trickster_frontend_requests_duration_seconds` (Histogram) - Histogram of front end request durations handled by Trickster
+* `trickster_frontend_requests_duration_seconds` (Histogram) - Histogram of front end request durations handled by Trickster. A `CONNECT`, whose duration is that of the tunnel or WebTransport session it opens, is not observed
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request
     * `provider` - the type of the configured backend handling the proxy request
@@ -94,7 +94,7 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_ratelimit_decisions_total` (Counter) - Decisions made by an attached rate limiter. See [rate-limiting.md](./rate-limiting.md).
   * labels:
     * `limiter` - the name of the rate limiter
-    * `plane` - `http` or `stream`
+    * `plane` - `http`, `stream` or `moq`
     * `result` - `allowed`, `limited`, `counted`, `exempt`, or `full`
 
 * `trickster_ratelimit_keys` (Gauge) - Buckets a rate limiter holds at scrape time.

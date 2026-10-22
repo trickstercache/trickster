@@ -463,6 +463,7 @@ func Listeners(c *config.Config) error {
 			if err := moqRoutes(c, name); err != nil {
 				return err
 			}
+			warnMoQListener(c, name, options)
 		}
 		if options.Stream != nil && !options.IsStream() {
 			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
@@ -615,6 +616,7 @@ func Listeners(c *config.Config) error {
 	if err := moqUpstreamALBs(c, streamALBs); err != nil {
 		return err
 	}
+	warnMoQBackends(c)
 	if err := validateRateLimitPlacements(c); err != nil {
 		return err
 	}
@@ -1086,6 +1088,88 @@ func webTransportWarnings(c *config.Config, listenerName string, mapped map[stri
 	}
 }
 
+func warnMoQBackends(c *config.Config) {
+	// a MoQ session has no HTTP response to shape or request to mirror, and only a WebTransport CONNECT is a request
+	// to rewrite; these settings are warned of rather than refused, since none of them widens what a client reaches
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !strings.EqualFold(o.Provider, providers.MoQ) {
+			continue
+		}
+		var sessionless, connectOnly []string
+		if o.CORS != nil {
+			sessionless = append(sessionless, "cors")
+		}
+		if o.ReqRewriterName != "" {
+			connectOnly = append(connectOnly, "req_rewriter_name")
+		}
+		for _, p := range o.Paths {
+			if p == nil || p.HandlerName != providers.MoQ {
+				continue
+			}
+			for _, f := range []struct {
+				field string
+				set   bool
+				only  bool
+			}{
+				{"cors", p.CORS != nil, false},
+				{"response_headers", len(p.ResponseHeaders) > 0, false},
+				{"mirrors", len(p.Mirrors) > 0, false},
+				{"req_rewriter_name", p.ReqRewriterName != "", true},
+				{"request_headers", len(p.RequestHeaders) > 0, true},
+				{"request_params", len(p.RequestParams) > 0, true},
+			} {
+				switch {
+				case !f.set:
+				case f.only:
+					connectOnly = append(connectOnly, fmt.Sprintf("path %q %s", p.Path, f.field))
+				default:
+					sessionless = append(sessionless, fmt.Sprintf("path %q %s", p.Path, f.field))
+				}
+			}
+		}
+		if len(sessionless) > 0 {
+			addWarning(c, fmt.Sprintf("backend %q: %s have no effect on MoQ sessions", name,
+				strings.Join(sessionless, ", ")))
+		}
+		if len(connectOnly) > 0 {
+			addWarning(c, fmt.Sprintf("backend %q: %s apply only to a WebTransport session's CONNECT, and to no "+
+				"MoQT request or native session", name, strings.Join(connectOnly, ", ")))
+		}
+	}
+}
+
+func warnMoQListener(c *config.Config, name string, o *listener.Options) {
+	// these settings shape TCP connections and HTTP requests, which a moq listener has none of; its own moq block
+	// bounds its sessions
+	defaults := listener.New(name)
+	var ignored []string
+	for _, s := range []struct {
+		field string
+		set   bool
+	}{
+		{"connections_limit", o.ConnectionsLimit != 0},
+		{"max_request_body_size_bytes", o.MaxRequestBodySizeBytes != nil &&
+			(defaults.MaxRequestBodySizeBytes == nil || *o.MaxRequestBodySizeBytes != *defaults.MaxRequestBodySizeBytes)},
+		{"truncate_request_body_too_large", o.TruncateRequestBodyTooLarge},
+		{"read_header_timeout", o.ReadHeaderTimeout != defaults.ReadHeaderTimeout},
+		{"read_timeout", o.ReadTimeout != 0},
+		{"idle_timeout", o.IdleTimeout != defaults.IdleTimeout},
+		{"max_header_bytes", o.MaxHeaderBytes != 0},
+		{"proxy_protocol", o.ProxyProtocol},
+		{"trusted_proxies", len(o.TrustedProxies) > 0},
+		{"http3", o.HTTP3 != nil},
+	} {
+		if s.set {
+			ignored = append(ignored, s.field)
+		}
+	}
+	if len(ignored) > 0 {
+		addWarning(c, fmt.Sprintf("listener %q: %s has no effect on a moq listener; its moq block sets session limits "+
+			"and timeouts", name, strings.Join(ignored, ", ")))
+	}
+}
+
 func moqRoutes(c *config.Config, listenerName string) error {
 	// sessions are routed by the AUTHORITY and PATH of their SETUP, so no two backends may claim the same pair
 	claims := make(map[string]string)
@@ -1095,6 +1179,12 @@ func moqRoutes(c *config.Config, listenerName string) error {
 		if o == nil || o.IsTemplate || !o.UsesListener(listenerName) || !strings.EqualFold(o.Provider, providers.MoQ) ||
 			members.Contains(name) {
 			continue
+		}
+		if o.AuthenticatorName != "" {
+			// a native session carries no HTTP credentials, so the authenticator would admit it unjudged
+			return fmt.Errorf("backend %q: authenticator_name does not apply to sessions on moq listener %q, "+
+				"which carry no HTTP credentials; authorize them with moq.authorization tokens, or serve the "+
+				"backend over WebTransport only", name, listenerName)
 		}
 		hosts := o.Hosts
 		if len(hosts) == 0 {

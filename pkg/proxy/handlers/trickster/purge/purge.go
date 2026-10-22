@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -125,6 +126,12 @@ func PathHandler(pathPrefix string,
 			logging.Pairs{"backend": backendName, keys.Path: purgePath})
 		backend := from.Get(backendName)
 		if !validateBackend(w, backend, backendName) {
+			return
+		}
+		// a moq backend caches groups of tracks by name, which no request path names, so a path purges nothing
+		if strings.EqualFold(backend.Configuration().Provider, providers.MoQ) {
+			writeValidationError(w, "Backend "+html.EscapeString(backendName)+
+				" caches MoQ groups, which are not purged by path; they expire by max_ttl.")
 			return
 		}
 		cache := backend.Cache()

@@ -575,3 +575,28 @@ func BenchmarkLoggerLogParallel(b *testing.B) {
 		}
 	})
 }
+
+func TestForBackend(t *testing.T) {
+	dir := t.TempDir()
+	fallback := &alo.Options{Filename: filepath.Join(dir, "default.log")}
+	if l := ForBackend(nil, nil, 0, "b", "p"); l != nil {
+		t.Error("no access_log anywhere logs nothing")
+	}
+	// a backend's own block wins, even one that turns logging off
+	if l := ForBackend(&alo.Options{}, fallback, 0, "b", "p"); l != nil {
+		t.Error("a backend's own disabled block disables its logging")
+	}
+	l := ForBackend(nil, fallback, 0, "b", "p")
+	if l == nil {
+		t.Fatal("a backend without a block inherits the default")
+	}
+	l.Close()
+	own := ForBackend(&alo.Options{Filename: filepath.Join(dir, "own.log")}, fallback, 0, "b", "p")
+	if own == nil {
+		t.Fatal("a backend's own block is used")
+	}
+	own.Close()
+	if l := ForBackend(&alo.Options{Filename: filepath.Join(dir, "bad.log"), Format: "%{"}, nil, 0, "b", "p"); l != nil {
+		t.Error("a logger that cannot be built is left out")
+	}
+}
