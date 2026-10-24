@@ -2574,3 +2574,43 @@ func TestDeltaProxyCacheRequestPartialHitLeavesCachedEntry(t *testing.T) {
 		t.Fatal("the partial hits stored nothing new")
 	}
 }
+
+func TestDeltaProxyCacheUnmarshalingFailureRecovery(t *testing.T) {
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+	step := 300 * time.Second
+	end := time.Now().Add(-12 * time.Hour).Truncate(step)
+	start := end.Add(-18 * time.Hour)
+
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), start.Unix(), end.Unix(), queryReturnsOKNoLatency)
+
+	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", newProxyRequest(r, nil).DeriveCacheKey(""))
+
+	// Store a corrupted/unmarshalable body directly in the cache (simulating legacy or invalid msgpack)
+	corruptDoc := &HTTPDocument{
+		StatusCode: 200,
+		Body:       []byte{0xc1, 0xff, 0xfe}, // invalid msgpack byte sequence
+	}
+	if err := WriteCache(r.Context(), rsc.CacheClient, key, corruptDoc, time.Hour, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	// Request should detect unmarshaling error, recover by removing corrupt cache, and fetch from origin
+	client.QueryRangeHandler(w, r)
+	res := w.Result()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", res.StatusCode)
+	}
+	if err := testResultHeaderPartMatch(res.Header, map[string]string{keys.Status: status.StatusKeyMiss}); err != nil {
+		t.Fatalf("expected kmiss on unmarshal recovery, got: %v", err)
+	}
+}
+
