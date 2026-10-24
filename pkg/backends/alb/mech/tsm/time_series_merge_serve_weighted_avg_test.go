@@ -620,6 +620,37 @@ func TestServeWeightedAvg(t *testing.T) {
 		}
 	})
 
+	t.Run("all_variants_non_2xx_forwards_winning_error", func(t *testing.T) {
+		p := newWeightedAvgPool([]http.Handler{
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rsc := request.GetResources(r)
+				if rsc != nil {
+					rsc.MergeRespondFunc = weightedAvgRespondFunc
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"status":"error","error":"bad_query"}`))
+			}),
+		})
+		defer p.Stop()
+		albpool.WaitHealthy(t, p, 1)
+
+		h := &handler{mergePaths: []string{"/"}}
+		h.SetPool(p)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
+
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status: want 400 got %d body=%q", w.Code, w.Body.String())
+		}
+		if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+			t.Fatalf("Content-Type: want application/json got %q", ct)
+		}
+		if body := w.Body.String(); body != `{"status":"error","error":"bad_query"}` {
+			t.Fatalf("body: want raw error JSON got %q", body)
+		}
+	})
+
 	t.Run("completion_order_does_not_change_reduction", func(t *testing.T) {
 		orders := []struct {
 			sum0, count0 time.Duration

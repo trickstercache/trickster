@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -294,6 +295,64 @@ func (h *handler) serveMultiVariantPlan(
 		failures.HandleBadGateway(w, r)
 		return
 	}
+
+	hasAny2xx := has2xx
+	if !hasAny2xx {
+		for i := range executions {
+			if i == authorityIndex {
+				continue
+			}
+			for _, res := range executions[i].results {
+				if res.statusCode >= http.StatusOK && res.statusCode < http.StatusMultipleChoices {
+					hasAny2xx = true
+					break
+				}
+			}
+			if hasAny2xx {
+				break
+			}
+		}
+	}
+
+	// When all variants and members returned non-2xx errors, forward the winning error's
+	// status code, headers, and body directly to the client instead of attempting
+	// to marshal an empty accumulator or emitting a synthetic 502.
+	if !hasAny2xx {
+		winner := pickErrorWinner(authorityResults)
+		if winner == nil {
+			for i := range executions {
+				if i == authorityIndex {
+					continue
+				}
+				if winner = pickErrorWinner(executions[i].results); winner != nil {
+					break
+				}
+			}
+		}
+		if winner == nil {
+			failures.HandleBadGateway(w, r)
+			return
+		}
+		h := winner.rawHeader
+		if h == nil {
+			h = winner.header
+		}
+		if h != nil {
+			h = h.Clone()
+			h.Del("Content-Length")
+			h.Del("Transfer-Encoding")
+			headers.Merge(w.Header(), h)
+		}
+		if statusHeader != "" {
+			w.Header().Set(headers.NameTricksterResult, statusHeader)
+		}
+		w.WriteHeader(winner.statusCode)
+		if len(winner.body) > 0 {
+			w.Write(winner.body)
+		}
+		return
+	}
+
 	mergeMultiValuedHeaders(w.Header(), authorityResults, winnerHeaders)
 	if winnerHeaders != nil {
 		headers.Merge(w.Header(), winnerHeaders)
@@ -325,13 +384,29 @@ func (h *handler) collectPlanResult(
 		return
 	}
 
-	result := gatherResult{
-		statusCode: fr.Capture.StatusCode(),
-		header:     fr.Capture.Header(),
-		mergeFunc:  rsc.MergeRespondFunc,
-	}
+	sc := fr.Capture.StatusCode()
 	if rsc.Response != nil && rsc.Response.StatusCode > 0 {
-		result.statusCode = rsc.Response.StatusCode
+		sc = rsc.Response.StatusCode
+	}
+	is2xx := sc >= http.StatusOK && sc < http.StatusMultipleChoices
+
+	var rawBody []byte
+	var rawHeader http.Header
+	if !is2xx {
+		if fr.Capture != nil && len(fr.Capture.Body()) > 0 {
+			rawBody = bytes.Clone(fr.Capture.Body())
+		}
+		if fr.Capture != nil && fr.Capture.Header() != nil {
+			rawHeader = fr.Capture.Header().Clone()
+		}
+	}
+
+	result := gatherResult{
+		statusCode: sc,
+		header:     fr.Capture.Header(),
+		rawHeader:  rawHeader,
+		body:       rawBody,
+		mergeFunc:  rsc.MergeRespondFunc,
 	}
 	if rsc.MergeFunc == nil || rsc.MergeRespondFunc == nil {
 		logger.Warn("tsm plan gather failed due to nil func", logging.Pairs{
@@ -344,7 +419,7 @@ func (h *handler) collectPlanResult(
 
 	var contribution *gatherContribution
 	if rsc.TS != nil {
-		contribution = prepareGatherContribution(ctx, rsc, nil, member, stripKeys)
+		contribution = prepareGatherContribution(ctx, rsc, nil, member, stripKeys, is2xx)
 	} else {
 		body, err := encoding.DecompressResponseBody(
 			fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -359,7 +434,7 @@ func (h *handler) collectPlanResult(
 			return
 		}
 		if len(body) > 0 {
-			contribution = prepareGatherContribution(ctx, rsc, body, member, stripKeys)
+			contribution = prepareGatherContribution(ctx, rsc, body, member, stripKeys, is2xx)
 		}
 	}
 	result.contrib = contribution

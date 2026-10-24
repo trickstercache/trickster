@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"math"
@@ -495,6 +496,8 @@ func joinWarnings(warnings, next string) string {
 type gatherResult struct {
 	statusCode int
 	header     http.Header
+	rawHeader  http.Header
+	body       []byte
 	mergeFunc  merge.RespondFunc
 	contrib    *gatherContribution
 	failed     bool
@@ -523,6 +526,36 @@ func pickWinner(results []gatherResult) (merge.RespondFunc, http.Header) {
 		}
 	}
 	return nil, nil
+}
+
+// pickErrorWinner selects which failed member's status code, headers, and body
+// should be returned to the client when all fanout members returned errors (no 2xx).
+// 4xx errors are preferred over 5xx/other errors because 4xx represents a client/user error
+// (such as an invalid query syntax) that needs to be surfaced back to the user.
+// Within the same error class (4xx or 5xx), the lowest status code is preferred.
+func pickErrorWinner(results []gatherResult) *gatherResult {
+	var best *gatherResult
+	for i := range results {
+		res := &results[i]
+		if res.statusCode < 400 {
+			continue
+		}
+		if best == nil {
+			best = res
+			continue
+		}
+		isBest4xx := best.statusCode >= 400 && best.statusCode < 500
+		isCurr4xx := res.statusCode >= 400 && res.statusCode < 500
+
+		if isCurr4xx && !isBest4xx {
+			best = res
+		} else if isCurr4xx == isBest4xx {
+			if res.statusCode < best.statusCode {
+				best = res
+			}
+		}
+	}
+	return best
 }
 
 // aggregateStatus collapses per-shard outcomes into the outbound response's
@@ -575,13 +608,13 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 }
 
 func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body []byte, member int,
-	stripKeys []string,
+	stripKeys []string, is2xx bool,
 ) *gatherContribution {
 	if ctx.Err() != nil || rsc == nil || rsc.MergeFunc == nil {
 		return nil
 	}
 	ts := rsc.TS
-	if ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
+	if is2xx && ts == nil && len(body) > 0 && rsc.TSUnmarshaler != nil && rsc.TimeRangeQuery != nil {
 		var err error
 		ts, err = rsc.TSUnmarshaler(body, rsc.TimeRangeQuery)
 		if err != nil {
@@ -603,7 +636,7 @@ func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body
 	var data any
 	if ts != nil {
 		data = ts
-	} else if len(body) > 0 {
+	} else if is2xx && len(body) > 0 {
 		data = body
 	} else {
 		return nil
@@ -758,10 +791,16 @@ func (h *handler) serveStandard(
 			if rsc2.MergeFunc == nil || rsc2.MergeRespondFunc == nil {
 				logger.Warn("tsm gather failed due to nil func", nil)
 			}
+			sc := fr.Capture.StatusCode()
+			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
+				sc = rsc2.Response.StatusCode
+			}
+			is2xx := sc >= http.StatusOK && sc < http.StatusMultipleChoices
+
 			var contribution *gatherContribution
 			if rsc2.MergeFunc != nil {
 				if rsc2.TS != nil {
-					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys)
+					contribution = prepareGatherContribution(parentCtx, rsc2, nil, i, stripKeys, is2xx)
 				} else {
 					body, derr := encoding.DecompressResponseBody(
 						fr.Capture.Header().Get(headers.NameContentEncoding),
@@ -775,17 +814,25 @@ func (h *handler) serveStandard(
 						return
 					}
 					if len(body) > 0 {
-						contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys)
+						contribution = prepareGatherContribution(parentCtx, rsc2, body, i, stripKeys, is2xx)
 					}
 				}
 			}
-			sc := fr.Capture.StatusCode()
-			if rsc2.Response != nil && rsc2.Response.StatusCode > 0 {
-				sc = rsc2.Response.StatusCode
+			var rawBody []byte
+			var rawHeader http.Header
+			if !is2xx {
+				if fr.Capture != nil && len(fr.Capture.Body()) > 0 {
+					rawBody = bytes.Clone(fr.Capture.Body())
+				}
+				if fr.Capture != nil && fr.Capture.Header() != nil {
+					rawHeader = fr.Capture.Header().Clone()
+				}
 			}
 			results[i] = gatherResult{
 				statusCode: sc,
 				header:     fr.Capture.Header(),
+				rawHeader:  rawHeader,
+				body:       rawBody,
 				mergeFunc:  rsc2.MergeRespondFunc,
 				contrib:    contribution,
 				failed: contribution == nil || (sc != 0 &&
@@ -874,6 +921,10 @@ func (h *handler) serveStandard(
 	// TSM fanout would strip any backend-set headers that FGR would
 	// happily propagate. See #970.
 	mrf, winnerHeaders := pickWinner(logicalResults)
+	if mrf == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
 	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(logicalResults)
 	// Mixed 2xx + non-2xx fanout: surface a partial-hit marker so clients
 	// can detect that some members failed even when each member's own
@@ -883,6 +934,35 @@ func (h *handler) serveStandard(
 	// usable contribution to the merged result.
 	if (has2xx && hasNon2xx) || (hasGatherFailure && has2xx) {
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
+	}
+
+	// When all fanout members returned non-2xx errors, forward the winning error's
+	// status code, headers, and body directly to the client instead of attempting
+	// to marshal an empty accumulator or emitting a synthetic 502.
+	if !has2xx {
+		winner := pickErrorWinner(logicalResults)
+		if winner == nil {
+			failures.HandleBadGateway(w, r)
+			return
+		}
+		h := winner.rawHeader
+		if h == nil {
+			h = winner.header
+		}
+		if h != nil {
+			h = h.Clone()
+			h.Del("Content-Length")
+			h.Del("Transfer-Encoding")
+			headers.Merge(w.Header(), h)
+		}
+		if statusHeader != "" {
+			w.Header().Set(headers.NameTricksterResult, statusHeader)
+		}
+		w.WriteHeader(winner.statusCode)
+		if len(winner.body) > 0 {
+			w.Write(winner.body)
+		}
+		return
 	}
 
 	// preserve Set-Cookie from all members; headers.Merge below would otherwise collapse to winner only
@@ -895,10 +975,6 @@ func (h *handler) serveStandard(
 	// member advertised for that key. Structural headers (Content-Type,
 	// Content-Length, Date, Last-Modified, Transfer-Encoding) were already
 	// removed by StripMergeHeaders.
-	if mrf == nil {
-		failures.HandleBadGateway(w, r)
-		return
-	}
 	if winnerHeaders != nil {
 		headers.Merge(w.Header(), winnerHeaders)
 	}
