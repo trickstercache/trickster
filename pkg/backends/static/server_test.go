@@ -41,8 +41,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/zstd"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+	"github.com/trickstercache/trickster/v2/pkg/watchers/filesystem"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -53,6 +55,8 @@ const (
 	testCSS  = "body{}"
 
 	testCacheControl = "no-cache"
+	// testSecretFile is a dotfile in the test site, which must never be served
+	testSecretFile = ".env"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -88,7 +92,7 @@ func newTestSite(t *testing.T) string {
 	writeFile(t, filepath.Join(root, "docs", "index.html"), testDocs)
 	writeFile(t, filepath.Join(root, "docs", "guide.txt"), "guide")
 	writeFile(t, filepath.Join(root, "empty", "a.txt"), "a")
-	writeFile(t, filepath.Join(root, ".env"), "SECRET=1")
+	writeFile(t, filepath.Join(root, testSecretFile), "SECRET=1")
 	writeFile(t, filepath.Join(root, ".git", "config"), "secret")
 	writeFile(t, filepath.Join(root, "docs", ".hidden"), "secret")
 	return root
@@ -98,6 +102,15 @@ func testOptions(root string) *so.Options {
 	o := so.New()
 	o.Root = root
 	o.FileserverCache.RevalidationInterval = 0
+	return o
+}
+
+// detectingChanges gives a server on a platform without change events a short revalidation
+// interval, so that tests of change detection hold on every platform
+func detectingChanges(o *so.Options) *so.Options {
+	if !filesystem.EventDriven {
+		o.FileserverCache.RevalidationInterval = 10 * 1000 * 1000 // 10ms
+	}
 	return o
 }
 
@@ -441,7 +454,7 @@ func TestServeRenditions(t *testing.T) {
 	root := newTestSite(t)
 	writeFile(t, filepath.Join(root, "big.css"), compressibleCSS)
 	writeFile(t, filepath.Join(root, "image.png"), strings.Repeat("png", 500))
-	s := newTestServer(t, testOptions(root))
+	s := newTestServer(t, detectingChanges(testOptions(root)))
 	s.start()
 	// behind the response path's own encoder, as it is when routed, to prove that
 	// a rendition is passed through it once rather than encoded again
@@ -1101,7 +1114,7 @@ func TestFileserverCacheAdmission(t *testing.T) {
 
 func TestInvalidationByEvent(t *testing.T) {
 	root := newTestSite(t)
-	s := newTestServer(t, testOptions(root))
+	s := newTestServer(t, detectingChanges(testOptions(root)))
 	s.start()
 	for _, target := range []string{"/", "/docs/", "/docs/guide.txt", "/app.css"} {
 		get(t, s, http.MethodGet, target)
@@ -1296,8 +1309,13 @@ func TestLoadRejectsChangedFile(t *testing.T) {
 	if s.loadEntry(r, f, m, "app.css") != nil {
 		t.Error("expected a short read not to be held")
 	}
-	if s.cache.size.Load() != 0 || s.cache.files.Load() != 0 || s.watcher.Watched() != 0 {
+	if s.cache.size.Load() != 0 || s.cache.files.Load() != 0 {
 		t.Error("expected every failed load to release its reservation")
+	}
+	s.cache.sweepIdle()
+	s.cache.sweepIdle()
+	if s.watcher.Watched() != 0 {
+		t.Error("expected the directories of failed loads to be released by sweeps")
 	}
 }
 
@@ -1504,6 +1522,121 @@ func TestLazyContent(t *testing.T) {
 	}
 }
 
+// standInForOpened has statOpened describe another file from the given call on, as it would find a
+// descriptor that was closed and reused by another file, and counts the calls
+func standInForOpened(t *testing.T, other string, from int) *int {
+	t.Helper()
+	fi, err := os.Stat(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := statOpened
+	t.Cleanup(func() { statOpened = orig })
+	calls := new(int)
+	statOpened = func(f *os.File) (os.FileInfo, error) {
+		*calls++
+		if *calls >= from {
+			return fi, nil
+		}
+		return f.Stat()
+	}
+	return calls
+}
+
+func TestOpenFileRefusesAnotherFile(t *testing.T) {
+	root := newTestSite(t)
+	s := newTestServer(t, testOptions(root))
+	s.start()
+	other := filepath.Join(root, testSecretFile)
+	// a descriptor that is another file's every time it is opened is never served
+	standInForOpened(t, other, 1)
+	resp := get(t, s, http.MethodGet, "/app.css")
+	if b := body(t, resp); resp.StatusCode != http.StatusServiceUnavailable || strings.Contains(b, "SECRET") {
+		t.Errorf("expected a 503 without the other file's content, got %d %q", resp.StatusCode, b)
+	}
+	// one found replaced as it was opened is opened again
+	calls := new(int)
+	statOpened = func(f *os.File) (os.FileInfo, error) {
+		*calls++
+		if *calls == 1 {
+			return os.Stat(other)
+		}
+		return f.Stat()
+	}
+	resp = get(t, s, http.MethodGet, "/docs/guide.txt")
+	if b := body(t, resp); resp.StatusCode != http.StatusOK || b != "guide" || *calls < 2 {
+		t.Errorf("expected the file opened again to be served, got %d %q after %d stats", resp.StatusCode, b, *calls)
+	}
+	// one found replaced as it was opened, by the file that was opened, is served without opening it again
+	*calls = 0
+	index := filepath.Join(root, "index.html")
+	statOpened = func(*os.File) (os.FileInfo, error) {
+		if *calls++; *calls == 1 {
+			replaceFile(t, index, testHome)
+		}
+		return os.Stat(index)
+	}
+	if resp = get(t, s, http.MethodGet, "/index.html"); resp.StatusCode != http.StatusOK || *calls > 2 {
+		t.Errorf("expected the newer file to be served without opening it again, got %d after %d stats",
+			resp.StatusCode, *calls)
+	}
+	// an opened file that can't be described is not served
+	statOpened = func(*os.File) (os.FileInfo, error) { return nil, os.ErrInvalid }
+	if resp = get(t, s, http.MethodGet, "/app.css"); resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected a 404 for a file that can't be described, got %d", resp.StatusCode)
+	}
+}
+
+func TestVerifyServedBreaksOffAResponse(t *testing.T) {
+	root := newTestSite(t)
+	other := filepath.Join(root, testSecretFile)
+	serve := func(s *server, served bool) (aborted bool) {
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/app.css", nil)
+		if served {
+			r = r.WithContext(tctx.WithServed(r.Context()))
+		}
+		defer func() {
+			if rec := recover(); rec != nil {
+				aborted = rec == http.ErrAbortHandler
+				if !aborted {
+					panic(rec)
+				}
+			}
+		}()
+		s.ServeHTTP(httptest.NewRecorder(), r)
+		return false
+	}
+	// a file sent as it is, here because nothing is held
+	o := testOptions(root)
+	o.FileserverCache.Disabled = true
+	s := newTestServer(t, o)
+	s.start()
+	calls := standInForOpened(t, other, 2)
+	if !serve(s, true) || *calls != 2 {
+		t.Errorf("expected a response to a client to be broken off after %d stats", *calls)
+	}
+	// a response that isn't going to a client can only be reported
+	*calls = 0
+	if serve(s, false) {
+		t.Error("expected a response that isn't served not to be broken off")
+	}
+	// a file read lazily, here because the cache is busy and won't hold it
+	s = newTestServer(t, testOptions(root))
+	s.start()
+	*calls = 0
+	s.cache.mtx.Lock()
+	aborted := serve(s, true)
+	s.cache.mtx.Unlock()
+	if !aborted || s.cache.count() != 0 {
+		t.Error("expected a response read lazily from the file to be broken off")
+	}
+	// a file found unchanged after it was sent is left alone
+	*calls = -100
+	if serve(s, true) {
+		t.Error("expected a response from an unchanged file to complete")
+	}
+}
+
 func TestConcurrentServeAndChange(t *testing.T) {
 	root := newTestSite(t)
 	o := testOptions(root)
@@ -1547,6 +1680,28 @@ func TestConcurrentServeAndChange(t *testing.T) {
 		return body(t, get(t, s, http.MethodGet, "/app.css")) == last
 	}) {
 		t.Error("expected the final version to be served once changes settle")
+	}
+}
+
+func BenchmarkServeFromDisk(b *testing.B) {
+	root := filepath.Join(b.TempDir(), "site")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		b.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app.css"), []byte(testCSS), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	o := testOptions(root)
+	o.FileserverCache.Disabled = true
+	s, err := newServer(testName(b), o, sets.New(bo.DefaultCompressibleTypes()))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { s.root.Load().root.Close() })
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/app.css", nil)
+	b.ReportAllocs()
+	for b.Loop() {
+		s.ServeHTTP(httptest.NewRecorder(), r)
 	}
 }
 

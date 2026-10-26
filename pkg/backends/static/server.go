@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -48,7 +49,12 @@ import (
 const (
 	allowedMethods = "GET, HEAD, OPTIONS"
 	rootName       = "."
+	// openAttempts is how many times a file found to be another as it is opened is opened before it is refused
+	openAttempts = 2
 )
+
+// statOpened describes an opened file; tests replace it to stand in for a descriptor that was reused
+var statOpened = (*os.File).Stat
 
 // ErrMissingOptions is returned when a file server is built without its options
 var ErrMissingOptions = errors.New("static backend requires the static options block")
@@ -158,8 +164,8 @@ func (s *server) onFileEvent(name string) {
 	s.cache.invalidatePath(filepath.ToSlash(rel))
 }
 
-// revalidate is the backstop for changes that raise no event, such as a
-// replaced root, a changed symlink target or a filesystem without events.
+// revalidate is the backstop for changes that raise no event, such as a replaced root or symlink
+// target, or a platform without events. It also sweeps idle directories.
 func (s *server) revalidate() {
 	rh := s.root.Load()
 	if fi, err := os.Stat(s.opts.Root); err == nil && !os.SameFile(rh.info, fi) {
@@ -172,6 +178,7 @@ func (s *server) revalidate() {
 		fi, err := rh.root.Stat(key)
 		return err != nil || !sameFile(e.info, fi)
 	})
+	s.cache.sweepIdle()
 }
 
 // sameFile reports whether b is the file a described, unchanged: the same
@@ -480,37 +487,16 @@ func (s *server) serveFromDisk(w http.ResponseWriter, r *http.Request, key strin
 	accepted providers.Accepted,
 ) {
 	root := s.root.Load().root
-	// checked before opening: opening a pipe would block until it had a writer
-	fi, err := root.Stat(key)
-	if err != nil {
-		s.fail(w, r, key, err, fallback)
-		return
-	}
-	if fi.IsDir() && !dirRequest && !fallback {
-		redirectToDir(w, r)
-		return
-	}
-	// a directory, device, pipe or socket is never content
-	if !fi.Mode().IsRegular() {
-		s.notFound(w, r, fallback)
-		return
-	}
-	f, err := root.Open(key)
-	if err != nil {
-		s.fail(w, r, key, err, fallback)
+	f, fi := s.openFile(w, r, root, key, dirRequest, fallback)
+	if f == nil {
 		return
 	}
 	defer f.Close()
-	// the open file is the authority from here on, as the path may have been replaced
-	if fi, err = f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		s.notFound(w, r, fallback)
-		return
-	}
 	ct := typeByExtension(key, s.opts.MIMETypes)
 	if ct == "" {
 		head := make([]byte, sniffLen)
 		n, _ := io.ReadFull(f, head)
-		if _, err = f.Seek(0, io.SeekStart); err != nil {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			s.fail(w, r, key, err, fallback)
 			return
 		}
@@ -521,6 +507,7 @@ func (s *server) serveFromDisk(w http.ResponseWriter, r *http.Request, key strin
 	if r.Header.Get(headers.NameRange) != "" || !s.cache.admits(key, fi.Size()) {
 		s.counted(statusDisk, providers.Identity)
 		s.serve(w, r, &m, f)
+		s.verifyServed(r, f, fi, key)
 		return
 	}
 	// a rendition is made from the whole file, so a response suited to one loads it now
@@ -529,7 +516,7 @@ func (s *server) serveFromDisk(w http.ResponseWriter, r *http.Request, key strin
 			s.serveEntry(w, r, e, pending, accepted, statusMiss)
 			return
 		}
-		if _, err = f.Seek(0, io.SeekStart); err != nil {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
 			s.fail(w, r, key, err, fallback)
 			return
 		}
@@ -543,7 +530,73 @@ func (s *server) serveFromDisk(w http.ResponseWriter, r *http.Request, key strin
 		s.counted(statusMiss, providers.Identity)
 		return
 	}
+	if l.resolved {
+		s.verifyServed(r, f, fi, key)
+	}
 	s.counted(statusDisk, providers.Identity)
+}
+
+// openFile opens the file at key, or answers the request and returns nil. An opened file that
+// isn't the one at its path is opened again, as its descriptor may have been reused.
+func (s *server) openFile(w http.ResponseWriter, r *http.Request, root *os.Root, key string, dirRequest,
+	fallback bool,
+) (*os.File, os.FileInfo) {
+	for range openAttempts {
+		// checked before opening: opening a pipe would block until it had a writer
+		fi, err := root.Stat(key)
+		if err != nil {
+			s.fail(w, r, key, err, fallback)
+			return nil, nil
+		}
+		if fi.IsDir() && !dirRequest && !fallback {
+			redirectToDir(w, r)
+			return nil, nil
+		}
+		// a directory, device, pipe or socket is never content
+		if !fi.Mode().IsRegular() {
+			s.notFound(w, r, fallback)
+			return nil, nil
+		}
+		f, err := root.Open(key)
+		if err != nil {
+			s.fail(w, r, key, err, fallback)
+			return nil, nil
+		}
+		// the open file is the authority from here on
+		opened, err := statOpened(f)
+		if err != nil {
+			f.Close()
+			s.notFound(w, r, fallback)
+			return nil, nil
+		}
+		if os.SameFile(fi, opened) {
+			return f, opened
+		}
+		// replaced between the two, which is fine if the newer file is the one that was opened
+		if cur, err := root.Stat(key); err == nil && os.SameFile(cur, opened) {
+			return f, opened
+		}
+		f.Close()
+	}
+	logger.Warn("static file was not the one at its path when opened", logging.Pairs{
+		keys.BackendName: s.name, keys.Path: key,
+	})
+	writeError(w, http.StatusServiceUnavailable)
+	return nil, nil
+}
+
+// verifyServed breaks off a response sent from f if f has stopped being the file it describes, as
+// a descriptor that was reused would have sent another file's content.
+func (s *server) verifyServed(r *http.Request, f *os.File, fi os.FileInfo, key string) {
+	if cur, err := statOpened(f); err == nil && os.SameFile(fi, cur) {
+		return
+	}
+	logger.Error("static file descriptor changed while serving", logging.Pairs{
+		keys.BackendName: s.name, keys.Path: key,
+	})
+	if tctx.IsServed(r.Context()) {
+		panic(http.ErrAbortHandler)
+	}
 }
 
 // lazyContent defers reading a file until the response is known to need its

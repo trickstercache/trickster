@@ -8,7 +8,7 @@ The file server is built into Trickster on the Go standard library, and provides
 - a configurable default file (`index.html`) for directory requests
 - `Content-Type` detection from a built-in table of common web types, with your own additions and overrides
 - a configurable `Cache-Control` header, with overrides by file extension
-- a fileserver cache that holds small files in memory, kept current by filesystem change events, with the least recently used making room when it fills
+- a fileserver cache that holds small files in memory, kept current by filesystem change events (on Linux and Windows) and periodic revalidation, with the least recently used making room when it fills
 - compression for the Backend's `compressible_types`, with each encoded rendition of a small file held in memory and reused
 - a not-found file, for a custom error page or a single-page application
 - [Prometheus metrics](./metrics.md) for the files served and the cache
@@ -192,8 +192,8 @@ Only a response that sends the whole file loads it. A `HEAD` request, a conditio
 | `disabled` | `false` | When `true`, every request is served from disk. |
 | `max_file_size_bytes` | `1048576` (1 MiB) | The largest file that is held in memory. |
 | `max_size_bytes` | `134217728` (128 MiB) | The most memory the cache will use. Each held file counts as its size plus a fixed 1 KiB allowance for its bookkeeping, so empty and tiny files are bounded too. |
-| `max_files` | `10000` | The most objects that are held, which also bounds the number of directories that are watched. A file as stored, and each held rendition of it, is an object. |
-| `revalidation_interval` | `10s` | How often held files are compared to the disk, as a backstop to change events. |
+| `max_files` | `10000` | The most objects that are held, which also bounds the number of directories that are watched to twice this number. A file as stored, and each held rendition of it, is an object. |
+| `revalidation_interval` | `10s` | How often held files are compared to the disk, as a backstop to change events, and the only means of change detection on macOS and the BSDs. |
 
 Capacity is reserved before a file is read, so the limits hold even while many different files are being loaded at once. Once either limit is reached, the [least recently used](#eviction) objects make room for new ones.
 
@@ -229,9 +229,13 @@ Holding a file never delays serving it. Held files are read without locking. Eve
 
 ### Change Detection
 
-Trickster watches the directories of the files it holds, and stops watching a directory soon after it holds nothing from it. Letting go of a watch is done in the background, so evicting files never makes a request wait on the operating system. When a file is modified, replaced, renamed or removed, it is dropped from memory (typically within milliseconds) and the next request reads it from disk again. Renaming or removing a directory drops every held file beneath it. A changed file is never updated in place, and a read that overlaps a change is discarded rather than stored, so a request is never served a mix of old and new content from memory. A change touches only what it affects: the one file, or the files beneath the one directory. Every other held file stays in memory, and files that are being read into memory at that moment are unaffected, so a busy deployment does not push the rest of the site back to disk.
+Trickster watches the directories of the files it holds. A directory that a change leaves with nothing held stays watched for one to two `revalidation_interval`s, since the changed file is usually requested again soon; one emptied by eviction is let go of at once. Letting go of a watch is done in the background, so evicting files never makes a request wait on the operating system. When a file is modified, replaced, renamed or removed, it is dropped from memory (typically within milliseconds) and the next request reads it from disk again. Renaming or removing a directory drops every held file beneath it. A changed file is never updated in place, and a read that overlaps a change is discarded rather than stored, so a request is never served a mix of old and new content from memory. A change touches only what it affects: the one file, or the files beneath the one directory. Every other held file stays in memory, and files that are being read into memory at that moment are unaffected, so a busy deployment does not push the rest of the site back to disk.
 
 Every `revalidation_interval`, each held file's size, modification time and identity are compared to the disk, which catches changes that raise no event: a filesystem without change notifications (such as some network and container bind mounts), a changed symbolic link target, or a replaced root. On such filesystems, `revalidation_interval` is the longest a stale file can be served; lower it, or disable the fileserver cache, if that matters for your content.
+
+On macOS and the BSDs, the fileserver cache doesn't use change events at all, and relies on revalidation alone, so a change can take up to `revalidation_interval` to be served. The event library's kqueue support, which those platforms use, can close a file descriptor twice as a watch is removed, and the second close can land on a file that a request has open, so that another file's content is served in its place ([fsnotify#788](https://github.com/fsnotify/fsnotify/issues/788)). Change events will be enabled on these platforms once a fixed release is available. For local development on macOS, a short `revalidation_interval` (e.g., `1s`) keeps edits visible quickly.
+
+On every platform, a file that is found not to be the one at its path as it is opened is opened again, and answered with a `503` if it is still not; and a response sent from disk is broken off, rather than completed, if its file descriptor no longer refers to that file once the body is sent.
 
 ### Atomic Deployments
 
