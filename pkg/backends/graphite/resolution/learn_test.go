@@ -315,11 +315,14 @@ func TestWildcardsAndLCM(t *testing.T) {
 	}
 	// a new leaf under the wildcard changes the expansion token once the
 	// cached expansion expires
-	h.stub.Add("dev.fast.cpu.host03.percent", "10s:6h,60s:7d,10m:5y")
+	const newLeaf, knownLeaf = "dev.fast.cpu.host03.percent", "dev.fast.cpu.host01.percent"
+	h.stub.Add(newLeaf, ladders[knownLeaf])
 	if r := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false); r.ExpansionID != id {
 		t.Error("expansion must be cached within its TTL")
 	}
 	h.registry.SetTarget("dev.fast.cpu.*.percent", nil, -time.Second) // expire it
+	// no learning is started, as one could record the new leaf before it is looked for below
+	h.learner.Concurrency = -1
 	r4 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false)
 	if r4.ExpansionID == id || len(r4.Leaves) != 3 {
 		t.Errorf("expansion token must change with the leaf set: %+v", r4)
@@ -328,8 +331,16 @@ func TestWildcardsAndLCM(t *testing.T) {
 	if r4.Confidence != resolution.Unknown {
 		t.Errorf("expected Unknown for an unlearned new leaf, got %+v", r4)
 	}
-	if _, _, ok := h.registry.Leaf("dev.fast.cpu.host03.percent"); ok {
+	if _, _, ok := h.registry.Leaf(newLeaf); ok {
 		t.Error("no speculative leaf entry")
+	}
+	// what learning then records is the leaf's own ladder
+	h.learner.Concurrency = 2
+	h.resolver.Resolve(ctx, []string{"dev.fast.cpu.*.percent"}, 0, time.Hour, false)
+	h.learner.Wait()
+	learned, _, ok := h.registry.Leaf(newLeaf)
+	if known, _, _ := h.registry.Leaf(knownLeaf); !ok || learned != known {
+		t.Errorf("expected the new leaf to be learned with its ladder, got %q", learned)
 	}
 	// no match at all
 	r5 := h.resolver.Resolve(ctx, []string{"nothing.here.*"}, 0, time.Hour, false)
