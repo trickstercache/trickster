@@ -187,6 +187,25 @@ func (h *handler) serveMultiVariantPlan(
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	authorityResults := coalesceReplicaResults(hl, configured,
+		executions[authorityIndex].results)
+	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(authorityResults)
+	// Helpers cannot replace an authority error with a seeded or reduced response.
+	if !has2xx {
+		winner := pickErrorWinner(authorityResults)
+		if winner == nil {
+			for i := range executions {
+				if i == authorityIndex {
+					continue
+				}
+				if winner = pickErrorWinner(executions[i].results); winner != nil {
+					break
+				}
+			}
+		}
+		forwardErrorResponse(w, r, winner, statusHeader)
+		return
+	}
 
 	var responseSeed *dataset.DataSet
 	if !hasCompletePlanMember(plan, executions, memberCount) {
@@ -284,72 +303,12 @@ func (h *handler) serveMultiVariantPlan(
 		return
 	}
 
-	authorityResults := coalesceReplicaResults(hl, configured,
-		executions[authorityIndex].results)
 	mrf, winnerHeaders := pickWinner(authorityResults)
-	statusCode, statusHeader, has2xx, hasNon2xx := aggregateStatus(authorityResults)
 	if (has2xx && hasNon2xx) || (hasPlanFailure && has2xx) {
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}
 	if mrf == nil {
 		failures.HandleBadGateway(w, r)
-		return
-	}
-
-	hasAny2xx := has2xx
-	if !hasAny2xx {
-		for i := range executions {
-			if i == authorityIndex {
-				continue
-			}
-			for _, res := range executions[i].results {
-				if res.statusCode >= http.StatusOK && res.statusCode < http.StatusMultipleChoices {
-					hasAny2xx = true
-					break
-				}
-			}
-			if hasAny2xx {
-				break
-			}
-		}
-	}
-
-	// When all variants and members returned non-2xx errors, forward the winning error's
-	// status code, headers, and body directly to the client instead of attempting
-	// to marshal an empty accumulator or emitting a synthetic 502.
-	if !hasAny2xx {
-		winner := pickErrorWinner(authorityResults)
-		if winner == nil {
-			for i := range executions {
-				if i == authorityIndex {
-					continue
-				}
-				if winner = pickErrorWinner(executions[i].results); winner != nil {
-					break
-				}
-			}
-		}
-		if winner == nil {
-			failures.HandleBadGateway(w, r)
-			return
-		}
-		h := winner.rawHeader
-		if h == nil {
-			h = winner.header
-		}
-		if h != nil {
-			h = h.Clone()
-			h.Del("Content-Length")
-			h.Del("Transfer-Encoding")
-			headers.Merge(w.Header(), h)
-		}
-		if statusHeader != "" {
-			w.Header().Set(headers.NameTricksterResult, statusHeader)
-		}
-		w.WriteHeader(winner.statusCode)
-		if len(winner.body) > 0 {
-			w.Write(winner.body)
-		}
 		return
 	}
 

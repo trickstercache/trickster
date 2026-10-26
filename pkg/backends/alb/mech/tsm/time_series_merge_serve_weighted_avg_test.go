@@ -18,7 +18,9 @@ package tsm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -37,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -50,6 +53,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+
+	"github.com/stretchr/testify/require"
 )
 
 type weightedAvgStubBackend struct {
@@ -593,7 +598,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		})
 	}
 
-	t.Run("non_2xx_dataset_seeds_empty_error_response", func(t *testing.T) {
+	t.Run("non_2xx_dataset_does_not_replace_captured_error", func(t *testing.T) {
 		p := newWeightedAvgPool([]http.Handler{
 			weightedAvgFailVariantHandler(
 				weightedAvgMemberSpec{sumValue: "60", countValue: "3"},
@@ -612,11 +617,8 @@ func TestServeWeightedAvg(t *testing.T) {
 			t.Fatalf("status: want 503 got %d body=%q", w.Code, w.Body.String())
 		}
 		body := w.Body.String()
-		if !strings.Contains(body, "MERGED:empty") || strings.Contains(body, "100=") {
-			t.Fatalf("body: error dataset entered reduction: %q", body)
-		}
-		if !strings.Contains(body, `variant "`+tsmerge.TSMVariantWeightedAverageSum+`"`) {
-			t.Fatalf("body: missing failed-variant warning: %q", body)
+		if body != "" {
+			t.Fatalf("body: want empty captured error body, got %q", body)
 		}
 	})
 
@@ -994,6 +996,107 @@ func TestServeWeightedAvg(t *testing.T) {
 			t.Fatalf("finalizer calls got %d want 1", got)
 		}
 	})
+}
+
+func TestServeWeightedAvgAuthorityErrors(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		sumCodes      []int
+		countMode     string
+		wantCode      int
+		winnerMember  int
+		winnerVariant string
+	}{
+		{"successful helper", []int{400, 400}, "success", 400, 0, tsmerge.Sum},
+		{"empty helper", []int{400, 400}, "empty", 400, 0, tsmerge.Sum},
+		{"malformed helper", []int{400, 400}, "malformed", 400, 0, tsmerge.Sum},
+		{"authority error priority", []int{503, 422, 400}, "success", 400, 2, tsmerge.Sum},
+		{"all variants error", []int{503, 422, 400}, "error", 400, 2, tsmerge.Sum},
+		{"authority error beats helper client error", []int{503, 503}, "error", 503, 0, tsmerge.Sum},
+		{"helper error fallback", []int{303, 303}, "error", 400, 0, tsmerge.Count},
+		{"partial authority success", []int{400, 200}, "success", 200, 1, tsmerge.Sum},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			modeler := prommodel.NewModeler()
+			errorBody := func(variant string, member int) string {
+				return fmt.Sprintf(`{"status":"error","errorType":"bad_data","error":%q}`,
+					fmt.Sprintf("%s member %d failed", variant, member))
+			}
+			members := make([]http.Handler, len(test.sumCodes))
+			for member, sumCode := range test.sumCodes {
+				members[member] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					qp, _, _ := params.GetRequestValues(r)
+					variant, value, code := tsmerge.Sum, "60", sumCode
+					isCount := strings.HasPrefix(qp.Get("query"), "count(")
+					if isCount {
+						variant, value, code = tsmerge.Count, "3", http.StatusOK
+						if test.countMode == "error" {
+							code = http.StatusBadRequest
+						}
+					}
+					rsc := request.GetResources(r)
+					rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{
+						Extent: timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(100, 0)},
+						Step:   time.Second,
+					}
+					rsc.TSUnmarshaler = modeler.WireUnmarshaler
+					rsc.MergeFunc = merge.TimeseriesMergeFuncWithStrategy(modeler.WireUnmarshaler, rsc.TSMergeStrategy)
+					rsc.BatchMergeFunc = merge.TimeseriesBatchMergeFuncWithStrategy(rsc.TSMergeStrategy)
+					rsc.MergeRespondFunc = merge.TimeseriesRespondFuncWithStrategy(
+						modeler.WireMarshalWriter, &timeseries.RequestOptions{}, rsc.TSMergeStrategy)
+					w.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
+					w.Header().Set(headers.NameTricksterResult, "engine=none")
+					w.Header().Set("X-Authority-Member", fmt.Sprintf("%s-%d", variant, member))
+					if code >= http.StatusBadRequest {
+						body := errorBody(variant, member)
+						w.Header().Set(headers.NameContentLength, strconv.Itoa(len(body)))
+						w.WriteHeader(code)
+						_, _ = w.Write([]byte(body))
+						return
+					}
+					w.WriteHeader(code)
+					if isCount && test.countMode == "empty" {
+						return
+					}
+					if isCount && test.countMode == "malformed" {
+						_, _ = w.Write([]byte("malformed"))
+						return
+					}
+					_, _ = fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix",`+
+						`"result":[{"metric":{},"values":[[100,%q]]}]}}`, value)
+				})
+			}
+			p := newWeightedAvgPool(members)
+			defer p.Stop()
+			albpool.WaitHealthy(t, p, len(members))
+			h := &handler{mergePaths: []string{"/"}}
+			h.SetPool(p)
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
+
+			require.Equal(t, test.wantCode, w.Code, w.Body.String())
+			require.Equal(t, fmt.Sprintf("%s-%d", test.winnerVariant, test.winnerMember), w.Header().Get("X-Authority-Member"))
+			var response struct {
+				prommodel.Envelope
+				Data json.RawMessage `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+			if test.wantCode == http.StatusOK {
+				require.Equal(t, "application/json; charset=UTF-8", w.Header().Get(headers.NameContentType))
+				require.Equal(t, "success", response.Status)
+				require.JSONEq(t, `{"resultType":"matrix","result":[{"metric":{},"values":[[100,"20"]]}]}`,
+					string(response.Data))
+				require.Contains(t, w.Header().Get(headers.NameTricksterResult), "status=phit")
+				return
+			}
+			require.Equal(t, headers.ValueApplicationJSON, w.Header().Get(headers.NameContentType))
+			require.Equal(t, errorBody(test.winnerVariant, test.winnerMember), w.Body.String())
+			require.Equal(t, "error", response.Status)
+			require.Equal(t, "bad_data", response.ErrorType)
+			require.Equal(t, fmt.Sprintf("%s member %d failed", test.winnerVariant, test.winnerMember), response.Error)
+			require.Empty(t, w.Header().Get(headers.NameContentLength))
+		})
+	}
 }
 
 func BenchmarkServeMergePlan(b *testing.B) {
