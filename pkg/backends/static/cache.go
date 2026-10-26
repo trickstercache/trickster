@@ -155,12 +155,15 @@ type fileCache struct {
 	metrics *cacheMetrics
 	// invalidated counts the entries dropped since the count was last published
 	invalidated int
+	// idle is the emptied directories kept watched, as a changed file is usually requested again soon.
+	// One is true once a sweep has seen it, and the next sweep releases it.
+	idle map[*dirNode]bool
 }
 
 func newFileCache(name string, maxFileSize, maxSize, maxFiles int64, w dirWatcher) *fileCache {
 	return &fileCache{
 		maxFileSize: maxFileSize, maxSize: maxSize, maxFiles: maxFiles, name: name,
-		root: &dirNode{}, watcher: w, metrics: newCacheMetrics(),
+		root: &dirNode{}, watcher: w, metrics: newCacheMetrics(), idle: make(map[*dirNode]bool),
 	}
 }
 
@@ -306,7 +309,7 @@ func (c *fileCache) makeRoom(cost int64, pin *entry) bool {
 func (c *fileCache) remove(e *entry) {
 	n := e.node
 	c.discard(e)
-	c.settle(n)
+	c.settle(n, false)
 }
 
 // discard requires mtx. It drops a held entry without settling its directory or publishing
@@ -368,19 +371,53 @@ func (c *fileCache) node(dir string, create bool) *dirNode {
 	return n
 }
 
-// settle requires mtx. It stops watching a directory that has no files left,
-// and unlinks it and any ancestors that the index no longer needs.
-func (c *fileCache) settle(n *dirNode) {
-	for n != nil {
-		if n.files() == 0 && n.watched {
-			c.watcher.Unwatch(n.osDir)
-			n.watched = false
-		}
-		if n.parent == nil || n.files() > 0 || len(n.children) > 0 {
-			return
-		}
+// settle requires mtx. It unwatches a directory with no files left, unless linger keeps it for a
+// sweep, and unlinks it and any ancestors the index no longer needs.
+func (c *fileCache) settle(n *dirNode, linger bool) {
+	if n.files() == 0 && n.watched && (!linger || !c.keepIdle(n)) {
+		c.unwatch(n)
+	}
+	for n.parent != nil && n.files() == 0 && !n.watched && len(n.children) == 0 {
 		delete(n.parent.children, n.name)
 		n = n.parent
+	}
+}
+
+// keepIdle requires mtx. It keeps an emptied directory watched for a sweep to release, while the
+// cache is active and holds no more such directories than it may hold files.
+func (c *fileCache) keepIdle(n *dirNode) bool {
+	if _, ok := c.idle[n]; ok {
+		return true
+	}
+	if !c.active.Load() || int64(len(c.idle)) >= c.maxFiles {
+		return false
+	}
+	c.idle[n] = false
+	return true
+}
+
+// unwatch requires mtx
+func (c *fileCache) unwatch(n *dirNode) {
+	c.watcher.Unwatch(n.osDir)
+	n.watched = false
+	delete(c.idle, n)
+}
+
+// sweepIdle releases the directories that have stayed empty since the last sweep, so that one
+// emptied by a change stays watched for at least the interval between sweeps.
+func (c *fileCache) sweepIdle() {
+	if c == nil {
+		return
+	}
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	for n, seen := range c.idle {
+		if !seen {
+			c.idle[n] = true
+			continue
+		}
+		c.unwatch(n)
+		c.settle(n, false)
 	}
 }
 
@@ -454,6 +491,10 @@ func (c *fileCache) reserve(path string, enc providers.Provider, osDir string, s
 	if !n.watched {
 		n.osDir, n.watched = osDir, true
 		c.watcher.Watch(osDir)
+	} else if _, ok := c.idle[n]; ok {
+		// still watched from before it emptied; Watch is a lookup unless the directory went away meanwhile
+		delete(c.idle, n)
+		c.watcher.Watch(n.osDir)
 	}
 	return r
 }
@@ -527,12 +568,13 @@ func (r *reservation) commit(e *entry) bool {
 	return true
 }
 
-// release requires mtx. It returns capacity and lets the directory settle.
+// release requires mtx. It returns capacity and lets the directory settle, lingering, as a load is
+// usually cancelled because its file changed.
 func (c *fileCache) release(n *dirNode, cost int64) {
 	c.size.Add(-cost)
 	c.files.Add(-1)
 	c.report()
-	c.settle(n)
+	c.settle(n, true)
 }
 
 // drop requires mtx. It removes what is held or being loaded under one cache key
@@ -557,7 +599,7 @@ func (c *fileCache) dropFile(n *dirNode, key string) {
 	}
 }
 
-// dropTree requires mtx. It visits only n's subtree.
+// dropTree requires mtx. It visits only n's subtree, whose watches it releases, as a changed directory may be gone.
 func (c *fileCache) dropTree(n *dirNode) {
 	for _, child := range n.children {
 		c.dropTree(child)
@@ -568,7 +610,7 @@ func (c *fileCache) dropTree(n *dirNode) {
 	for key := range n.pending {
 		c.drop(n, key)
 	}
-	c.settle(n)
+	c.settle(n, false)
 }
 
 // invalidate drops the one file at key, in every rendition
@@ -586,7 +628,7 @@ func (c *fileCache) invalidateFile(key string) {
 	dir, _ := splitKey(key)
 	if n := c.node(dir, false); n != nil {
 		c.dropFile(n, key)
-		c.settle(n)
+		c.settle(n, true)
 	}
 }
 

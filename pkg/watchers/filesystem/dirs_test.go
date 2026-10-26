@@ -21,6 +21,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -30,6 +31,12 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 )
+
+func TestMain(m *testing.M) {
+	// the event path is exercised on every platform, including those where it is off by default
+	eventDriven = true
+	os.Exit(m.Run())
+}
 
 type eventRecorder struct {
 	mtx       sync.Mutex
@@ -553,6 +560,44 @@ func TestDirWatcherWithoutEvents(t *testing.T) {
 	w.Watch(t.TempDir())
 	if !waitFor(t, 5*time.Second, func() bool { return r.intervals.Load() > 2 }) {
 		t.Fatal("expected interval calls to continue without fsnotify")
+	}
+}
+
+func TestEventDrivenPlatforms(t *testing.T) {
+	kqueue := slices.Contains([]string{"darwin", "dragonfly", "freebsd", "netbsd", "openbsd"}, runtime.GOOS)
+	if EventDriven == kqueue {
+		t.Errorf("expected EventDriven to be %t on %s", !kqueue, runtime.GOOS)
+	}
+}
+
+func TestDirWatcherIntervalOnly(t *testing.T) {
+	eventDriven = false
+	defer func() { eventDriven = true }()
+
+	r := newEventRecorder()
+	w, err := NewDirWatcher(r.options(testPollInterval))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.Start()
+	defer w.Close()
+	dir := t.TempDir()
+	w.Watch(dir)
+	if w.Watched() != 1 || len(w.armed()) != 0 {
+		t.Errorf("expected the directory wanted but not armed, got %d wanted, %d armed", w.Watched(), len(w.armed()))
+	}
+	w.mtx.RLock()
+	events := w.events
+	w.mtx.RUnlock()
+	if events != nil {
+		t.Error("expected no event source when interval-only")
+	}
+	if !waitFor(t, 5*time.Second, func() bool { return r.intervals.Load() > 2 }) {
+		t.Fatal("expected interval calls when interval-only")
+	}
+	w.Unwatch(dir)
+	if w.Watched() != 0 {
+		t.Errorf("expected nothing wanted after Unwatch, got %d", w.Watched())
 	}
 }
 

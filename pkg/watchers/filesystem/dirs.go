@@ -53,8 +53,8 @@ type DirOptions struct {
 // ErrNoEventHandler is returned by NewDirWatcher when OnEvent is nil
 var ErrNoEventHandler = errors.New("filesystem watcher: no event handler")
 
-// DirWatcher is a restartable watchers.Watcher reporting per-entry changes in
-// a set of directories that grows while it runs. It never reads file content.
+// DirWatcher is a restartable watchers.Watcher reporting per-entry changes in a set of directories
+// that grows while it runs. It never reads file content; see EventDriven.
 type DirWatcher struct {
 	opts DirOptions
 
@@ -266,6 +266,11 @@ func (w *DirWatcher) Close() {
 
 // startEventWatches best-effort arms fsnotify on the watched set; failure is interval-only.
 func (w *DirWatcher) startEventWatches() *fsnotify.Watcher {
+	if !eventDriven {
+		logger.Debug("filesystem directory watcher is interval-only on this platform",
+			logging.Pairs{keys.Name: w.opts.Name})
+		return nil
+	}
 	ew, err := newEventWatcher()
 	if err != nil {
 		logger.Debug("fsnotify unavailable; filesystem directory watcher is interval-only",
@@ -286,6 +291,9 @@ func (w *DirWatcher) startEventWatches() *fsnotify.Watcher {
 
 // newEventWatcher is replaced in tests to simulate a platform without fsnotify
 var newEventWatcher = fsnotify.NewWatcher
+
+// eventDriven is EventDriven, which tests override to cover both modes on any platform
+var eventDriven = EventDriven
 
 // rearm re-adds dropped directory watches and forgets directories that are
 // gone, so a later Watch of a recreated directory arms it again.

@@ -34,8 +34,9 @@ import (
 )
 
 type fakeWatcher struct {
-	mtx  sync.Mutex
-	dirs map[string]bool
+	mtx       sync.Mutex
+	dirs      map[string]bool
+	unwatches int
 }
 
 func newFakeWatcher() *fakeWatcher {
@@ -52,6 +53,13 @@ func (w *fakeWatcher) Unwatch(dir string) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	delete(w.dirs, dir)
+	w.unwatches++
+}
+
+func (w *fakeWatcher) released() int {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.unwatches
 }
 
 func (w *fakeWatcher) watched() int {
@@ -254,8 +262,17 @@ func TestFileCacheReservation(t *testing.T) {
 	if rsv.commit(testEntry("a", "late")) {
 		t.Error("expected a cancelled reservation not to commit")
 	}
-	if c.size.Load() != 0 || c.files.Load() != 0 || w.watched() != 0 || c.nodes() != 0 {
-		t.Error("expected a cancelled reservation to release everything")
+	if c.size.Load() != 0 || c.files.Load() != 0 || c.nodes() != 0 {
+		t.Error("expected a cancelled reservation to release its capacity")
+	}
+	// its directory stays watched until a sweep, as a cancelled load is usually re-requested
+	c.sweepIdle()
+	if w.watched() != 1 {
+		t.Error("expected a cancelled reservation's directory to stay watched through a sweep")
+	}
+	c.sweepIdle()
+	if w.watched() != 0 {
+		t.Error("expected a cancelled reservation's directory to be released by the next sweep")
 	}
 	// a load that began before its file changed must not land after it
 	rsv = c.reserve("a", providers.Identity, "/d", 5, nil)
@@ -263,7 +280,7 @@ func TestFileCacheReservation(t *testing.T) {
 	if c.size.Load() == 0 {
 		t.Error("expected a load in progress to keep its capacity until its loader finishes")
 	}
-	if rsv.commit(testEntry("a", "stale")) || c.held("a") != nil || c.size.Load() != 0 || w.watched() != 0 {
+	if rsv.commit(testEntry("a", "stale")) || c.held("a") != nil || c.size.Load() != 0 {
 		t.Error("expected a load that raced an invalidation to be discarded")
 	}
 	if !c.hold("a", "/d", "fresh") || string(c.held("a").body) != "fresh" {
@@ -603,8 +620,13 @@ func TestFileCacheWatchesFollowEntries(t *testing.T) {
 		t.Error("expected a directory to stay watched while it holds an entry")
 	}
 	c.invalidate("a/2")
+	c.sweepIdle()
+	if w.watched() != 2 {
+		t.Error("expected a directory emptied by a change to stay watched through a sweep")
+	}
+	c.sweepIdle()
 	if w.watched() != 1 {
-		t.Error("expected a directory holding nothing to be released")
+		t.Error("expected a directory still empty at the next sweep to be released")
 	}
 	// a directory that only leads to others is indexed, but has nothing to watch
 	c.hold("c/d/e/1", "/root/c/d/e", "x")
@@ -612,12 +634,64 @@ func TestFileCacheWatchesFollowEntries(t *testing.T) {
 		t.Errorf("expected 2 watches over 4 indexed directories, got %d over %d", w.watched(), c.nodes())
 	}
 	c.invalidate("c/d/e/1")
+	if c.nodes() != 4 {
+		t.Errorf("expected a directory kept watched to stay indexed, %d remain", c.nodes())
+	}
+	c.sweepIdle()
+	c.sweepIdle()
 	if c.nodes() != 1 {
-		t.Errorf("expected emptied directories to leave the index, %d remain", c.nodes())
+		t.Errorf("expected released directories to leave the index, %d remain", c.nodes())
 	}
 	c.purge()
 	if w.watched() != 0 || c.nodes() != 0 {
 		t.Error("expected a purge to release every watch")
+	}
+}
+
+func TestFileCacheIdleDirectories(t *testing.T) {
+	const fileA, fileB, fileC = "a/1", "b/1", "c/1"
+	c, w := newTestCache(t, 10, 1<<20, 2)
+	// each file is alone in a directory named for it
+	hold := func(key string) bool { return c.hold(key, "/r/"+key, "x") }
+	// a changed file that is requested again finds its directory still watched
+	hold(fileA)
+	c.invalidate(fileA)
+	c.sweepIdle()
+	if !hold(fileA) || w.watched() != 1 || w.released() != 0 {
+		t.Errorf("expected the directory to stay watched for the file's next load, %d released", w.released())
+	}
+	c.sweepIdle()
+	c.sweepIdle()
+	if w.watched() != 1 {
+		t.Error("expected a sweep to leave a directory that holds files alone")
+	}
+	// no more directories are kept than files may be held
+	hold(fileB)
+	c.invalidate(fileA)
+	c.invalidate(fileB)
+	hold(fileC)
+	c.invalidate(fileC)
+	if w.watched() != 2 || len(c.idle) != 2 {
+		t.Errorf("expected 2 directories kept, got %d watched, %d idle", w.watched(), len(c.idle))
+	}
+	// eviction and a changed directory release their watches at once
+	c.purge()
+	for _, key := range []string{"d/1", "e/1", "f/1"} {
+		hold(key)
+	}
+	if c.held("d/1") != nil || w.watched() != 2 {
+		t.Errorf("expected the evicted file's directory to be released, %d watched", w.watched())
+	}
+	c.invalidatePath("e")
+	if w.watched() != 1 || c.nodes() != 1 {
+		t.Errorf("expected a changed directory to be released, %d watched over %d", w.watched(), c.nodes())
+	}
+	// a stopped cache keeps nothing
+	rsv := c.reserve("g/1", providers.Identity, "/r/g/1", 1, nil)
+	c.active.Store(false)
+	rsv.cancel()
+	if w.watched() != 1 || len(c.idle) != 0 {
+		t.Errorf("expected a stopped cache to release its directories, %d idle", len(c.idle))
 	}
 }
 
