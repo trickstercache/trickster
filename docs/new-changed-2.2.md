@@ -42,7 +42,7 @@ Trickster 2.2 extends many of the new features introduced in 2.1, while adding s
 
 **Idle Connection Timeouts** - HTTP listeners now close a keep-alive connection that waits more than 2 minutes for its next request; until now idle connections were never closed. The new `idle_timeout`, `read_timeout` and `max_header_bytes` listener options tune this. See [Connection Timeouts and Header Size](./configuring.md#connection-timeouts-and-header-size).
 
-## Security
+## Security & Policy
 
 **Path Normalization** - HTTP listeners now remove `.` and `..` path segments before routing and forward the cleaned path, closing a bypass of path-scoped controls such as `authenticator_name: none`; see [Path Normalization](./configuring.md#path-normalization) for the new `path_normalization` options and opt-out.
 

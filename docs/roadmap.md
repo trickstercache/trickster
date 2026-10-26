@@ -18,7 +18,7 @@ The roadmap for Trickster in the remainder of 2026 focuses on delivering version
 
 ### Q4 2026
 
-- [ ] Trickster v2.2 Release
+- [x] Trickster v2.2 Release
   - [x] Support for accelerating TimescaleDB
   - [x] Support for accelerating GreptimeDB
   - [x] Support for accelerating QuestDB
