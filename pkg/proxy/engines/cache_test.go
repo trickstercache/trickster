@@ -41,6 +41,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"github.com/tinylib/msgp/msgp"
 )
 
 const testRangeBody = "This is a test file, to see how the byte range requests work.\n"
@@ -376,6 +378,57 @@ func TestRangeRequestFromClient(t *testing.T) {
 	}
 	if deltas[0].Start != 26 || deltas[0].End != 35 {
 		t.Errorf("expected start %d end %d, got start %d end %d", 26, 35, deltas[0].Start, deltas[0].End)
+	}
+}
+
+func cachedDataSetWithLegacySeries(t *testing.T, extent timeseries.Extent) []byte {
+	t.Helper()
+	// Encode complete coverage before a series in the unsupported legacy point layout.
+	body := msgp.AppendMapHeader(nil, 2)
+	body = msgp.AppendString(body, "extent_list")
+	body, err := (timeseries.ExtentList{extent}).MarshalMsg(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body = msgp.AppendString(body, "results")
+	body = msgp.AppendArrayHeader(body, 1)
+	body = msgp.AppendMapHeader(body, 1)
+	body = msgp.AppendString(body, "series")
+	body = msgp.AppendArrayHeader(body, 1)
+	body = msgp.AppendMapHeader(body, 1)
+	body = msgp.AppendString(body, "points")
+	body = msgp.AppendArrayHeader(body, 0)
+
+	var partial dataset.DataSet
+	if _, err := partial.UnmarshalMsg(body); !errors.Is(err, dataset.ErrLegacySeries) {
+		t.Fatalf("expected legacy series decoding error, got %v", err)
+	}
+	if len(partial.ExtentList) != 1 || !partial.ExtentList[0].Start.Equal(extent.Start) ||
+		!partial.ExtentList[0].End.Equal(extent.End) {
+		t.Fatalf("expected coverage %v before series decoding failed, got %v", extent, partial.ExtentList)
+	}
+	return body
+}
+
+func TestQueryCacheUnmarshalingFailure(t *testing.T) {
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	extent := timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(3600, 0)}
+	doc := &HTTPDocument{StatusCode: http.StatusOK, Body: cachedDataSetWithLegacySeries(t, extent)}
+	const key = "legacy-series"
+	if err := WriteCache(r.Context(), rsc.CacheClient, key, doc, time.Hour, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	modeler := rsc.BackendClient.(*TestClient).testModeler()
+	got, lookup, _, err := QueryCache(r.Context(), rsc.CacheClient, key, nil, modeler.CacheUnmarshaler)
+	if !errors.Is(err, dataset.ErrLegacySeries) {
+		t.Fatalf("expected legacy series decoding error, got %v (lookup %s)", err, lookup)
+	}
+	if got != nil {
+		t.Fatal("expected nil document after cache decoding failed")
 	}
 }
 
