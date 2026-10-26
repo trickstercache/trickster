@@ -164,10 +164,6 @@ func queryCache(ctx context.Context, c cache.Cache, key string,
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", qr.lookupStatus.String()))
 		return qr.d, qr.lookupStatus, ranges, qr.err
 	}
-	// a memory cache hands back the dataset it holds, which its reader clones before changing it
-	if unmarshal != nil && qr.d.timeseries == nil {
-		qr.d.timeseries, _ = unmarshal(qr.d.Body, nil)
-	}
 	d = qr.d
 	lookupStatus = qr.lookupStatus
 
@@ -187,6 +183,14 @@ func queryCache(ctx context.Context, c cache.Cache, key string,
 			if err != nil {
 				return nil, status.LookupStatusKeyMiss, ranges, err
 			}
+		}
+	} else if unmarshal != nil && d.timeseries == nil && len(d.Body) > 0 {
+		// a memory cache hands back the dataset it holds, which its reader clones before changing it
+		var uerr error
+		d.timeseries, uerr = unmarshal(d.Body, nil)
+		if uerr != nil {
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", lookupStatus.String()))
+			return nil, lookupStatus, ranges, uerr
 		}
 	}
 

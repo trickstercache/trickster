@@ -722,10 +722,10 @@ func (ds *DataSet) Sort() {
 // wrote. Its rows may share b's memory, or an aligned copy of it, which then must not change.
 func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	ds, err := ReadDataSet(AlignedBlob(b), trq)
-	if ds == nil {
-		ds = &DataSet{}
+	if err != nil {
+		return nil, err
 	}
-	return ds, err
+	return ds, nil
 }
 
 // ReadDataSet unmarshals a dataset from b without copying it; its rows share b's memory where they
@@ -733,7 +733,7 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 func ReadDataSet(b []byte, trq *timeseries.TimeRangeQuery) (*DataSet, error) {
 	ds := &DataSet{}
 	if _, err := ds.UnmarshalMsg(b); err != nil {
-		return ds, err
+		return nil, err
 	}
 	if ds.TimeRangeQuery != nil {
 		ds.TimeRangeQuery.Step = time.Duration(ds.TimeRangeQuery.StepNS)
