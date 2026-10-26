@@ -316,7 +316,7 @@ func TestRunWithoutFFmpeg(t *testing.T) {
 	if err := Run(ctx, Config{}); err == nil {
 		t.Error("an invalid config is refused")
 	}
-	cfg.Output, cfg.MoQURL = OutputMoQ, "moqt://localhost:8490/"
+	cfg.Output, cfg.MoQURL, cfg.MoQInsecure = OutputMoQ, "moqt://"+startTestRelay(t)+"/", true
 	if err := Run(ctx, cfg); err == nil || !strings.Contains(err.Error(), "starting") {
 		t.Errorf("moq: %v", err)
 	}

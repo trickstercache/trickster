@@ -21,8 +21,10 @@ import (
 	"context"
 	"crypto/tls"
 	"image"
+	"net"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -209,7 +211,14 @@ func decodeFirstFrame(t *testing.T, ffmpegPath string, mp4 []byte, r Rendition) 
 
 func startTestRelay(t *testing.T) string {
 	t.Helper()
-	// a Trickster relay that accepts publishers, on a QUIC listener with a certificate for localhost
+	addr, _ := startTestRelayAt(t, "127.0.0.1:0")
+	return addr
+}
+
+func startTestRelayAt(t *testing.T, addr string) (string, func()) {
+	t.Helper()
+	// a Trickster relay that accepts publishers, on a QUIC listener with a certificate for localhost; stop
+	// closes it and every session on it
 	key, cert, err := testtls.GetTestKeyAndCertWithNames("localhost")
 	if err != nil {
 		t.Fatal(err)
@@ -218,7 +227,16 @@ func startTestRelay(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln, err := quic.ListenAddr("127.0.0.1:0", &tls.Config{
+	ua, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uc, err := net.ListenUDP("udp", ua)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := &quic.Transport{Conn: uc}
+	ln, err := tr.Listen(&tls.Config{
 		Certificates: []tls.Certificate{kp}, NextProtos: codec.ALPNs(codec.ServerPreference), MinVersion: tls.VersionTLS13,
 	}, &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	if err != nil {
@@ -226,10 +244,24 @@ func startTestRelay(t *testing.T) string {
 	}
 	r := relay.New(relay.Options{}, nil, nil)
 	r.SetAccess(relay.Access{Publish: true})
-	t.Cleanup(func() {
-		_ = ln.Close()
-		r.Close()
-	})
+	var (
+		once     sync.Once
+		mu       sync.Mutex
+		sessions []*session.Session
+	)
+	stop := func() {
+		once.Do(func() {
+			mu.Lock()
+			for _, s := range sessions {
+				_ = s.Close(message.CodeNoError, "")
+			}
+			mu.Unlock()
+			_ = tr.Close()
+			_ = uc.Close()
+			r.Close()
+		})
+	}
+	t.Cleanup(stop)
 	go func() {
 		for {
 			conn, err := ln.Accept(context.Background())
@@ -240,10 +272,13 @@ func startTestRelay(t *testing.T) string {
 			s, _ := session.New(session.FromQUIC(conn), session.Options{
 				Role: session.RoleServer, Codec: c, Handler: r.Handler(relay.Scope{Authority: "localhost", Path: "/"}),
 			})
+			mu.Lock()
+			sessions = append(sessions, s)
+			mu.Unlock()
 			go func() { _ = s.Start(context.Background()) }()
 		}
 	}()
-	return ln.Addr().String()
+	return ln.Addr().String(), stop
 }
 
 func TestStreamMoQThroughRelay(t *testing.T) {
@@ -255,8 +290,40 @@ func TestStreamMoQThroughRelay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- Run(ctx, cfg) }()
+	body := relayCatalog(t, &cfg)
+	if !strings.Contains(body, `"packaging":"cmaf"`) || !strings.Contains(body, `"name":"video-180p"`) {
+		t.Errorf("catalog %s", body)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("the output ends cleanly: %v", err)
+	}
+}
+
+func TestStreamMoQRedialsAfterTheRelayStops(t *testing.T) {
+	ffmpegPath := needFFmpeg(t)
+	addr, stop := startTestRelayAt(t, "127.0.0.1:0")
+	cfg := testConfig()
+	cfg.FFmpeg, cfg.Output, cfg.MoQInsecure = ffmpegPath, OutputMoQ, true
+	cfg.MoQURL = "moqt://" + addr + "/"
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- StreamMoQ(ctx, cfg) }()
+	relayCatalog(t, &cfg)
+	// the session ends with the relay, and the stream is published again once a relay is back at the address
+	stop()
+	startTestRelayAt(t, addr)
+	relayCatalog(t, &cfg)
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("the output ends cleanly: %v", err)
+	}
+}
+
+func relayCatalog(t *testing.T, cfg *Config) string {
+	t.Helper()
 	// a viewer of the relay reads the catalog the generator published, once the namespace is announced
-	viewer, closeViewer, err := dialMoQ(context.Background(), &cfg, nil)
+	viewer, closeViewer, err := dialMoQ(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,16 +351,10 @@ func TestStreamMoQThroughRelay(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	cat.mu.Lock()
+	defer cat.mu.Unlock()
 	var body string
 	for p := range cat.payload {
 		body = p
 	}
-	cat.mu.Unlock()
-	if !strings.Contains(body, `"packaging":"cmaf"`) || !strings.Contains(body, `"name":"video-180p"`) {
-		t.Errorf("catalog %s", body)
-	}
-	cancel()
-	if err = <-done; err != nil {
-		t.Errorf("the output ends cleanly: %v", err)
-	}
+	return body
 }
