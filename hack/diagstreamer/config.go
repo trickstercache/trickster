@@ -21,6 +21,7 @@ package diagstreamer
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -394,6 +395,11 @@ func (c *Config) validate() error {
 	case OutputMoQ:
 		if c.MoQURL == "" {
 			return errors.New("the moq output needs a relay URL")
+		}
+		if u, err := url.Parse(c.MoQURL); err != nil ||
+			(!strings.EqualFold(u.Scheme, schemeMoQT) && !strings.EqualFold(u.Scheme, schemeHTTPS)) {
+			return fmt.Errorf("the moq relay URL %q must use the %s:// or %s:// scheme", c.MoQURL, schemeMoQT,
+				schemeHTTPS)
 		}
 		if c.MoQCatalog != CatalogMSF && c.MoQCatalog != CatalogHang {
 			return fmt.Errorf("catalog format %q is not %s or %s", c.MoQCatalog, CatalogMSF, CatalogHang)

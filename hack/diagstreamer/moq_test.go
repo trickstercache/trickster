@@ -250,12 +250,12 @@ func (r *relaySide) groups() int {
 	return len(r.objects)
 }
 
-func moqPair(t *testing.T, p *moqPublisher) *session.Session {
+func moqPair(t *testing.T, h session.Handler) *session.Session {
 	// connects a publisher, as a client, to a session the test drives as the relay
 	t.Helper()
 	c, _ := codec.ForDraft(22)
 	cc, sc := memconn.Pair()
-	client, err := session.New(cc, session.Options{Role: session.RoleClient, Codec: c, Handler: p})
+	client, err := session.New(cc, session.Options{Role: session.RoleClient, Codec: c, Handler: h})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,6 +401,25 @@ func TestMoQPublisher(t *testing.T) {
 	}
 }
 
+func TestMoQHandlerBeforeReady(t *testing.T) {
+	s := moqStreamer(t, testConfig(), 2)
+	ns := moqNamespace("diag.msf")
+	p, err := newMoQPublisher(s, ns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := &moqHandler{}
+	relay := moqPair(t, h)
+	sub := &message.Subscribe{Track: message.FullTrackName{Namespace: ns, Name: []byte(msfCatalogTrack)}}
+	if _, resp := open(t, relay, sub, newRelaySide()); resp.Kind() != message.KindRequestError {
+		t.Errorf("a request before the tracks are ready answered %+v", resp)
+	}
+	h.p.Store(p)
+	if _, resp := open(t, relay, sub, newRelaySide()); resp.Kind() != message.KindSubscribeOK {
+		t.Errorf("a request once the tracks are ready answered %+v", resp)
+	}
+}
+
 func TestStreamMoQRefusals(t *testing.T) {
 	cfg := testConfig()
 	cfg.Output = OutputMoQ
@@ -408,10 +427,20 @@ func TestStreamMoQRefusals(t *testing.T) {
 		t.Error("the moq output needs a relay")
 	}
 	cfg.MoQURL = "ftp://relay.example.com/"
-	cfg.FFmpeg = "/nonexistent/ffmpeg"
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	if err := StreamMoQ(context.Background(), cfg); err == nil || !strings.Contains(err.Error(), "scheme") {
+		t.Errorf("an unknown scheme ends the output: %v", err)
+	}
+	// with no relay to reach the encoder never starts, so a missing ffmpeg goes unnoticed until ctx ends
+	cfg.MoQURL, cfg.MoQInsecure, cfg.FFmpeg = "moqt://127.0.0.1:1/", true, "/nonexistent/ffmpeg"
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
-	if err := StreamMoQ(ctx, cfg); err == nil || !strings.Contains(err.Error(), "starting") {
+	if err := StreamMoQ(ctx, cfg); err != nil {
+		t.Errorf("an unreachable relay is dialed again until ctx ends: %v", err)
+	}
+	cfg.MoQURL = "moqt://" + startTestRelay(t) + "/"
+	ctx2, cancel2 := context.WithTimeout(context.Background(), testWait)
+	defer cancel2()
+	if err := StreamMoQ(ctx2, cfg); err == nil || !strings.Contains(err.Error(), "starting") {
 		t.Errorf("an encoder that cannot start ends the output: %v", err)
 	}
 	c := testConfig()

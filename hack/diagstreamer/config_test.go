@@ -104,6 +104,7 @@ func TestValidate(t *testing.T) {
 		"fractional captions": func(c *Config) { c.Segment = 1500 * time.Millisecond },
 		"unknown output":      func(c *Config) { c.Output = "rtmp" },
 		"moq without a relay": func(c *Config) { c.Output = OutputMoQ },
+		"moq relay scheme":    func(c *Config) { c.Output, c.MoQURL = OutputMoQ, "ftp://relay.example.com/" },
 	} {
 		c := DefaultConfig()
 		mutate(&c)

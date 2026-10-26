@@ -126,10 +126,13 @@ func (p *moqPublisher) subscribe(r *session.Request, m *message.Subscribe, sub *
 		return
 	}
 	ok := &message.SubscribeOK{TrackAlias: r.Session().NewTrackAlias()}
+	var next int64
 	if mt.media != nil {
 		// what streams next is the segment in progress from its start, so the Largest Object is the end of the
-		// segment before it
-		if l, has := p.lastComplete(mt); has {
+		// segment before it; the start is fixed here, so a segment completing before streaming begins is not skipped
+		var l wire.Location
+		var has bool
+		if next, l, has = p.lastComplete(mt); has {
 			ok.Params.SetLargestObject(l)
 		}
 	}
@@ -140,21 +143,20 @@ func (p *moqPublisher) subscribe(r *session.Request, m *message.Subscribe, sub *
 		go p.sendCatalog(r, sub, mt.catalog)
 		return
 	}
-	go p.stream(r, sub, mt)
+	go p.stream(r, sub, mt, next)
 }
 
-func (p *moqPublisher) lastComplete(mt *moqTrack) (wire.Location, bool) {
+func (p *moqPublisher) lastComplete(mt *moqTrack) (int64, wire.Location, bool) {
+	// returns the group streamed next, and the last object of the complete segment before it when there is one
 	t := mt.media
 	t.mu.Lock()
-	seg := t.segs[t.newest]
+	newest := t.newest
+	seg := t.segs[newest]
 	t.mu.Unlock()
-	if seg == nil || !seg.complete {
-		return wire.Location{}, false
+	if seg == nil || !seg.complete || len(seg.chunks) == 0 {
+		return newest + 1, wire.Location{}, false
 	}
-	if len(seg.chunks) == 0 {
-		return wire.Location{}, false
-	}
-	return wire.Location{Group: uint64(seg.number), Object: uint64(len(seg.chunks) - 1)}, true //nolint:gosec // epoch segment numbers
+	return newest + 1, wire.Location{Group: uint64(seg.number), Object: uint64(len(seg.chunks) - 1)}, true //nolint:gosec // epoch segment numbers
 }
 
 func (p *moqPublisher) sendCatalog(r *session.Request, sub *moqSubscription, catalog []byte) {
@@ -181,13 +183,10 @@ func writeObject(out *session.OutgoingSubgroup, id uint64, b []byte) error {
 	return err
 }
 
-func (p *moqPublisher) stream(r *session.Request, sub *moqSubscription, mt *moqTrack) {
-	// one group per segment, opened at its keyframe, with each chunk's objects written as the chunk arrives
+func (p *moqPublisher) stream(r *session.Request, sub *moqSubscription, mt *moqTrack, n int64) {
+	// one group per segment from group n, opened at its keyframe, with each chunk's objects written as it arrives
 	t := mt.media
 	ctx := r.Context()
-	t.mu.Lock()
-	n := t.newest + 1
-	t.mu.Unlock()
 	for {
 		ok, err := p.streamGroup(ctx, r, sub, t, n)
 		if err != nil || !ok {
@@ -384,55 +383,111 @@ func (c *Config) Broadcast() string {
 	return defaultBroadcast + "." + c.MoQCatalog
 }
 
-// StreamMoQ publishes the stream to the relay at cfg.MoQURL until ctx ends, dialing again when the session ends
+// StreamMoQ publishes the stream to the relay at cfg.MoQURL until ctx ends, dialing again when the session ends;
+// the encoder runs only while a session is up, so an unreachable relay costs no encoding
 func StreamMoQ(ctx context.Context, cfg Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	s, err := New(cfg)
-	if err != nil {
-		return err
-	}
-	errs := make(chan error, 1)
-	go func() { errs <- s.Run(ctx) }()
-	// an encoder that fails before its tracks are ready ends the output at once
-	ready := make(chan bool, 1)
-	go func() { ready <- s.ready(ctx) }()
-	select {
-	case err := <-errs:
-		return err
-	case ok := <-ready:
-		if !ok {
-			return errors.Join(errors.New("the encoder produced no tracks"), <-errs)
-		}
-	}
-	p, err := newMoQPublisher(s, moqNamespace(cfg.Broadcast()))
-	if err != nil {
-		return errors.Join(err, <-errs)
-	}
 	backoff := moqRetryBackoff
-	for ctx.Err() == nil {
-		err := p.session(ctx, &s.cfg)
+	for {
+		err := publishMoQ(ctx, cfg)
+		if end, ok := errors.AsType[*moqEnd](err); ok {
+			return end.error
+		}
 		if ctx.Err() != nil {
-			break
+			return nil
 		}
 		slog.Warn("the MoQ session ended; dialing again", "error", err, "after", backoff)
 		select {
 		case <-time.After(backoff):
 		case <-ctx.Done():
+			return nil
 		}
 		backoff = min(2*backoff, moqMaxBackoff)
 	}
-	return <-errs
 }
 
-func (p *moqPublisher) session(ctx context.Context, cfg *Config) error {
-	// the publisher announces its namespace and serves the relay's SUBSCRIBEs and FETCHes until the session ends
-	s, closeFn, err := dialMoQ(ctx, cfg, p)
+// an error that ends the moq output instead of dialing again
+type moqEnd struct{ error }
+
+func endMoQ(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &moqEnd{err}
+}
+
+func publishMoQ(ctx context.Context, cfg Config) error {
+	// one relay session: it is dialed before the encoder starts, and the encoder stops when it ends
+	h := &moqHandler{}
+	sess, closeFn, err := dialMoQ(ctx, &cfg, h)
 	if err != nil {
 		return err
 	}
 	defer closeFn()
+	s, err := New(cfg)
+	if err != nil {
+		return endMoQ(err)
+	}
+	ectx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errs := make(chan error, 1)
+	go func() { errs <- s.Run(ectx) }()
+	// an encoder that fails before its tracks are ready ends the output at once
+	ready := make(chan bool, 1)
+	go func() { ready <- s.ready(ectx) }()
+	select {
+	case err = <-errs:
+		return endMoQ(err)
+	case ok := <-ready:
+		if !ok {
+			cancel()
+			if ctx.Err() != nil {
+				return endMoQ(<-errs)
+			}
+			return endMoQ(errors.Join(errors.New("the encoder produced no tracks"), <-errs))
+		}
+	}
+	p, err := newMoQPublisher(s, moqNamespace(cfg.Broadcast()))
+	if err != nil {
+		cancel()
+		return endMoQ(errors.Join(err, <-errs))
+	}
+	h.p.Store(p)
+	done := make(chan error, 1)
+	go func() { done <- p.session(ectx, sess, &s.cfg) }()
+	select {
+	case err = <-done:
+		cancel()
+		if rerr := <-errs; rerr != nil || ctx.Err() != nil {
+			return endMoQ(rerr)
+		}
+		return err
+	case err = <-errs:
+		// the encoder stopped while the session was up
+		cancel()
+		<-done
+		return endMoQ(err)
+	}
+}
+
+// serves a session's requests once the encoder's tracks are ready, refusing any that arrive before
+type moqHandler struct{ p atomic.Pointer[moqPublisher] }
+
+func (h *moqHandler) HandleGoAway(*session.Session, *message.GoAway) {}
+
+func (h *moqHandler) HandleRequest(r *session.Request) {
+	if p := h.p.Load(); p != nil {
+		p.HandleRequest(r)
+		return
+	}
+	r.SetHandlers(&moqSubscription{done: make(chan struct{})}, nil)
+	_ = r.Reject(message.RequestNotSupported, reasonNotServed, 0)
+}
+
+func (p *moqPublisher) session(ctx context.Context, s *session.Session, cfg *Config) error {
+	// the publisher announces its namespace and serves the relay's SUBSCRIBEs and FETCHes until the session ends
 	req, err := s.Open(ctx, &message.PublishNamespace{Prefix: p.ns}, &moqSubscription{done: make(chan struct{})}, nil)
 	if err != nil {
 		return err
