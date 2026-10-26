@@ -17,6 +17,7 @@
 package engines
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -2584,6 +2585,14 @@ func TestDeltaProxyCacheUnmarshalingFailureRecovery(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 	o.FastForwardDisable = true
+	var originHits atomic.Int64
+	gate := make(chan struct{})
+	close(gate)
+	transport := o.HTTPClient.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	o.HTTPClient.Transport = &gatedTransport{inner: transport, gate: gate, hits: &originHits}
 	step := 300 * time.Second
 	end := time.Now().Add(-12 * time.Hour).Truncate(step)
 	start := end.Add(-18 * time.Hour)
@@ -2594,23 +2603,43 @@ func TestDeltaProxyCacheUnmarshalingFailureRecovery(t *testing.T) {
 
 	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", newProxyRequest(r, nil).DeriveCacheKey(""))
 
-	// Store a corrupted/unmarshalable body directly in the cache (simulating legacy or invalid msgpack)
 	corruptDoc := &HTTPDocument{
-		StatusCode: 200,
-		Body:       []byte{0xc1, 0xff, 0xfe}, // invalid msgpack byte sequence
+		StatusCode: http.StatusOK,
+		Body:       cachedDataSetWithLegacySeries(t, timeseries.Extent{Start: start, End: end}),
 	}
 	if err := WriteCache(r.Context(), rsc.CacheClient, key, corruptDoc, time.Hour, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	// Request should detect unmarshaling error, recover by removing corrupt cache, and fetch from origin
-	client.QueryRangeHandler(w, r)
-	res := w.Result()
-	if res.StatusCode != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", res.StatusCode)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, start, end, step)
+	var want any
+	if err := json.Unmarshal([]byte(expected), &want); err != nil {
+		t.Fatal(err)
 	}
-	if err := testResultHeaderPartMatch(res.Header, map[string]string{keys.Status: status.StatusKeyMiss}); err != nil {
-		t.Fatalf("expected kmiss on unmarshal recovery, got: %v", err)
+	for _, cacheStatus := range []string{status.StatusKeyMiss, status.StatusHit} {
+		client.QueryRangeHandler(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", w.Code)
+		}
+		if err := testResultHeaderPartMatch(w.Header(), map[string]string{keys.Status: cacheStatus}); err != nil {
+			t.Fatal(err)
+		}
+		var got any
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("%s response does not contain the complete expected series: got %s, want %s",
+				cacheStatus, w.Body.String(), expected)
+		}
+		if hits := originHits.Load(); hits != 1 {
+			t.Fatalf("expected one origin fetch after %s, got %d", cacheStatus, hits)
+		}
+		w = httptest.NewRecorder()
+	}
+	modeler := client.testModeler()
+	repaired, _, _, err := QueryCache(r.Context(), rsc.CacheClient, key, nil, modeler.CacheUnmarshaler)
+	if err != nil || repaired == nil || repaired.timeseries == nil {
+		t.Fatalf("expected the seeded cache entry to be repaired, got %v", err)
 	}
 }
-

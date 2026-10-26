@@ -558,6 +558,30 @@ func pickErrorWinner(results []gatherResult) *gatherResult {
 	return best
 }
 
+func forwardErrorResponse(w http.ResponseWriter, r *http.Request, winner *gatherResult, statusHeader string) {
+	if winner == nil {
+		failures.HandleBadGateway(w, r)
+		return
+	}
+	h := winner.rawHeader
+	if h == nil {
+		h = winner.header
+	}
+	if h != nil {
+		h = h.Clone()
+		h.Del(headers.NameContentLength)
+		h.Del(headers.NameTransferEncoding)
+		headers.Merge(w.Header(), h)
+	}
+	if statusHeader != "" {
+		w.Header().Set(headers.NameTricksterResult, statusHeader)
+	}
+	w.WriteHeader(winner.statusCode)
+	if len(winner.body) > 0 {
+		w.Write(winner.body)
+	}
+}
+
 // aggregateStatus collapses per-shard outcomes into the outbound response's
 // status code and trickster status header. When any shard returned 2xx, the
 // outbound code is the lowest 2xx seen (so 200 wins over 206); otherwise the
@@ -936,32 +960,8 @@ func (h *handler) serveStandard(
 		statusHeader = headers.MergeResultHeaderVals(statusHeader, "engine=ALB; status=phit")
 	}
 
-	// When all fanout members returned non-2xx errors, forward the winning error's
-	// status code, headers, and body directly to the client instead of attempting
-	// to marshal an empty accumulator or emitting a synthetic 502.
 	if !has2xx {
-		winner := pickErrorWinner(logicalResults)
-		if winner == nil {
-			failures.HandleBadGateway(w, r)
-			return
-		}
-		h := winner.rawHeader
-		if h == nil {
-			h = winner.header
-		}
-		if h != nil {
-			h = h.Clone()
-			h.Del("Content-Length")
-			h.Del("Transfer-Encoding")
-			headers.Merge(w.Header(), h)
-		}
-		if statusHeader != "" {
-			w.Header().Set(headers.NameTricksterResult, statusHeader)
-		}
-		w.WriteHeader(winner.statusCode)
-		if len(winner.body) > 0 {
-			w.Write(winner.body)
-		}
+		forwardErrorResponse(w, r, pickErrorWinner(logicalResults), statusHeader)
 		return
 	}
 
