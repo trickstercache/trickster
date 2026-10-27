@@ -54,11 +54,15 @@ Generated configuration is merged after all files and fragments, with the same d
 
 ### Renamed Backend Options
 
-This backend option was renamed. The former key is still accepted, and applies only when the
-current key is not set; configuration dumps show only the current key.
+These backend options were renamed. A former key is still accepted, and applies only when the
+current key is not set; configuration dumps show only the current key. Setting both
+`volatile_window` and `backfill_tolerance`, or both `volatile_window_points` and
+`backfill_tolerance_points`, fails validation.
 
 | Former key | Current key |
 |---|---|
+| `backfill_tolerance` | `volatile_window` |
+| `backfill_tolerance_points` | `volatile_window_points` |
 | `fastforward_ttl` | `partial_bucket_ttl` |
 
 ### Configuring Secrets or Sensitive Information
