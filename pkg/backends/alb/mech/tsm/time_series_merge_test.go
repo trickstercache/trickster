@@ -65,7 +65,7 @@ func TestHandleResponseMerge(t *testing.T) {
 
 	p, _, _ := albpool.New(0, nil)
 	defer p.Stop()
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -116,7 +116,7 @@ func TestTSMNonMergePathUsesFirstLiveMember(t *testing.T) {
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
 
-	h := &handler{mergePaths: []string{"/api/v1/query_range"}}
+	h := &handler{mergePaths: testMergePaths("/api/v1/query_range")}
 	h.SetPool(p)
 
 	for range 3 {
@@ -147,7 +147,7 @@ func TestTSMPanicMemberDoesNotCrashRequest(t *testing.T) {
 	rsc.IsMergeMember = true
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	albpool.ServeAndWait(t, h, w, r)
@@ -162,7 +162,7 @@ func TestTSMPanicAllMembersDoesNotCrashRequest(t *testing.T) {
 	rsc.IsMergeMember = true
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	albpool.RequireFanoutFailureDelta(t, "tsm", "", "panic", 2, func() {
@@ -224,7 +224,7 @@ func TestLimitQueryRangeALB(t *testing.T) {
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 1)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.queryParser = mockMemberBackend
 	h.SetPool(p)
 
@@ -319,7 +319,7 @@ func TestTSMNon2xxMemberDoesNotAttemptDecode(t *testing.T) {
 
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -366,7 +366,7 @@ func TestTSMAllMembers400DoesNotAttemptDecode(t *testing.T) {
 
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -462,7 +462,7 @@ func TestTSMAllMembersFailedMixedErrorsSurfaces4xx(t *testing.T) {
 
 	rsc := request.NewResources(nil, nil, nil, nil, nil, nil)
 	r := request.SetResources(albpool.NewParentGET(t), rsc)
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)

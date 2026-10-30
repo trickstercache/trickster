@@ -17,7 +17,9 @@
 package prometheus
 
 import (
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -77,5 +79,35 @@ func TestDefaultPathConfigs(t *testing.T) {
 func TestMergeablePaths(t *testing.T) {
 	if len(MergeablePaths()) != 6 {
 		t.Errorf("expected %d got %d", 6, len(MergeablePaths()))
+	}
+}
+
+func TestMergeablePathConfigs(t *testing.T) {
+	for _, prefix := range []string{"", "/prefix", "/v1/prometheus/"} {
+		t.Run(prefix, func(t *testing.T) {
+			c, err := NewClientWithHooks("merge", nil, nil, nil, Hooks{PathPrefix: prefix})
+			if err != nil {
+				t.Fatal(err)
+			}
+			routes := c.MergeablePathConfigs()
+			if len(routes) != 6 {
+				t.Fatalf("merge route count = %d, want 6", len(routes))
+			}
+			for _, route := range routes {
+				if !slices.Contains(c.MergeablePaths(), route.Path) || !strings.HasPrefix(route.Path, strings.TrimSuffix(prefix, "/")+APIPath) {
+					t.Errorf("unexpected merge route: %s", route.Path)
+				}
+				if !slices.Contains(route.Methods, http.MethodGet) {
+					t.Errorf("GET missing for %s", route.Path)
+				}
+			}
+		})
+	}
+	c, err := NewClientWithHooks("restricted", nil, nil, nil, Hooks{AllowedPaths: []string{APIPath + mnQuery}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if routes := c.MergeablePathConfigs(); len(routes) != 1 || routes[0].Path != APIPath+mnQuery {
+		t.Fatalf("restricted merge routes = %+v", routes)
 	}
 }

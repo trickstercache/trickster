@@ -19,6 +19,7 @@ package prometheus
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -106,6 +107,14 @@ func (c *Client) MergeablePaths() []string {
 		paths[i] = pathPrefix(c.hooks.PathPrefix) + paths[i]
 	}
 	return paths
+}
+
+// MergeablePathConfigs returns the supported merge routes and their HTTP methods.
+func (c *Client) MergeablePathConfigs() po.List {
+	paths := c.MergeablePaths()
+	return slices.DeleteFunc(c.DefaultPathConfigs(nil), func(p *po.Options) bool {
+		return p.HandlerName == handlerUnsupported || !slices.Contains(paths, p.Path)
+	})
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider

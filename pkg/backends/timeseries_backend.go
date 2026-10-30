@@ -85,6 +85,8 @@ type MergeableTimeseriesBackend interface {
 	// MergePaths should return a slice of HTTP Paths that are safe to merge with
 	// other requests of the same path (e.g.,   /api/v1/query_range in prometheus)
 	MergeablePaths() []string
+	// MergeablePathConfigs returns the routes and methods that support merging.
+	MergeablePathConfigs() po.List
 }
 
 var _ TimeseriesBackend = (*timeseriesBackend)(nil)

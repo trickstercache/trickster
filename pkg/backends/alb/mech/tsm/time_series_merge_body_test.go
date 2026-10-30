@@ -118,7 +118,7 @@ func TestHandleResponseMergeBody(t *testing.T) {
 			stubMergeHandler("beta", http.StatusOK),
 		})
 		defer p.Stop()
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		p.RefreshHealthy()
 
@@ -147,7 +147,7 @@ func TestHandleResponseMergeBody(t *testing.T) {
 			stubFailHandler(http.StatusInternalServerError),
 		})
 		defer p.Stop()
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		p.RefreshHealthy()
 
@@ -172,7 +172,7 @@ func TestHandleResponseMergeBody(t *testing.T) {
 			stubFailHandler(http.StatusBadGateway),
 		})
 		defer p.Stop()
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		p.RefreshHealthy()
 
@@ -219,7 +219,7 @@ func TestTSMMergeProxyOnlyBodyUsesTimeRangeQuery(t *testing.T) {
 		bodyOnlyHandler("proxy-only-b"),
 	})
 	defer p.Stop()
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	p.RefreshHealthy()
 

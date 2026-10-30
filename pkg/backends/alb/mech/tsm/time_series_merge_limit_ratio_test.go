@@ -184,7 +184,7 @@ func serveLimitRatio(t *testing.T, targets pool.Targets, query string,
 	p.RefreshHealthy()
 	t.Cleanup(p.Stop)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	for _, apply := range configure {
 		apply(h)
 	}

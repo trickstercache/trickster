@@ -464,12 +464,19 @@ define wait_ready
 	fi
 endef
 
+.PHONY: check-docker
+check-docker:
+	@docker info >/dev/null 2>&1 || { \
+		echo "Docker daemon is unavailable; start Docker and retry." >&2; exit 1; \
+	}
+
 .PHONY: developer-credentials
 developer-credentials:
 	@sh hack/developer-credentials.sh
 
 .PHONY: developer-start
-developer-start: developer-credentials
+developer-start: check-docker
+	@$(MAKE) developer-credentials
 	@echo "Starting developer environment with profiles: $(COMPOSE_PROFILES)"
 	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose up -d
 	@echo "Waiting for Redis to be ready..."
@@ -523,7 +530,7 @@ INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed
 	victoriametrics_seed
 
 .PHONY: integration-start
-integration-start:
+integration-start: check-docker
 	@mkdir -p $(COREDNS_ZONES)
 	@cp -f $(COMPOSE_ENV_DIR)/docker-compose-data/coredns/trickster.test.db.seed \
 		$(COREDNS_ZONES)/trickster.test.db

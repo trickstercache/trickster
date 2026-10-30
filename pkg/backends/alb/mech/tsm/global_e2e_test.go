@@ -135,7 +135,7 @@ func TestServeGlobalOverRemoteRead(t *testing.T) {
 	p := pool.New(pool.Targets{eastTarget, westTarget}, -1)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
-	h := &handler{mergePaths: []string{"/"}, tsmOptions: options.Options{
+	h := &handler{mergePaths: testMergePaths("/"), tsmOptions: options.Options{
 		Evaluation: options.EvaluationGlobal, ReplicaLabels: []string{e2eReplica},
 	}}
 	h.SetPool(p)
@@ -177,7 +177,7 @@ func TestServeGlobalResponseLimit(t *testing.T) {
 	p := pool.New(pool.Targets{target}, -1)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
-	h := &handler{mergePaths: []string{"/"}, maxCaptureBytes: 16, tsmOptions: options.Options{
+	h := &handler{mergePaths: testMergePaths("/"), maxCaptureBytes: 16, tsmOptions: options.Options{
 		Evaluation: options.EvaluationGlobal,
 	}}
 	h.SetPool(p)
@@ -205,7 +205,7 @@ func TestServeGlobalCachedOverRemoteRead(t *testing.T) {
 	t.Cleanup(func() { _ = c.Close() })
 	alb := conf.Backends["default"].Clone()
 	alb.Name = "cached-global"
-	h := &handler{name: alb.Name, mergePaths: []string{"/"}, tsmOptions: options.Options{
+	h := &handler{name: alb.Name, mergePaths: testMergePaths("/"), tsmOptions: options.Options{
 		Evaluation: options.EvaluationGlobal,
 	}}
 	h.SetPool(p)

@@ -82,6 +82,23 @@ func (c *Client) MergeablePaths() []string {
 	return out
 }
 
+// MergeablePathConfigs limits merging to the methods handled by the Prometheus hooks.
+func (c *Client) MergeablePathConfigs() po.List {
+	paths := c.Client.MergeablePathConfigs()
+	out := paths[:0]
+	for _, p := range paths {
+		if p.HandlerName == "alerts" {
+			continue
+		}
+		p.Methods = []string{http.MethodGet}
+		if p.HandlerName != "labels" || p.MatchType != matching.PathMatchTypePrefix {
+			p.Methods = append(p.Methods, http.MethodPost)
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 // ProxyHandler relays HTTP requests without caching.
 func (c *Client) ProxyHandler(w http.ResponseWriter, r *http.Request) {
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
