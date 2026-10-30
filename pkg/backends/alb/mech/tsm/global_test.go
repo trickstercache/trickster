@@ -152,7 +152,7 @@ func newGlobalTestPool(t *testing.T, evaluation string, buildErr error) globalTe
 	p := pool.New(targets, 0)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
-	tp.handler = &handler{mergePaths: []string{"/"}, tsmOptions: options.Options{
+	tp.handler = &handler{mergePaths: testMergePaths("/"), tsmOptions: options.Options{
 		Evaluation: evaluation, ReplicaLabels: []string{globalReplica},
 	}}
 	tp.handler.SetPool(p)

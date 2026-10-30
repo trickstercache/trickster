@@ -27,6 +27,7 @@ export QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING = 1
 TEST_TIMEOUT ?= 30m
 
 test:
+	@$(MAKE) -C .. check-docker
 	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 

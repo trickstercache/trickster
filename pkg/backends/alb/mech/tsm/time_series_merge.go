@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -62,9 +64,9 @@ const (
 
 type handler struct {
 	mech.PoolHolder
-	name                  string   // the ALB's backend name
-	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
-	outputFormat          string   // the provider output format (e.g., "prometheus")
+	name                  string      // the ALB's backend name
+	mergePaths            []mergePath // paths handled by the alb client that are enabled for tsmerge
+	outputFormat          string      // the provider output format (e.g., "prometheus")
 	tsmOptions            options.Options
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
@@ -91,6 +93,33 @@ type handler struct {
 	backendOptions *bo.Options
 	// identity is the current pool's namespace for cached global results
 	identity atomic.Pointer[globalIdentity]
+}
+
+type mergePath struct {
+	path        string
+	methods     []string
+	prefix      bool
+	labelValues bool
+}
+
+func (p mergePath) matches(method, path string) bool {
+	if !p.prefix {
+		if path != p.path {
+			return false
+		}
+	} else {
+		if !strings.HasPrefix(path, p.path) {
+			return false
+		}
+		// Label values are the only mergeable Prometheus prefix route.
+		if p.labelValues {
+			name, ok := strings.CutSuffix(path[len(p.path):], "/values")
+			if !ok || name == "" || strings.Contains(name, "/") {
+				return false
+			}
+		}
+	}
+	return len(p.methods) == 0 || slices.Contains(p.methods, method)
 }
 
 type mergeFinalizer interface {
@@ -146,7 +175,13 @@ func New(c Config, factories rt.Lookup) (types.Mechanism, error) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
 	// set the merge paths in the ALB client
-	out.mergePaths = mc2.MergeablePaths()
+	for _, route := range mc2.MergeablePathConfigs() {
+		out.mergePaths = append(out.mergePaths, mergePath{
+			path: route.Path, methods: route.Methods,
+			prefix:      route.MatchType == matching.PathMatchTypePrefix,
+			labelValues: strings.HasSuffix(route.Path, "/label/"),
+		})
+	}
 	out.outputFormat = c.OutputFormat
 	return out, nil
 }
@@ -288,7 +323,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defaultHandler := hl[0].Handler()
 	var isMergeablePath bool
 	for _, v := range h.mergePaths {
-		if strings.HasPrefix(r.URL.Path, v) {
+		if v.matches(r.Method, r.URL.Path) {
 			isMergeablePath = true
 			break
 		}

@@ -146,7 +146,7 @@ func TestServeQuantileGloballyFinalizesMergedInnerVector(t *testing.T) {
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 3)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newWeightedAvgRequest(t, query))
@@ -176,7 +176,7 @@ func TestServeQuantilePartialFanoutIsMarkedIncomplete(t *testing.T) {
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, newWeightedAvgRequest(t, "quantile(0.5, up)"))

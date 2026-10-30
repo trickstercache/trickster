@@ -455,7 +455,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		w := httptest.NewRecorder()
@@ -480,7 +480,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		p := newWeightedAvgPool([]http.Handler{standardPlanMemberHandler("10")})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "stddev(requests)"))
@@ -504,7 +504,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		p.RefreshHealthy()
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -539,7 +539,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		p.RefreshHealthy()
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, len(specs))
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -573,7 +573,7 @@ func TestServeWeightedAvg(t *testing.T) {
 			defer p.Stop()
 			albpool.WaitHealthy(t, p, 2)
 
-			h := &handler{mergePaths: []string{"/"}, maxCaptureBytes: 32}
+			h := &handler{mergePaths: testMergePaths("/"), maxCaptureBytes: 32}
 			h.SetPool(p)
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -608,7 +608,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -637,7 +637,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -673,7 +673,7 @@ func TestServeWeightedAvg(t *testing.T) {
 				),
 			})
 			albpool.WaitHealthy(t, p, 2)
-			h := &handler{mergePaths: []string{"/"}}
+			h := &handler{mergePaths: testMergePaths("/")}
 			h.SetPool(p)
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -704,7 +704,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		albpool.WaitHealthy(t, p, 2)
 		limit := 1
 		h := &handler{
-			mergePaths: []string{"/"},
+			mergePaths: testMergePaths("/"),
 			tsmOptions: options.Options{
 				ConcurrencyOptions: mechoptions.ConcurrencyOptions{QueryConcurrencyLimit: &limit},
 			},
@@ -728,7 +728,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 		h := &handler{
-			mergePaths:            []string{"/"},
+			mergePaths:            testMergePaths("/"),
 			maxCaptureBytes:       64,
 			maxFanoutCaptureBytes: 64,
 		}
@@ -766,7 +766,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -788,7 +788,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -809,7 +809,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		p := newWeightedAvgPool([]http.Handler{blocking, blocking})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		r := newWeightedAvgRequest(t, "avg(requests)")
 		ctx, cancel := context.WithCancel(r.Context())
@@ -840,7 +840,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		w := httptest.NewRecorder()
@@ -867,7 +867,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		w := httptest.NewRecorder()
@@ -896,7 +896,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		p := newWeightedAvgPool([]http.Handler{empty, empty})
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -926,7 +926,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		w := httptest.NewRecorder()
@@ -944,7 +944,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		r := albpool.NewParentGET(t)
@@ -972,7 +972,7 @@ func TestServeWeightedAvg(t *testing.T) {
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 2)
 
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 
 		const query = "topk(1, avg(requests))"
@@ -1069,7 +1069,7 @@ func TestServeWeightedAvgAuthorityErrors(t *testing.T) {
 			p := newWeightedAvgPool(members)
 			defer p.Stop()
 			albpool.WaitHealthy(t, p, len(members))
-			h := &handler{mergePaths: []string{"/"}}
+			h := &handler{mergePaths: testMergePaths("/")}
 			h.SetPool(p)
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, newWeightedAvgRequest(t, "avg(requests)"))
@@ -1129,7 +1129,7 @@ func BenchmarkServeMergePlan(b *testing.B) {
 			p := newWeightedAvgPool(benchmark.handlers)
 			defer p.Stop()
 			albpool.WaitHealthy(b, p, len(benchmark.handlers))
-			h := &handler{mergePaths: []string{"/"}}
+			h := &handler{mergePaths: testMergePaths("/")}
 			h.SetPool(p)
 			b.ReportAllocs()
 			b.ResetTimer()

@@ -33,7 +33,7 @@ func TestPoolWarningReachesMergedResponses(t *testing.T) {
 	st := &healthcheck.Status{}
 	st.Set(healthcheck.StatusPassing)
 	targets := pool.Targets{pool.NewTarget(stubMergeHandler("alpha", http.StatusOK), st, nil)}
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	serve := func(a pool.Alignment) string {
 		p := pool.NewAligned(targets, -1, a)
 		defer p.Stop()

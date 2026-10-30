@@ -502,7 +502,6 @@ services:
   # the UTC shift and schema conversions through /execute.
   questdb_seed:
     profiles: [questdb, all-providers, integration]
-    image: trickster-questdb-seed:dev
     build:
       context: ./docker-compose-data/questdb-config/seeding
     env_file:

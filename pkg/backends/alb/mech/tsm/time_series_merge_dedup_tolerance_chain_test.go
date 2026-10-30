@@ -104,7 +104,7 @@ func TestTSMServeStandardDedupToleranceChain(t *testing.T) {
 		})
 		defer p.Stop()
 		h := &handler{
-			mergePaths: []string{"/"},
+			mergePaths: testMergePaths("/"),
 			tsmOptions: options.Options{DedupToleranceMs: &tolMs},
 		}
 		h.SetPool(p)
@@ -152,7 +152,7 @@ func TestTSMServeStandardDedupToleranceChain(t *testing.T) {
 			tolerantStubHandler(1003, "2.0", "beta"),
 		})
 		defer p.Stop()
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		albpool.WaitHealthy(t, p, 2)
 

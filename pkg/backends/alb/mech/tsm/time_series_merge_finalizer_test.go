@@ -204,7 +204,7 @@ func TestServeStandardCallsMergeFinalizer(t *testing.T) {
 	defer p.Stop()
 	p.RefreshHealthy()
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 
 	req := newTestMergeRequest(t)
@@ -253,7 +253,7 @@ func TestServeStandardRewritesRankFanoutToInnerQuery(t *testing.T) {
 	defer p.Stop()
 	p.RefreshHealthy()
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 
 	req := newTestMergeRequest(t)
@@ -319,7 +319,7 @@ func TestServeStandardRankRewritePropagatesCancellationAndSkipsMerge(t *testing.
 	p.RefreshHealthy()
 
 	limit := 2
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.tsmOptions.ConcurrencyOptions.QueryConcurrencyLimit = &limit
 	h.SetPool(p)
 
@@ -383,7 +383,7 @@ func TestServeStandardMergesThroughSortWrapper(t *testing.T) {
 	defer p.Stop()
 	p.RefreshHealthy()
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 
 	req := newTestMergeRequest(t)

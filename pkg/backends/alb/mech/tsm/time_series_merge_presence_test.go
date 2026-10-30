@@ -141,7 +141,7 @@ func servePresence(t *testing.T, query string, members ...presenceMember) (*http
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
 
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 	req := newTestMergeRequest(t)
 	req.URL.RawQuery = "query=" + url.QueryEscape(query)

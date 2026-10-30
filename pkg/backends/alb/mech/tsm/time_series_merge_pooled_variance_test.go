@@ -142,7 +142,7 @@ func TestServePooledVariance(t *testing.T) {
 		p := newPooledVariancePool(specs, "replica")
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, len(specs))
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 
@@ -175,7 +175,7 @@ func TestServePooledVariance(t *testing.T) {
 		p := newPooledVariancePool(specs, "")
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, len(specs))
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "stdvar by (job) (requests)"))
@@ -201,7 +201,7 @@ func TestServePooledVariance(t *testing.T) {
 		p := newPooledVariancePool(specs, "")
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, len(specs))
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "stdvar by (job) (requests)"))
@@ -227,7 +227,7 @@ func TestServePooledVariance(t *testing.T) {
 		p := newPooledVariancePool(specs, "")
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, len(specs))
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "stdvar by (job) (requests)"))
@@ -247,7 +247,7 @@ func TestServePooledVariance(t *testing.T) {
 		p := newPooledVariancePool(specs, "")
 		defer p.Stop()
 		albpool.WaitHealthy(t, p, 1)
-		h := &handler{mergePaths: []string{"/"}}
+		h := &handler{mergePaths: testMergePaths("/")}
 		h.SetPool(p)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, newWeightedAvgRequest(t, "stddev by (job) (requests)"))
@@ -274,7 +274,7 @@ func BenchmarkServePooledVariance(b *testing.B) {
 	p := newPooledVariancePool(specs, "shard")
 	defer p.Stop()
 	albpool.WaitHealthy(b, p, len(specs))
-	h := &handler{mergePaths: []string{"/"}}
+	h := &handler{mergePaths: testMergePaths("/")}
 	h.SetPool(p)
 
 	for b.Loop() {

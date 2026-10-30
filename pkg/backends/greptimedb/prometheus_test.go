@@ -512,3 +512,27 @@ func TestPrometheusDropStaysInsideTheRange(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeablePathConfigs(t *testing.T) {
+	b, err := NewClient("merge", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.(*Client)
+	routes := c.MergeablePathConfigs()
+	if len(routes) != 5 {
+		t.Fatalf("merge route count = %d, want 5", len(routes))
+	}
+	for _, route := range routes {
+		if !slices.Contains(c.MergeablePaths(), route.Path) {
+			t.Errorf("unsupported merge route: %s", route.Path)
+		}
+		want := []string{http.MethodGet, http.MethodPost}
+		if strings.HasSuffix(route.Path, "/label/") {
+			want = []string{http.MethodGet}
+		}
+		if !slices.Equal(route.Methods, want) {
+			t.Errorf("%s methods = %v, want %v", route.Path, route.Methods, want)
+		}
+	}
+}

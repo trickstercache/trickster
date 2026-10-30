@@ -70,7 +70,7 @@ func TestHandlerRetireRetiresItsEvaluator(t *testing.T) {
 	p := pool.New(pool.Targets{pool.NewTarget(stubMergeHandler(globalMemberLive, http.StatusOK), status, backend)}, 0)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
-	h := &handler{mergePaths: []string{"/"}, tsmOptions: options.Options{Evaluation: options.EvaluationGlobal}}
+	h := &handler{mergePaths: testMergePaths("/"), tsmOptions: options.Options{Evaluation: options.EvaluationGlobal}}
 	h.SetPool(p)
 
 	w := serveGlobalTest(t, h, globalQueryPath)
