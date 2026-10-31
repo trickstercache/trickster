@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 )
 
 func TestOriginAuthHeader(t *testing.T) {
@@ -70,7 +71,7 @@ func TestOriginAuthInjection(t *testing.T) {
 		o := bo.New()
 		o.Graphite = gro.New()
 		o.Graphite.OriginUsername = user
-		o.Graphite.OriginPassword = pass
+		o.Graphite.OriginPassword = secret.Secret(pass)
 		return o
 	}
 

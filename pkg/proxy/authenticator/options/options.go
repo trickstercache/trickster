@@ -23,7 +23,6 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/files"
@@ -39,7 +38,7 @@ type Options struct {
 	ProxyPreserve   bool                        `yaml:"proxy_preserve"`
 	UsersFile       string                      `yaml:"users_file"`
 	UsersFileFormat types.CredentialsFileFormat `yaml:"users_file_format"`
-	Users           ct.EnvStringMap             `yaml:"users,omitempty"`
+	Users           map[string]string           `yaml:"users,omitempty"`
 	ProviderData    map[string]any              `yaml:"config"`
 	Authenticator   types.Authenticator         `yaml:"-"`
 }
@@ -72,7 +71,7 @@ func (o *Options) CloneYAMLSafe() *Options {
 		userNames = append(userNames, userName)
 	}
 	slices.Sort(userNames)
-	out.Users = make(ct.EnvStringMap, len(userNames))
+	out.Users = make(map[string]string, len(userNames))
 	for i := range userNames {
 		out.Users[fmt.Sprintf("user%d", i+1)] = redacted
 	}

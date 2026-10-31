@@ -174,7 +174,7 @@ func (p *provider) requestHeaders() map[string]string {
 	maps.Copy(out, p.http.Headers)
 	out[refreshIntervalHeader] = strconv.Itoa(int(p.interval().Seconds()))
 	if p.http.BearerToken != "" {
-		out["Authorization"] = "Bearer " + p.http.BearerToken
+		out["Authorization"] = "Bearer " + string(p.http.BearerToken)
 	}
 	return out
 }
@@ -257,7 +257,7 @@ func (s *subscription) decorate(_ context.Context, r *http.Request) error {
 		r.Header.Set("Authorization", "Bearer "+token)
 	}
 	if s.p.http.Username != "" {
-		r.SetBasicAuth(s.p.http.Username, s.p.http.Password)
+		r.SetBasicAuth(s.p.http.Username, string(s.p.http.Password))
 	}
 	s.mtx.Lock()
 	etag := s.etag

@@ -35,7 +35,6 @@ import (
 	trickstercache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -60,7 +59,7 @@ func validBackendOptions() *bo.Options {
 	o.OriginURL = "mysql://origin:origin-password@db.example/trickster"
 	o.AuthenticatorName = "mysql-clients"
 	o.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "client-password"},
+		Users: map[string]string{"client": "client-password"},
 	}
 	return o
 }
@@ -124,13 +123,13 @@ func TestProtocolConfigurationErrors(t *testing.T) {
 		{"observe only", func(o *bo.Options) { o.AuthOptions.ObserveOnly = true }, "cannot be observe_only"},
 		{"no users", func(o *bo.Options) { o.AuthOptions.Users = nil }, "has no users"},
 		{"empty username", func(o *bo.Options) {
-			o.AuthOptions.Users = configtypes.EnvStringMap{"": "password"}
+			o.AuthOptions.Users = map[string]string{"": "password"}
 		}, "cannot be empty"},
 		{"empty password", func(o *bo.Options) {
-			o.AuthOptions.Users = configtypes.EnvStringMap{"client": ""}
+			o.AuthOptions.Users = map[string]string{"client": ""}
 		}, "cannot be empty"},
 		{"password hash", func(o *bo.Options) {
-			o.AuthOptions.Users = configtypes.EnvStringMap{"client": "$2a$10$abcdefghijklmnopqrstuv"}
+			o.AuthOptions.Users = map[string]string{"client": "$2a$10$abcdefghijklmnopqrstuv"}
 		}, "requires a plaintext credential"},
 		{"missing users file", func(o *bo.Options) {
 			o.AuthOptions.UsersFile = "/definitely/not/a/mysql-users-file"

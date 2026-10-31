@@ -155,11 +155,10 @@ the environment.
 
 ### Secrets
 
-Credentials never go in a ConfigMap. The configuration expands `${VARIABLE}`
-in its credential-bearing fields, listed under
-[Configuring Secrets](./configuring.md#configuring-secrets-or-sensitive-information):
-authenticator users, a Redis `password`, a user router's `to_credential`, and
-header values in path, CORS, health check and discovery blocks. Mount a
+Credentials never go in a ConfigMap. Any configuration value can be a
+[`${VARIABLE}` reference](./configuring.md#environment-variable-references),
+such as authenticator users, a Redis `password`, a user router's
+`to_credential`, or a header value. Mount a
 Secret into the environment
 (`envFrom.secretRef` in `gateway-deployment.yaml`) and reference its keys.
 A container's environment is fixed at start, so a rotated Secret reaches

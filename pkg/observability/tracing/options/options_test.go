@@ -23,9 +23,14 @@ import (
 func TestNew(t *testing.T) {
 	o := New()
 	o.Endpoint = "test:1234"
+	o.Headers = map[string]string{"X-Key": "v"}
 	o2 := o.Clone()
 	if o2.Endpoint != "test:1234" {
 		t.Error("clone failed")
+	}
+	o2.Headers["X-Key"] = "changed"
+	if o.Headers["X-Key"] != "v" {
+		t.Error("clone shares the headers map")
 	}
 }
 

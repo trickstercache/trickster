@@ -37,7 +37,6 @@ import (
 	trickstercache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -63,7 +62,7 @@ func TestProtocolConfigFromOptions(t *testing.T) {
 	o.Timeout = 3_000_000_000
 	o.AuthenticatorName = "mysql-clients"
 	o.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "client-password"},
+		Users: map[string]string{"client": "client-password"},
 	}
 	config, err := ProtocolConfigFromOptions(o)
 	if err != nil {
@@ -133,7 +132,7 @@ func TestProtocolRestartKeyIncludesTransportSettings(t *testing.T) {
 	o.OriginURL = "mysql://origin:password@db.example/database"
 	o.AuthenticatorName = "mysql-auth"
 	o.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "client-password"},
+		Users: map[string]string{"client": "client-password"},
 	}
 	first, err := ProtocolConfigFromOptions(o)
 	if err != nil {
@@ -191,7 +190,7 @@ func TestProtocolRestartKeyIncludesTLSFileContents(t *testing.T) {
 	o := bo.New()
 	o.OriginURL = "mysql://origin:password@db.example/database"
 	o.AuthenticatorName = "mysql-auth"
-	o.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{"client": "client-password"}}
+	o.AuthOptions = &autho.Options{Users: map[string]string{"client": "client-password"}}
 	o.TLS.CertificateAuthorityPaths = []string{caPath}
 	first, err := ProtocolConfigFromOptions(o)
 	if err != nil {
@@ -242,7 +241,7 @@ func TestProtocolConfigRejectsIncompleteTLS(t *testing.T) {
 			o.OriginURL = "mysql://origin:password@db.example/database"
 			o.AuthenticatorName = "mysql-clients"
 			o.AuthOptions = &autho.Options{
-				Users: configtypes.EnvStringMap{"client": "client-password"},
+				Users: map[string]string{"client": "client-password"},
 			}
 			tc.configure(o)
 			_, err := ProtocolConfigFromOptions(o)
@@ -595,7 +594,7 @@ func TestProtocolConfigRejectsMissingCredentials(t *testing.T) {
 	o.OriginURL = "mysql://db.example/database"
 	o.AuthenticatorName = "mysql-clients"
 	o.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "client-password"},
+		Users: map[string]string{"client": "client-password"},
 	}
 	_, err := ProtocolConfigFromOptions(o)
 	if err == nil || !strings.Contains(err.Error(), "username") {
@@ -617,7 +616,7 @@ func TestProtocolConfigRejectsHashedAuthenticatorCredential(t *testing.T) {
 	o.OriginURL = "mysql://origin:password@db.example/database"
 	o.AuthenticatorName = "mysql-clients"
 	o.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "$2a$hashed-password"},
+		Users: map[string]string{"client": "$2a$hashed-password"},
 	}
 	_, err := ProtocolConfigFromOptions(o)
 	if err == nil || !strings.Contains(err.Error(), "plaintext credential") {

@@ -65,19 +65,48 @@ current key is not set; configuration dumps show only the current key. Setting b
 | `backfill_tolerance_points` | `volatile_window_points` |
 | `fastforward_ttl` | `partial_bucket_ttl` |
 
-### Configuring Secrets or Sensitive Information
+### Environment Variable References
 
-Trickster supports Environment variable substitution in its configuration file where sensitive information is expected.
-- Supported via the following fields:
-  - `caches[*].redis.password`, `backends[*].healthcheck.headers`, `backends[*].cors.headers`, `backends[*].paths[*].cors.headers`, `backends[*].paths[*].request_headers`, `backends[*].paths[*].request_params`, `backends[*].paths[*].response_headers`, `backends[*].alb.user_router.users[*].to_credential`, `authenticators[*].users`, `discovery[*].headers`
+Any value in a configuration file can reference an environment variable, whatever the field's type:
 
-Usage `${ENV_VAR_NAME}`, example:
 ```yaml
+frontend:
+  listen_port: ${TRK_PORT:-8480}
 caches:
   default:
+    provider: redis
     redis:
-      password: "${MY_REDIS_PW}"
+      endpoint: ${REDIS_HOST}:6379
+      password: "${MY_REDIS_PW:?the Redis password is required}"
+backends:
+  default:
+    max_ttl: ${MAX_TTL}
 ```
+
+| Form | Value |
+| --- | --- |
+| `${NAME}` | The value of `NAME`. If `NAME` is not set, see below. |
+| `${NAME:-default}` | The value of `NAME`, or `default` when `NAME` is unset or empty. |
+| `${NAME:?message}` | The value of `NAME`. When it is unset or empty, loading fails with an error that names `NAME` and includes `message`. |
+| `$${` | A literal `${`: `"$${NOT_A_VAR}"` loads as `${NOT_A_VAR}`. |
+
+- **Unset variables.** When a value is just `${NAME}` and `NAME` is not set, the setting is left unset, so it keeps its default. Inside a longer value, or as an item in a list, an unset variable expands to an empty string. Trickster logs a warning naming each unset variable at startup.
+- **Types.** An unquoted reference takes the type of what it expands to, so `listen_port: ${PORT}` loads as a number and `enabled: ${ON}` as a boolean. Quoting the reference (`"${PORT}"`) always makes it a string. A value that expands to `null` or `~` stays a string. Inside a `[...]` or `{...}` flow collection, YAML requires the reference to be quoted.
+- **Names.** Only the braced form is expanded, and only for valid variable names (letters, digits and `_`, not starting with a digit). A bare `$`, as in `$NAME` or a bcrypt hash like `$2y$10$...`, is kept as written. Defaults and messages are literal text and cannot contain `${` or `}`.
+- **Single pass.** A variable's value is used as is; a `${...}` inside it is not expanded again.
+- **Keys.** Mapping keys, such as backend and cache names, are never expanded.
+- **Request rewriters.** In `request_rewriters[*].instructions`, `${0}`, `${1}` and `${name}` are the rewriter's own capture tokens. There, only variables whose names start with `TRK_` are expanded, such as `${TRK_ORIGIN_DOMAIN}`, and every other `${...}` is left for the rewriter.
+- **Kubernetes.** Configuration that the Gateway/Ingress controller generates from cluster objects is never expanded, so a route cannot read Trickster's environment.
+
+### Configuring Secrets or Sensitive Information
+
+Supply credentials through environment variable references rather than writing them into the file. Credential fields are redacted wherever Trickster shows its configuration, such as the management config endpoint:
+- `<secret>` replaces these: `caches[*].redis.password`, `backends[*].alb.user_router.users[*].to_credential`, `backends[*].graphite.origin_password` and `origin_authorization`, `discovery[*].http.password` and `bearer_token`, and the other fields that hold keys and tokens.
+- `*****` replaces these:
+  - every value of `discovery[*].http.headers` and `tracing[*].headers`
+  - path, CORS and health check header and `request_params` values whose names look like credentials (`Authorization`, `Cookie`, or a name containing `token`, `key`, `secret`, `password` or `auth`, for example)
+  - authenticator `users`
+  - passwords embedded in URLs
 
 ## Environment Variables
 

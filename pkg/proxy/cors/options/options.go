@@ -48,8 +48,8 @@ const corsHeaderPrefix = "access-control-"
 
 // Options defines a CORS response-header policy.
 type Options struct {
-	Mode    Mode               `yaml:"mode,omitempty"`
-	Headers types.EnvStringMap `yaml:"headers,omitempty"`
+	Mode    Mode              `yaml:"mode,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 	legacy  bool
 }
 
@@ -85,7 +85,7 @@ func (o *Options) Initialize(_ string) error {
 		o.Mode = ModeReplace
 	}
 	if o.Headers == nil && o.Mode != ModeDisable {
-		o.Headers = make(types.EnvStringMap)
+		o.Headers = make(map[string]string)
 	}
 	return nil
 }
