@@ -29,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
@@ -44,7 +43,7 @@ func mysqlBackend(listenerName string) *bo.Options {
 	backend.OriginURL = "mysql://user:password@example.com/database"
 	backend.AuthenticatorName = "mysql-auth"
 	backend.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "password"},
+		Users: map[string]string{"client": "password"},
 	}
 	return backend
 }
@@ -218,7 +217,7 @@ func TestListenersWarningsAndProtocolValidation(t *testing.T) {
 		}
 		backend.AuthenticatorName = "mysql-listener-clients"
 		backend.AuthOptions = &autho.Options{
-			Users: configtypes.EnvStringMap{"client": "password"},
+			Users: map[string]string{"client": "password"},
 		}
 		target := mysqlBackend("")
 		c.Backends = bo.Lookup{"mysql-users": backend, "mysql-a": target}
@@ -271,7 +270,7 @@ func TestListenersWarningsAndProtocolValidation(t *testing.T) {
 			routerBackend.ListenerName = "mysql1"
 			routerBackend.AuthenticatorName = "mysql-listener-clients"
 			routerBackend.AuthOptions = &autho.Options{
-				Users: configtypes.EnvStringMap{"client": "password"},
+				Users: map[string]string{"client": "password"},
 			}
 			routerBackend.ALBOptions = ao.New()
 			routerBackend.ALBOptions.MechanismName = "ur"
@@ -947,7 +946,7 @@ func TestPostgresListenerServesEveryPostgresProvider(t *testing.T) {
 		t.Fatalf("expected a user router without listener-facing users to be rejected, got %v", err)
 	}
 	router.AuthenticatorName = "pg-clients"
-	router.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{"client": "password"}}
+	router.AuthOptions = &autho.Options{Users: map[string]string{"client": "password"}}
 	routed := postgresListenerConfig(router)
 	if err := Listeners(routed); err == nil || !strings.Contains(err.Error(), "references missing backend") {
 		t.Fatalf("expected the missing target to be rejected, got %v", err)

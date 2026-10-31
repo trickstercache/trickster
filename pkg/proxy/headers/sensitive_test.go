@@ -69,3 +69,24 @@ func TestIsSensitive(t *testing.T) {
 		}
 	}
 }
+
+func TestIsSensitiveName(t *testing.T) {
+	for _, name := range []string{
+		NameAuthorization, "X-Consul-Token", "x-vault-token", "api_key", "client_secret",
+		"Password", "X-Session-ID", "sig_signature",
+	} {
+		if !IsSensitiveName(name) {
+			t.Errorf("%s must be sensitive", name)
+		}
+	}
+	for _, name := range []string{NameUserAgent, "X-Served-By", "Access-Control-Allow-Origin", ""} {
+		if IsSensitiveName(name) {
+			t.Errorf("%q must not be sensitive", name)
+		}
+	}
+	params := map[string]string{"token": "t", "tenant": "a"}
+	HideAuthorizationCredentials(params)
+	if params["token"] != redactedValue || params["tenant"] != "a" {
+		t.Errorf("unexpected redaction %v", params)
+	}
+}

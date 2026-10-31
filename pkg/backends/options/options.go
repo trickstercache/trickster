@@ -1240,15 +1240,8 @@ func (o *Options) CloneYAMLSafe() *Options {
 		w.Handler = nil
 		w.KeyHasher = nil
 		headers.HideAuthorizationCredentials(w.RequestHeaders)
+		headers.HideAuthorizationCredentials(w.RequestParams)
 		headers.HideAuthorizationCredentials(w.ResponseHeaders)
-	}
-	if co.Graphite != nil {
-		if co.Graphite.OriginPassword != "" {
-			co.Graphite.OriginPassword = "*****"
-		}
-		if co.Graphite.OriginAuthorization != "" {
-			co.Graphite.OriginAuthorization = "*****"
-		}
 	}
 	if co.HealthCheck != nil {
 		// also strip out potentially sensitive headers

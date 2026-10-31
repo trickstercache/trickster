@@ -40,6 +40,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
@@ -110,14 +111,14 @@ type HTTPOptions struct {
 	// Headers are set on every request. Registries whose credential is a
 	// bespoke header (Consul's X-Consul-Token, Nomad's X-Nomad-Token) use
 	// this rather than a per-provider field.
-	Headers types.EnvStringMap `yaml:"headers,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 	// Username and Password form a static HTTP Basic credential; mutually
 	// exclusive with the bearer-token fields
-	Username string `yaml:"username,omitempty"`
-	Password string `yaml:"password,omitempty"`
+	Username string        `yaml:"username,omitempty"`
+	Password secret.Secret `yaml:"password,omitempty"`
 	// BearerToken is sent as 'Authorization: Bearer <token>'; mutually
 	// exclusive with username/password and with BearerTokenFile
-	BearerToken string `yaml:"bearer_token,omitempty"`
+	BearerToken secret.Secret `yaml:"bearer_token,omitempty"`
 	// BearerTokenFile is a path read for the bearer token before each poll,
 	// so that a rotated credential (a Vault-issued Consul token, a
 	// projected kubernetes service-account token) is picked up without a

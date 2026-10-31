@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -102,7 +101,7 @@ func TestCloneCopiesSlicesAndMaps(t *testing.T) {
 	o := &Options{
 		Verb:            "GET",
 		ExpectedCodes:   []int{200},
-		Headers:         ct.EnvStringMap{"X-Test": "1"},
+		Headers:         map[string]string{"X-Test": "1"},
 		ExpectedHeaders: map[string]string{headers.NameContentType: "text/plain"},
 	}
 	cl := o.Clone()

@@ -21,7 +21,6 @@ import (
 	"maps"
 	"net/http"
 
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
@@ -239,7 +238,7 @@ func (a *Authenticator) LoadUsersFromMap(users esLookup) {
 	a.users = users.ToCredentialsManifest()
 }
 
-type esLookup ct.EnvStringMap
+type esLookup map[string]string
 
 func (l esLookup) ToCredentialsManifest() types.CredentialsManifest {
 	out := make(types.CredentialsManifest, len(l))

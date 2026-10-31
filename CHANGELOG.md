@@ -8,6 +8,20 @@ Each minor release also has a narrative overview in `docs/new-changed-<version>.
 
 ## [Unreleased]
 
+### Added
+
+- Any value in a configuration file can reference an environment variable, whatever its type, with `${NAME}`, `${NAME:-default}` or `${NAME:?message}`. A value that is only a reference to an unset variable leaves the setting at its default. See [Environment Variable References](./docs/configuring.md#environment-variable-references).
+
+### Changed
+
+- A literal `${` in a configuration value now needs to be written `$${`. Inside `request_rewriters` instructions, only `TRK_`-prefixed variables are expanded, so capture tokens like `${1}` and `${site}` are unchanged.
+- The config view shows `<secret>` instead of `*****` for a Redis `password` and the Graphite `origin_password` and `origin_authorization`.
+
+### Fixed
+
+- `${VAR}` references were never expanded, even in the fields documented to support them, such as a Redis `password` or authenticator `users`.
+- The config view showed a user router's `to_credential`, discovery `password`, `bearer_token` and headers, tracing headers and credential-named `request_params` in plain text.
+
 ## [2.2.0] - 2026-10-26
 
 See [What's New in Trickster 2.2](./docs/new-changed-2.2.md) for an overview.

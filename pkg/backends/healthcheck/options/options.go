@@ -62,7 +62,7 @@ type Options struct {
 	// Query provides the HTTP query parameters to use when making an upstream health check
 	Query string `yaml:"query,omitempty"`
 	// Headers provides the HTTP Headers to apply when making an upstream health check
-	Headers types.EnvStringMap `yaml:"headers,omitempty"`
+	Headers map[string]string `yaml:"headers,omitempty"`
 	// Body provides a body to apply when making an upstream health check request
 	Body string `yaml:"body,omitempty"`
 	// Timeout is the amount of time a health check probe should wait for a response
@@ -135,7 +135,7 @@ func (o *Options) Validate() (bool, error) {
 func (o *Options) Clone() *Options {
 	c := pointers.Clone(o)
 	if o.Headers != nil {
-		c.Headers = types.EnvStringMap(headers.Lookup(o.Headers).Clone())
+		c.Headers = map[string]string(headers.Lookup(o.Headers).Clone())
 	}
 	if o.ExpectedHeaders != nil {
 		c.ExpectedHeaders = headers.Lookup(o.ExpectedHeaders).Clone()

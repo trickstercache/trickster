@@ -21,6 +21,7 @@ import (
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
@@ -33,11 +34,11 @@ type Options struct {
 	TimeZone string `yaml:"time_zone,omitempty"`
 	// OriginUsername and OriginPassword form a static HTTP Basic credential
 	// every request to the origin carries, proxied and synthetic alike
-	OriginUsername string `yaml:"origin_username,omitempty"`
-	OriginPassword string `yaml:"origin_password,omitempty"`
+	OriginUsername string        `yaml:"origin_username,omitempty"`
+	OriginPassword secret.Secret `yaml:"origin_password,omitempty"`
 	// OriginAuthorization is a verbatim Authorization header value (e.g.,
 	// 'Bearer <token>'); mutually exclusive with OriginUsername/OriginPassword
-	OriginAuthorization string `yaml:"origin_authorization,omitempty"`
+	OriginAuthorization secret.Secret `yaml:"origin_authorization,omitempty"`
 	// PassthroughMaxDataPoints forwards the client's maxDataPoints to the origin
 	// instead of consolidating in Trickster; such requests are not accelerated
 	PassthroughMaxDataPoints bool `yaml:"passthrough_max_data_points,omitempty"`

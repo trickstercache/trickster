@@ -18,6 +18,7 @@ package headers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -30,20 +31,42 @@ var sensitiveCredentials = sets.New([]string{
 	NameXAPIKey, NameAPIKey, NameXGoogAPIKey, NameXAmzSecurityToken,
 })
 
+// sensitiveNameParts mark a configured header or parameter name, such as X-Consul-Token or
+// api_key, whose value config views redact although it is not a well-known credential header
+var sensitiveNameParts = []string{
+	"auth", "token", "secret", "password", "passwd", "key", "credential", "cookie", "session",
+	"signature",
+}
+
 // IsSensitive reports whether the named header carries a credential.
 func IsSensitive(name string) bool {
 	_, ok := sensitiveCredentials[http.CanonicalHeaderKey(name)]
 	return ok
 }
 
-// HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
-// asterisks sensitive headers are defined in the sensitiveCredentials map
+// IsSensitiveName reports whether a configured header or parameter name likely carries a
+// credential: a well-known credential header, or a name containing a part like "token".
+func IsSensitiveName(name string) bool {
+	if IsSensitive(name) {
+		return true
+	}
+	name = strings.ToLower(name)
+	for _, part := range sensitiveNameParts {
+		if strings.Contains(name, part) {
+			return true
+		}
+	}
+	return false
+}
+
+// HideAuthorizationCredentials replaces, with 5 asterisks, each value in a configured header
+// or parameter map whose name IsSensitiveName reports as carrying a credential.
 func HideAuthorizationCredentials[m ~map[K]V, K ~string, V ~string](headers m) {
 	// keys match canonically behind any '+'/'-' update operator; an empty
 	// value carries no credential (it can declare an opt-out) and is preserved
 	for k, v := range headers {
 		_, name := ParseUpdateKey(string(k))
-		if IsSensitive(name) && v != "" {
+		if IsSensitiveName(name) && v != "" {
 			headers[k] = redactedValue
 		}
 	}

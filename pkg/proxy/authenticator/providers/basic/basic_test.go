@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	pkgerrors "github.com/trickstercache/trickster/v2/pkg/errors"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
@@ -109,7 +108,7 @@ func TestRemoveUser(t *testing.T) {
 
 func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	a := &Authenticator{}
-	users := ct.EnvStringMap{
+	users := map[string]string{
 		testUser1: bcryptHash(testUser1p),
 		testUser2: bcryptHash(testUser2p),
 	}
@@ -126,7 +125,7 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	}
 
 	// Now replace with LoadUsersFromMap and test
-	newUsers := ct.EnvStringMap{
+	newUsers := map[string]string{
 		testUser3: bcryptHash(testUser3p),
 	}
 	a.LoadUsersFromMap(esLookup(newUsers))
@@ -158,7 +157,7 @@ func TestAuthenticateRejectsStoredHashAsPassword(t *testing.T) {
 func TestAddUsersFromMap_Encrypted(t *testing.T) {
 	a := &Authenticator{}
 	hash := bcryptHash(testUser1p)
-	users := ct.EnvStringMap{
+	users := map[string]string{
 		testUser1: hash,
 	}
 	a.AddUsersFromMap(esLookup(users)) // already encrypted (bcrypt hash)
@@ -255,7 +254,7 @@ func TestNewPtr(t *testing.T) {
 
 	opts := authopt.New()
 	opts.Name = "default-realm"
-	opts.Users = ct.EnvStringMap{testUser1: bcryptHash(testUser1p)}
+	opts.Users = map[string]string{testUser1: bcryptHash(testUser1p)}
 	a, err := NewPtr(map[string]any{"options": opts})
 	if err != nil {
 		t.Fatalf("NewPtr: %v", err)
@@ -269,7 +268,7 @@ func TestNewPtr(t *testing.T) {
 		showLoginFormField: true,
 		realmField:         "Protected Area",
 	}
-	opts.Users = ct.EnvStringMap{testUser1: bcryptHash(testUser1p)}
+	opts.Users = map[string]string{testUser1: bcryptHash(testUser1p)}
 	a, err = NewPtr(map[string]any{"options": opts})
 	if err != nil {
 		t.Fatalf("NewPtr with login form: %v", err)

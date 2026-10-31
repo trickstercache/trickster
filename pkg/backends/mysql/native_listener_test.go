@@ -32,7 +32,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
@@ -431,7 +430,7 @@ func routedRestartTestConfig() *config.Config {
 	}
 	router.AuthenticatorName = "mysql-listener-clients"
 	router.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"alice": "alice-password"},
+		Users: map[string]string{"alice": "alice-password"},
 	}
 
 	newTarget := func(name string) *bo.Options {
@@ -441,7 +440,7 @@ func routedRestartTestConfig() *config.Config {
 		target.OriginURL = "mysql://origin:password@127.0.0.1/database"
 		target.AuthenticatorName = "mysql-clients"
 		target.AuthOptions = &autho.Options{
-			Users: configtypes.EnvStringMap{"alice": "alice-password"},
+			Users: map[string]string{"alice": "alice-password"},
 		}
 		return target
 	}

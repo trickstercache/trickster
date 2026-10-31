@@ -215,7 +215,7 @@ func (p *provider) staticHeaders() map[string]string {
 	out := make(map[string]string, len(p.http.Headers)+1)
 	maps.Copy(out, p.http.Headers)
 	if p.http.BearerToken != "" {
-		out["Authorization"] = "Bearer " + p.http.BearerToken
+		out["Authorization"] = "Bearer " + string(p.http.BearerToken)
 	}
 	return out
 }
@@ -301,7 +301,7 @@ func (s *subscription) decorate(_ context.Context, r *http.Request) error {
 		r.Header.Set("Authorization", "Bearer "+token)
 	}
 	if s.p.http.Username != "" {
-		r.SetBasicAuth(s.p.http.Username, s.p.http.Password)
+		r.SetBasicAuth(s.p.http.Username, string(s.p.http.Password))
 	}
 	v := make(url.Values, len(s.base)+2)
 	maps.Copy(v, s.base)

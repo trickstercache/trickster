@@ -23,7 +23,6 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -87,11 +86,11 @@ func TestWithResourcesContextFinalizesCORSWithoutWrite(t *testing.T) {
 
 func TestWithResourcesContextKeepsClientFacingCORSAcrossNestedRoute(t *testing.T) {
 	outer := bo.New()
-	outer.CORS = &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+	outer.CORS = &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 		headers.NameAllowOrigin: "https://public.example.com",
 	}}
 	inner := bo.New()
-	inner.CORS = &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+	inner.CORS = &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 		headers.NameAllowOrigin: "https://member.example.com",
 	}}
 
