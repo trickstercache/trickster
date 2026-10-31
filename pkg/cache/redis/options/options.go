@@ -19,8 +19,8 @@ package options
 import (
 	"slices"
 
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -38,7 +38,7 @@ type Options struct {
 	// Username can be set when using a password protected redis instance.
 	Username string `yaml:"username,omitempty"`
 	// Password can be set when using a password protected redis instance.
-	Password types.EnvString `yaml:"password,omitempty"`
+	Password secret.Secret `yaml:"password,omitempty"`
 	// SentinelMaster should be set when using Redis Sentinel to indicate the Master Node
 	SentinelMaster string `yaml:"sentinel_master,omitempty"`
 	// DB is the Database to be selected after connecting to the server.

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -48,7 +47,7 @@ func TestApply(t *testing.T) {
 		},
 		{
 			name: "merge",
-			options: &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
+			options: &corso.Options{Mode: corso.ModeMerge, Headers: map[string]string{
 				headers.NameAllowOrigin:            "https://trickster.example.com",
 				"-" + headers.NameAllowCredentials: "",
 				headers.NameExposeHeaders:          headers.NameTricksterResult,
@@ -58,14 +57,14 @@ func TestApply(t *testing.T) {
 		},
 		{
 			name: "replace",
-			options: &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+			options: &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 				headers.NameAllowOrigin: "https://trickster.example.com",
 			}},
 			wantOrigin: "https://trickster.example.com",
 		},
 		{
 			name: "empty mode defaults to replace",
-			options: &corso.Options{Headers: types.EnvStringMap{
+			options: &corso.Options{Headers: map[string]string{
 				headers.NameAllowOrigin: "https://trickster.example.com",
 			}},
 			wantOrigin: "https://trickster.example.com",
@@ -108,7 +107,7 @@ func TestApplyAppendHeader(t *testing.T) {
 	h := http.Header{
 		strings.ToLower(headers.NameExposeHeaders): {"X-Origin-Expose"},
 	}
-	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
+	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: map[string]string{
 		"+" + headers.NameExposeHeaders: headers.NameTricksterResult,
 	}})
 	got := strings.Join(h.Values(headers.NameExposeHeaders), ",")
@@ -125,7 +124,7 @@ func TestApplySkipsInvalidHeaderNames(t *testing.T) {
 	h := http.Header{
 		headers.NameAllowOrigin: {"https://origin.example.com"},
 	}
-	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: types.EnvStringMap{
+	Apply(h, &corso.Options{Mode: corso.ModeMerge, Headers: map[string]string{
 		"":                      "ignored",
 		"+":                     "ignored",
 		"-":                     "ignored",
@@ -172,7 +171,7 @@ func TestResponseWriterFinalizesWithoutWrite(t *testing.T) {
 
 func TestResponseWriterAllowsInformationalBeforeFinalStatus(t *testing.T) {
 	w := &statusResponseWriter{header: make(http.Header)}
-	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 		headers.NameAllowOrigin: "https://trickster.example.com",
 	}})
 	cw.WriteHeader(http.StatusEarlyHints)
@@ -215,7 +214,7 @@ func TestResponseWriterUnwrap(t *testing.T) {
 
 func TestResponseWriterIgnoresDuplicateWriteHeader(t *testing.T) {
 	w := &statusResponseWriter{header: make(http.Header)}
-	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 		headers.NameAllowOrigin: "https://trickster.example.com",
 	}})
 	cw.WriteHeader(http.StatusOK)
@@ -227,7 +226,7 @@ func TestResponseWriterIgnoresDuplicateWriteHeader(t *testing.T) {
 
 func TestResponseWriterFinalizeThenWriteHeader(t *testing.T) {
 	w := &statusResponseWriter{header: make(http.Header)}
-	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: types.EnvStringMap{
+	cw := Wrap(w, &corso.Options{Mode: corso.ModeReplace, Headers: map[string]string{
 		headers.NameAllowOrigin: "https://trickster.example.com",
 	}})
 	w.header.Set(headers.NameAllowOrigin, "https://origin.example.com")

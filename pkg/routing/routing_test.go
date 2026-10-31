@@ -49,7 +49,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
@@ -918,7 +917,7 @@ func TestGreptimeDBRoutesOnlyOnHTTPListeners(t *testing.T) {
 		conf := config.NewConfig()
 		o := bo.New()
 		o.Provider, o.OriginURL = providers.GreptimeDB, origin.URL+"/prefix"
-		o.AuthOptions = &autho.Options{ProxyPreserve: true, Users: configtypes.EnvStringMap{"grafana": "client-password"}}
+		o.AuthOptions = &autho.Options{ProxyPreserve: true, Users: map[string]string{"grafana": "client-password"}}
 		auth, err := basic.New(map[string]any{"options": o.AuthOptions})
 		if err != nil {
 			t.Fatal(err)
@@ -1018,7 +1017,7 @@ func TestAuthenticatorRunsBeforeRewriters(t *testing.T) {
 	oo.Hosts = []string{host}
 	oo.AuthOptions = &autho.Options{
 		Name: "client-auth", Provider: basic.ID,
-		Users: configtypes.EnvStringMap{user: password},
+		Users: map[string]string{user: password},
 	}
 	if oo.AuthOptions.Authenticator, err = basic.New(map[string]any{"options": oo.AuthOptions}); err != nil {
 		t.Fatal(err)

@@ -31,7 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -79,7 +78,7 @@ func configTestOptions() *bo.Options {
 	o := bo.New()
 	o.Name, o.Provider, o.OriginURL = configTestName, providers.TimescaleDB, configTestOriginURL
 	o.AuthenticatorName = configTestAuthName
-	o.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{testClientUser: testClientPass}}
+	o.AuthOptions = &autho.Options{Users: map[string]string{testClientUser: testClientPass}}
 	return o
 }
 

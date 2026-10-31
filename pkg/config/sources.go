@@ -134,6 +134,9 @@ func configIncludeDirectoryFromYAML(data []byte) (*string, error) {
 	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
 		return nil, nil
 	}
+	if _, err := newEnvExpander().expandDocument(document); err != nil {
+		return nil, err
+	}
 	metadata := configMetadata{}
 	if err := document.Decode(&metadata); err != nil {
 		return nil, err
@@ -243,14 +246,19 @@ func readConfigSource(path string) (configSource, error) {
 	return configSource{path: path, data: data, modTime: info.ModTime()}, nil
 }
 
+// mergeConfigSources merges the file sources, each with its environment references expanded,
+// then the overlay, which is never expanded since it may hold values from Kubernetes objects.
 func mergeConfigSources(plan configSourcePlan, sources []configSource,
-	overlay *Overlay,
+	overlay *Overlay, expander *envExpander,
 ) ([]byte, error) {
 	merged := emptyConfigDocument()
 	for index, source := range sources {
 		document, err := parseConfigDocument(source.data)
 		if err != nil {
 			return nil, fmt.Errorf("parse config source %q: %w", source.path, err)
+		}
+		if _, err := expander.expandDocument(document); err != nil {
+			return nil, fmt.Errorf("config source %q: %w", source.path, err)
 		}
 		if err := validateReservedNames(document.Content[0]); err != nil {
 			return nil, fmt.Errorf("config source %q: %w", source.path, err)

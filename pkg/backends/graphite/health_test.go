@@ -26,6 +26,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 
 	"github.com/stretchr/testify/require"
 )
@@ -111,7 +112,7 @@ func TestFinalizeHealthCheckOptionsCasingCollisions(t *testing.T) {
 	newClient := func(t *testing.T, originAuth string) *Client {
 		o := bo.New()
 		o.Graphite = gro.New()
-		o.Graphite.OriginAuthorization = originAuth
+		o.Graphite.OriginAuthorization = secret.Secret(originAuth)
 		b, err := NewClient("test", o, nil, nil, nil, nil)
 		require.NoError(t, err)
 		return b.(*Client)

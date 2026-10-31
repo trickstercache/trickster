@@ -77,11 +77,9 @@ backends:
           tenant_a_reader:
             to_backend: tenant-a-mysql
             to_user: ""
-            to_credential: ""
           tenant_b_reader:
             to_backend: tenant-b-mysql
             to_user: ""
-            to_credential: ""
     tls: {}
     forwarded_headers: standard
     authenticator_name: mysql-tenants

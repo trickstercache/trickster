@@ -53,7 +53,11 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-const defaultResourceName = "default"
+const (
+	defaultResourceName = "default"
+	// redactedValue replaces a credential-bearing header value in the config view
+	redactedValue = "*****"
+)
 
 // Config is the main configuration object
 type Config struct {
@@ -187,8 +191,9 @@ func (c *Config) loadFile(flags *Flags, overlay *Overlay) error {
 		plan, sources = configSourcePlan{}, nil
 	}
 	var configData []byte
+	expander := newEnvExpander()
 	if plan.mode == configSourceModeDirectory || len(sources) != 1 || !overlay.IsEmpty() {
-		configData, err = mergeConfigSources(plan, sources, overlay)
+		configData, err = mergeConfigSources(plan, sources, overlay, expander)
 		if err != nil {
 			return err
 		}
@@ -198,13 +203,24 @@ func (c *Config) loadFile(flags *Flags, overlay *Overlay) error {
 		if err != nil {
 			return fmt.Errorf("parse config source %q: %w", sources[0].path, err)
 		}
+		changed, err := expander.expandDocument(document)
+		if err != nil {
+			return fmt.Errorf("config source %q: %w", sources[0].path, err)
+		}
 		if err := validateReservedNames(document.Content[0]); err != nil {
 			return fmt.Errorf("config source %q: %w", sources[0].path, err)
+		}
+		// the source text is kept unless expansion changed it, so decode errors cite its lines
+		if changed {
+			if configData, err = yamlencoding.Marshal(document); err != nil {
+				return fmt.Errorf("config source %q: %w", sources[0].path, err)
+			}
 		}
 	}
 	if err := c.loadYAMLConfig(string(configData)); err != nil {
 		return err
 	}
+	c.LoaderWarnings = append(c.LoaderWarnings, expander.warnings()...)
 	if c.Main == nil {
 		c.Main = &MainConfig{}
 	}
@@ -558,23 +574,17 @@ func (c *Config) String() string {
 		cp.Authenticators[k] = o.CloneYAMLSafe()
 	}
 
-	// strip Redis and Valkey passwords
-	for _, v := range cp.Caches {
-		if v == nil {
-			continue
-		}
-		if v.Redis != nil && v.Redis.Password != "" {
-			v.Redis.Password = "*****"
-		}
-		if v.Valkey != nil && v.Valkey.Password != "" {
-			v.Valkey.Password = "*****"
+	// credential fields are secret.Secret values that redact themselves; discovery and tracing
+	// headers exist to carry registry and exporter credentials, so all of their values are hidden
+	for _, o := range cp.Discovery {
+		if o != nil && o.HTTP != nil {
+			redactValues(o.HTTP.Headers)
 		}
 	}
-	if r := cp.ACME.RedisConnection(); r != nil && r.Password != "" {
-		r.Password = "*****"
-	}
-	if v := cp.ACME.ValkeyConnection(); v != nil && v.Password != "" {
-		v.Password = "*****"
+	for _, o := range cp.TracingOptions {
+		if o != nil {
+			redactValues(o.Headers)
+		}
 	}
 
 	bytes, err := yamlencoding.Marshal(cp)
@@ -583,6 +593,15 @@ func (c *Config) String() string {
 	}
 
 	return ""
+}
+
+// redactValues replaces each non-empty value in m with redactedValue.
+func redactValues(m map[string]string) {
+	for k, v := range m {
+		if v != "" {
+			m[k] = redactedValue
+		}
+	}
 }
 
 // ConfigFilePath returns the file or directory path from which this configuration is based.

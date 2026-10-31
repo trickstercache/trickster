@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 )
 
 func TestSanitizedString(t *testing.T) {
@@ -196,7 +197,7 @@ request_rewriters:
 		"next_route: prom-2",
 		"X-Org-ID: '*****'",
 		"X-Environment: '*****'",
-		"origin_password: '*****'",
+		"origin_password: " + secret.Token,
 		"cache-control: no-cache",
 		"EXPIRES: Thu, 01 Jan 1970 00:00:00 GMT",
 		"Cache-Control: max-age=60",

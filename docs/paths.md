@@ -294,7 +294,7 @@ As an example, if the client request provides a `Cache-Control: no-store` header
 
 ##### Environment Variable Substitution
 
-The `request_headers`, `request_params` and `response_headers` sections support environment variable substitution. This means you can use environment variables in your header or query parameter values. Example:
+Like every configuration value, `request_headers`, `request_params` and `response_headers` values can [reference environment variables](./configuring.md#environment-variable-references). Example:
 
 ```yaml
 backends:

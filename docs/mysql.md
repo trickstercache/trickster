@@ -570,11 +570,9 @@ The global `TRK_ORIGIN_URL` and `TRK_ORIGIN_TYPE` variables map only to the
 default backend and are suitable only for a basic single-backend deployment.
 There are no one-to-one `TRK_*` variables for MySQL listener limits, backend
 limits, TLS, health, or User Router options; configure those in YAML.
-Authenticator `users` values support `${VARIABLE}` expansion, and supported
-users files and secret volume mounts are preferred for production. The
-`origin_url` field does not expand `${VARIABLE}` in structured YAML; store a
-configuration containing an embedded DSN as a protected secret, not a public
-ConfigMap.
+Every YAML value, including authenticator `users` and an `origin_url` with an
+embedded DSN password, supports [`${VARIABLE}` references](configuring.md#environment-variable-references).
+Supported users files and secret volume mounts are preferred for production.
 
 Validate before rollout:
 

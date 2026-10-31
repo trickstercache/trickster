@@ -25,7 +25,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
@@ -42,7 +41,7 @@ func replicaConfig(mechanism string) *config.Config {
 	lb.ListenerName = "mysql1"
 	lb.ALBOptions = &ao.Options{MechanismName: mechanism, Pool: ao.Members("replica-a", "replica-b")}
 	lb.AuthenticatorName = "mysql-listener-clients"
-	lb.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{"client": "password"}}
+	lb.AuthOptions = &autho.Options{Users: map[string]string{"client": "password"}}
 	c.Backends = bo.Lookup{"replicas": lb, "replica-a": mysqlBackend(""), "replica-b": mysqlBackend("")}
 	return c
 }

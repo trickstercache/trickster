@@ -21,7 +21,7 @@ import (
 	"maps"
 	"net/http"
 
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -60,7 +60,7 @@ type UserMappingOptions struct {
 	// ToUser is the User Name that will be substituted in the upstream request
 	ToUser string `yaml:"to_user"`
 	// ToCredential is the Credential that will be substituted in the upstream request
-	ToCredential types.EnvString `yaml:"to_credential"`
+	ToCredential secret.Secret `yaml:"to_credential,omitempty"`
 }
 
 type UserMappingOptionsByUser map[string]*UserMappingOptions

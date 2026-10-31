@@ -32,7 +32,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
@@ -75,7 +74,7 @@ func moqWebTransportHarness(t *testing.T, origin *moqOrigin, site string, authen
 		if authenticated {
 			b.AuthenticatorName = moqWebBackend
 			c.Authenticators[moqWebBackend] = &autho.Options{
-				Provider: "basic", Users: configtypes.EnvStringMap{moqWebUser: moqWebSecret},
+				Provider: "basic", Users: map[string]string{moqWebUser: moqWebSecret},
 			}
 		}
 		c.Backends[moqWebBackend] = b

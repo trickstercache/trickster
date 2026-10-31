@@ -26,7 +26,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -35,6 +34,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
@@ -98,7 +98,7 @@ func TestString(t *testing.T) {
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 	c1.Authenticators = auth.Lookup{
 		"basic": {
-			Users: ct.EnvStringMap{
+			Users: map[string]string{
 				"alice": "alice-password",
 				"bob":   "bob-password",
 			},
@@ -107,8 +107,8 @@ func TestString(t *testing.T) {
 
 	s := c1.String()
 
-	if !strings.Contains(s, `password: '*****'`) {
-		t.Errorf("missing password mask: %s", "*****")
+	if !strings.Contains(s, "password: "+secret.Token) {
+		t.Errorf("missing password mask: %s", secret.Token)
 	}
 	for _, want := range []string{"user1: '*****'", "user2: '*****'"} {
 		if !strings.Contains(s, want) {
