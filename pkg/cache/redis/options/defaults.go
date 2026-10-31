@@ -17,10 +17,31 @@
 package options
 
 const (
+	// ClientTypeStandard connects to a single server
+	ClientTypeStandard = "standard"
+	// ClientTypeCluster connects to a cluster through its seed endpoints
+	ClientTypeCluster = "cluster"
+	// ClientTypeSentinel connects to the primary that a set of sentinels names
+	ClientTypeSentinel = "sentinel"
+
+	// ProtocolTCP dials endpoints over TCP
+	ProtocolTCP = "tcp"
+	// ProtocolUnix dials endpoints as Unix socket paths
+	ProtocolUnix = "unix"
+
+	// KeyPoolSize is the YAML key of PoolSize
+	KeyPoolSize = "pool_size"
+	// KeyMinIdleConns is the YAML key of MinIdleConns
+	KeyMinIdleConns = "min_idle_conns"
+	// KeyIdleTimeout is the YAML key of ConnMaxIdleTime
+	KeyIdleTimeout = "idle_timeout"
+	// KeyPoolTimeout is the YAML key of PoolTimeout
+	KeyPoolTimeout = "pool_timeout"
+
 	// DefaultRedisClientType is the default Redis Client Type
-	DefaultRedisClientType = "standard"
+	DefaultRedisClientType = ClientTypeStandard
 	// DefaultRedisProtocol is the default Redis Client protocol
-	DefaultRedisProtocol = "tcp"
+	DefaultRedisProtocol = ProtocolTCP
 	// DefaultRedisEndpoint is the default Redis Client endpoint
 	DefaultRedisEndpoint = "redis:6379"
 )

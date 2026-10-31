@@ -26,6 +26,7 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -82,7 +83,7 @@ func (c *Config) SanitizedClone() *Config {
 		newName := cacheNameMap[oldName]
 		if opts != nil {
 			opts.Name = newName
-			sanitizeRedisEndpoints(opts)
+			sanitizeCacheConnection(opts)
 		}
 		renamedCaches[newName] = opts
 	}
@@ -331,11 +332,14 @@ func sanitizeACME(o *acmeopts.Options, cacheNames, listenerNames map[string]stri
 		if name, ok := cacheNames[r.Redis.CacheName]; ok {
 			r.Redis.CacheName = name
 		}
-		if c := r.Redis.Connection; c != nil {
-			sanitizeRedisEndpoints(&cache.Options{Redis: c})
-			if c.Password != "" {
-				c.Password = sanitizedSecret
-			}
+		sanitizeRedisConnection(r.Redis.Connection)
+	}
+	if v := o.Storage; v != nil && v.Valkey != nil {
+		if name, ok := cacheNames[v.Valkey.CacheName]; ok {
+			v.Valkey.CacheName = name
+		}
+		if c := v.Valkey.Connection; c != nil {
+			sanitizeRedisConnection(&c.Options)
 		}
 	}
 	for _, iss := range o.Issuers {
@@ -366,17 +370,33 @@ func sanitizeACME(o *acmeopts.Options, cacheNames, listenerNames map[string]stri
 	}
 }
 
-func sanitizeRedisEndpoints(opts *cache.Options) {
-	if opts == nil || opts.Redis == nil {
+func sanitizeCacheConnection(opts *cache.Options) {
+	sanitizeRedisConnection(opts.Redis)
+	if opts.Valkey != nil {
+		sanitizeRedisConnection(&opts.Valkey.Options)
+		for i, endpoint := range opts.Valkey.ReplicaReads.ReplicaEndpoints {
+			if endpoint != "" {
+				opts.Valkey.ReplicaReads.ReplicaEndpoints[i] = sanitizedEndpoint
+			}
+		}
+	}
+}
+
+// sanitizeRedisConnection hides the endpoints and password of a redis or valkey connection
+func sanitizeRedisConnection(o *redisopts.Options) {
+	if o == nil {
 		return
 	}
-	if opts.Redis.Endpoint != "" {
-		opts.Redis.Endpoint = sanitizedEndpoint
+	if o.Endpoint != "" {
+		o.Endpoint = sanitizedEndpoint
 	}
-	for i, endpoint := range opts.Redis.Endpoints {
+	for i, endpoint := range o.Endpoints {
 		if endpoint != "" {
-			opts.Redis.Endpoints[i] = sanitizedEndpoint
+			o.Endpoints[i] = sanitizedEndpoint
 		}
+	}
+	if o.Password != "" {
+		o.Password = sanitizedSecret
 	}
 }
 

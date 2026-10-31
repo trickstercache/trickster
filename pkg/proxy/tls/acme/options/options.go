@@ -29,6 +29,7 @@ import (
 	"time"
 
 	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	valkeyopts "github.com/trickstercache/trickster/v2/pkg/cache/valkey/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	"github.com/trickstercache/trickster/v2/pkg/secret"
@@ -47,6 +48,8 @@ const (
 	StorageFilesystem = "filesystem"
 	// StorageRedis keeps ACME accounts and certificates in Redis, shared by a cluster
 	StorageRedis = "redis"
+	// StorageValkey keeps ACME accounts and certificates in Valkey, shared by a cluster
+	StorageValkey = "valkey"
 
 	// KeyTypeECDSAP256 is a certificate key on the NIST P-256 curve
 	KeyTypeECDSAP256 = "ecdsa-p256"
@@ -113,12 +116,14 @@ type Options struct {
 
 // StorageOptions configures where ACME state is persisted
 type StorageOptions struct {
-	// Provider is filesystem (the default) or redis
+	// Provider is filesystem (the default), redis or valkey
 	Provider string `yaml:"provider,omitempty"`
 	// Path is the filesystem storage directory
 	Path string `yaml:"path,omitempty"`
 	// Redis configures Redis storage
 	Redis *RedisStorageOptions `yaml:"redis,omitempty"`
+	// Valkey configures Valkey storage
+	Valkey *ValkeyStorageOptions `yaml:"valkey,omitempty"`
 }
 
 // RedisStorageOptions configures Redis-backed ACME storage, which is never the cache's keyspace
@@ -127,6 +132,19 @@ type RedisStorageOptions struct {
 	CacheName string `yaml:"cache_name,omitempty"`
 	// Connection holds the connection settings when CacheName is not used
 	Connection *redisopts.Options `yaml:"connection,omitempty"`
+	// KeyPrefix namespaces every ACME key
+	KeyPrefix string `yaml:"key_prefix,omitempty"`
+	// LockTTL is the lease of a distributed lock, refreshed while it is held
+	LockTTL timeconv.Duration `yaml:"lock_ttl,omitempty"`
+}
+
+// ValkeyStorageOptions configures Valkey-backed ACME storage, which is never the cache's keyspace.
+// Without Lua on the server, its locks fall back to Valkey's native conditional commands.
+type ValkeyStorageOptions struct {
+	// CacheName borrows the connection settings of a named valkey cache
+	CacheName string `yaml:"cache_name,omitempty"`
+	// Connection holds the connection settings when CacheName is not used
+	Connection *valkeyopts.Options `yaml:"connection,omitempty"`
 	// KeyPrefix namespaces every ACME key
 	KeyPrefix string `yaml:"key_prefix,omitempty"`
 	// LockTTL is the lease of a distributed lock, refreshed while it is held
@@ -260,12 +278,12 @@ func (o *Options) IsEnabled() bool {
 	return o != nil && len(o.Issuers) > 0
 }
 
-// RedisCacheName returns the redis cache whose connection settings storage borrows, if any
-func (o *Options) RedisCacheName() string {
-	if o == nil || o.Storage == nil || o.Storage.Redis == nil {
+// StorageCacheName returns the redis or valkey cache whose connection settings storage borrows, if any
+func (o *Options) StorageCacheName() string {
+	if o == nil || o.Storage == nil {
 		return ""
 	}
-	return o.Storage.Redis.CacheName
+	return o.Storage.CacheName()
 }
 
 // RedisConnection returns the storage's own Redis connection settings, if any
@@ -274,6 +292,14 @@ func (o *Options) RedisConnection() *redisopts.Options {
 		return nil
 	}
 	return o.Storage.Redis.Connection
+}
+
+// ValkeyConnection returns the storage's own Valkey connection settings, if any
+func (o *Options) ValkeyConnection() *valkeyopts.Options {
+	if o == nil || o.Storage == nil || o.Storage.Valkey == nil {
+		return nil
+	}
+	return o.Storage.Valkey.Connection
 }
 
 // Clone returns a deep copy of the Options
@@ -362,7 +388,41 @@ func (o *StorageOptions) Clone() *StorageOptions {
 	}
 	out := pointers.Clone(o)
 	out.Redis = o.Redis.Clone()
+	out.Valkey = o.Valkey.Clone()
 	return out
+}
+
+// CacheName returns the cache whose connection settings redis or valkey storage borrows, if any
+func (o *StorageOptions) CacheName() string {
+	switch {
+	case o.Provider == StorageRedis && o.Redis != nil:
+		return o.Redis.CacheName
+	case o.Provider == StorageValkey && o.Valkey != nil:
+		return o.Valkey.CacheName
+	}
+	return ""
+}
+
+// KeyPrefix returns the namespace of redis or valkey storage's keys
+func (o *StorageOptions) KeyPrefix() string {
+	if o.Provider == StorageValkey && o.Valkey != nil {
+		return o.Valkey.KeyPrefix
+	}
+	if o.Redis != nil {
+		return o.Redis.KeyPrefix
+	}
+	return ""
+}
+
+// LockTTL returns the lease of redis or valkey storage's locks
+func (o *StorageOptions) LockTTL() time.Duration {
+	if o.Provider == StorageValkey && o.Valkey != nil {
+		return time.Duration(o.Valkey.LockTTL)
+	}
+	if o.Redis != nil {
+		return time.Duration(o.Redis.LockTTL)
+	}
+	return 0
 }
 
 // Equal reports whether two StorageOptions are identical
@@ -370,7 +430,8 @@ func (o *StorageOptions) Equal(o2 *StorageOptions) bool {
 	if o == nil || o2 == nil {
 		return o == o2
 	}
-	return o.Provider == o2.Provider && o.Path == o2.Path && o.Redis.Equal(o2.Redis)
+	return o.Provider == o2.Provider && o.Path == o2.Path && o.Redis.Equal(o2.Redis) &&
+		o.Valkey.Equal(o2.Valkey)
 }
 
 func (o *StorageOptions) initialize() {
@@ -378,7 +439,8 @@ func (o *StorageOptions) initialize() {
 	if o.Provider == "" {
 		o.Provider = StorageFilesystem
 	}
-	if o.Provider == StorageRedis {
+	switch o.Provider {
+	case StorageRedis:
 		if o.Redis == nil {
 			o.Redis = &RedisStorageOptions{}
 		}
@@ -387,6 +449,16 @@ func (o *StorageOptions) initialize() {
 		}
 		if o.Redis.LockTTL == 0 {
 			o.Redis.LockTTL = DefaultRedisLockTTL
+		}
+	case StorageValkey:
+		if o.Valkey == nil {
+			o.Valkey = &ValkeyStorageOptions{}
+		}
+		if o.Valkey.KeyPrefix == "" {
+			o.Valkey.KeyPrefix = DefaultRedisKeyPrefix
+		}
+		if o.Valkey.LockTTL == 0 {
+			o.Valkey.LockTTL = DefaultRedisLockTTL
 		}
 	}
 }
@@ -397,22 +469,61 @@ func (o *StorageOptions) validate() error {
 		if strings.TrimSpace(o.Path) == "" {
 			return ErrStoragePathRequired
 		}
-		if o.Redis != nil {
-			return errors.New("acme.storage.redis is set but the storage provider is filesystem")
+		if o.Redis != nil || o.Valkey != nil {
+			return errors.New("acme.storage.redis or valkey is set but the storage provider is filesystem")
 		}
 	case StorageRedis:
+		if o.Valkey != nil {
+			return errors.New("acme.storage.valkey is set but the storage provider is redis")
+		}
 		r := o.Redis
-		if (r.CacheName == "") == (r.Connection == nil) {
-			return errors.New("acme.storage.redis needs exactly one of cache_name or connection")
+		return validateShared(StorageRedis, r.CacheName != "", r.Connection != nil, r.LockTTL)
+	case StorageValkey:
+		if o.Redis != nil {
+			return errors.New("acme.storage.redis is set but the storage provider is valkey")
 		}
-		if r.LockTTL < MinimumRedisLockTTL {
-			return fmt.Errorf("acme.storage.redis.lock_ttl must be at least %s",
-				time.Duration(MinimumRedisLockTTL))
+		v := o.Valkey
+		if v.Connection != nil {
+			if err := v.Connection.Validate(); err != nil {
+				return fmt.Errorf("acme.storage.valkey.connection: %w", err)
+			}
 		}
+		return validateShared(StorageValkey, v.CacheName != "", v.Connection != nil, v.LockTTL)
 	default:
 		return fmt.Errorf("unknown acme storage provider %q", o.Provider)
 	}
 	return nil
+}
+
+// validateShared checks the settings that redis and valkey storage share
+func validateShared(provider string, hasCacheName, hasConnection bool, lockTTL timeconv.Duration) error {
+	if hasCacheName == hasConnection {
+		return fmt.Errorf("acme.storage.%s needs exactly one of cache_name or connection", provider)
+	}
+	if lockTTL < MinimumRedisLockTTL {
+		return fmt.Errorf("acme.storage.%s.lock_ttl must be at least %s", provider,
+			time.Duration(MinimumRedisLockTTL))
+	}
+	return nil
+}
+
+// Clone returns a deep copy of the ValkeyStorageOptions
+func (o *ValkeyStorageOptions) Clone() *ValkeyStorageOptions {
+	if o == nil {
+		return nil
+	}
+	out := pointers.Clone(o)
+	out.Connection = o.Connection.Clone()
+	return out
+}
+
+// Equal reports whether two ValkeyStorageOptions are identical
+func (o *ValkeyStorageOptions) Equal(o2 *ValkeyStorageOptions) bool {
+	if o == nil || o2 == nil {
+		return o == o2
+	}
+	return o.CacheName == o2.CacheName && o.KeyPrefix == o2.KeyPrefix &&
+		o.LockTTL == o2.LockTTL && o.Connection.Equal(o2.Connection)
 }
 
 // Clone returns a deep copy of the RedisStorageOptions
@@ -421,11 +532,7 @@ func (o *RedisStorageOptions) Clone() *RedisStorageOptions {
 		return nil
 	}
 	out := pointers.Clone(o)
-	if o.Connection != nil {
-		c := *o.Connection
-		c.Endpoints = slices.Clone(o.Connection.Endpoints)
-		out.Connection = &c
-	}
+	out.Connection = o.Connection.Clone()
 	return out
 }
 

@@ -243,6 +243,16 @@ func (d *dialer) session(ctx context.Context) (*session.Session, error) {
 }
 
 func (d *dialer) dial(ctx context.Context) (*session.Session, error) {
+	s, err := d.dialOnce(ctx)
+	if err != nil && d.connKey != "" && lateRejected(err) {
+		// the origin refused this session on the shared connection after accepting its CONNECT
+		unpool(d.connKey)
+		return d.dialOnce(ctx)
+	}
+	return s, err
+}
+
+func (d *dialer) dialOnce(ctx context.Context) (*session.Session, error) {
 	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 	conn, c, err := d.connect(dctx)

@@ -37,7 +37,7 @@ environment was started with.
 
 Each TSDB backend runs in its own [Compose profile](https://docs.docker.com/compose/how-tos/profiles/),
 so you can start only the databases you are working on and save memory, CPU
-and disk. The services with no profile always start: `redis`, `grafana`,
+and disk. The services with no profile always start: `redis`, `valkey`, `grafana`,
 `prometheus` (and its seeders), `devorigin` (and the `seed_data_generate`
 loader it needs), and `jaeger`. Prometheus is always on because it also
 scrapes your local Trickster for the
@@ -56,6 +56,7 @@ scrapes your local Trickster for the
 | `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
 | `mimir` | `mimir_east`, `mimir_west`, and their seeder, for TSM global evaluation | `make developer-start-mimir` |
 | `thanos` | an HA Prometheus pair with Thanos sidecars, and a Thanos querier | `make developer-start-thanos` |
+| `cache-cluster` | `valkey_cluster`, a three-node Valkey cluster on ports 7001–7003, for `make benchmark-redis` and the redis cache's live tests | `make developer-start-cache-cluster` |
 | `all-providers` | every TSDB backend above, except `mimir` and `thanos` | `make developer-start` |
 | `integration` | every TSDB backend except `mimir` and `thanos`, plus the integration-only `coredns` | `make integration-start` |
 | `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer; `diagstreamer`, a live diagnostic HLS and DASH stream on port 8496 ([hack/diagstreamer](../../../hack/diagstreamer/README.md)); `diagstreamer_moq`, the same stream published into `moq_relay` | `make developer-start-moq`, or `make developer-moq` for the MoQ harness ([Trying it locally](../../moq.md#trying-it-locally)) |
@@ -66,6 +67,10 @@ scrapes your local Trickster for the
 ```bash
 make developer-start COMPOSE_PROFILES=mysql,clickhouse
 ```
+
+`make test-redis-compat` needs none of these profiles. It starts Redis 6.2 and then Valkey 9 in a
+throwaway container on port 6393, and runs the redis cache provider and the ACME Redis storage
+against each one.
 
 `make developer-recreate` deletes the whole environment, including every
 profile's volumes, then starts it again with `COMPOSE_PROFILES`.

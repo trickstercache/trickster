@@ -22,6 +22,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/quicdial"
 
 	"github.com/quic-go/quic-go"
@@ -48,6 +49,10 @@ type wtConn struct {
 	ready    chan struct{}
 	err      error
 }
+
+// lateRejection is the reason a session ends with when its origin answers its CONNECT with 200 and then resets it
+// with H3_REQUEST_REJECTED, as webtransport-go servers refuse a second session on a connection without flow control
+var lateRejection = (&http3.Error{ErrorCode: http3.ErrCodeRequestRejected, Remote: true}).Error()
 
 var (
 	wtConnsMu sync.Mutex
@@ -82,9 +87,7 @@ func (w *wtDial) session(ctx context.Context) (*webtransport.Session, error) {
 			gone := c.qconn.Context().Err() != nil
 			c.release()
 			if rejected(err) {
-				wtConnsMu.Lock()
-				unpooled[w.key] = struct{}{}
-				wtConnsMu.Unlock()
+				unpool(w.key)
 				continue
 			}
 			if gone {
@@ -96,6 +99,17 @@ func (w *wtDial) session(ctx context.Context) (*webtransport.Session, error) {
 		return s, nil
 	}
 	return nil, errDialerClosed
+}
+
+func unpool(key string) {
+	wtConnsMu.Lock()
+	unpooled[key] = struct{}{}
+	wtConnsMu.Unlock()
+}
+
+func lateRejected(err error) bool {
+	ce, ok := errors.AsType[*session.CloseError](err)
+	return ok && !ce.Remote && http3.ErrCode(ce.Code) == http3.ErrCodeDatagramError && ce.Reason == lateRejection
 }
 
 func rejected(err error) bool {

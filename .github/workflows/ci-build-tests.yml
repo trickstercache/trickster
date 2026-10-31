@@ -154,7 +154,7 @@ jobs:
         run: |
           cd docs/developer/environment
           docker compose ps
-          docker compose logs --tail=30 redis prometheus mysql grafana coredns
+          docker compose logs --tail=30 redis valkey prometheus mysql grafana coredns
           docker compose logs --tail=30 devorigin prometheus_seed_generate prometheus_seed
           docker compose logs --tail=60 questdb questdb_seed
           docker compose logs --tail=60 victoriametrics victoriametrics_seed

@@ -19,6 +19,7 @@ package moq
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,6 +37,27 @@ import (
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
 )
+
+// forgetOrigin drops what the package keeps about addr's connections once the test ends, since a later test's
+// origin may be given the same port
+func forgetOrigin(t *testing.T, addr string) {
+	t.Helper()
+	prefix := addr + "|"
+	t.Cleanup(func() {
+		wtConnsMu.Lock()
+		defer wtConnsMu.Unlock()
+		for k := range unpooled {
+			if strings.HasPrefix(k, prefix) {
+				delete(unpooled, k)
+			}
+		}
+		for k := range wtConns {
+			if strings.HasPrefix(k, prefix) {
+				delete(wtConns, k)
+			}
+		}
+	})
+}
 
 func startFlowControlledWTOrigin(t *testing.T) (*origin, *atomic.Int32) {
 	t.Helper()
@@ -72,6 +94,7 @@ func startFlowControlledWTOrigin(t *testing.T) (*origin, *atomic.Int32) {
 		t.Fatal(err)
 	}
 	o.addr = ln.Addr().String()
+	forgetOrigin(t, o.addr)
 	var conns atomic.Int32
 	t.Cleanup(func() {
 		_ = ln.Close()
@@ -199,5 +222,12 @@ func TestConnKeys(t *testing.T) {
 		!rejected(&quic.StreamError{ErrorCode: quic.StreamErrorCode(http3.ErrCodeRequestRejected)}) ||
 		rejected(&http3.Error{ErrorCode: http3.ErrCodeNoError}) {
 		t.Error("rejected recognizes H3_REQUEST_REJECTED")
+	}
+	// an origin that accepts a CONNECT and then resets it ends the session with H3_DATAGRAM_ERROR
+	late := &session.CloseError{Code: uint64(http3.ErrCodeDatagramError), Reason: lateRejection}
+	if !lateRejected(fmt.Errorf("%w: %w", session.ErrSessionClosed, late)) ||
+		lateRejected(&session.CloseError{Code: uint64(http3.ErrCodeDatagramError), Reason: "malformed capsule"}) ||
+		lateRejected(&session.CloseError{Code: late.Code, Reason: late.Reason, Remote: true}) {
+		t.Error("lateRejected recognizes a CONNECT reset with H3_REQUEST_REJECTED after its 200")
 	}
 }

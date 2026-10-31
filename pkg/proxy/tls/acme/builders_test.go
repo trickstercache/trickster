@@ -25,7 +25,9 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cacheopts "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	valkeyopts "github.com/trickstercache/trickster/v2/pkg/cache/valkey/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -227,35 +229,102 @@ func TestNewStorage(t *testing.T) {
 	require.Error(t, err)
 
 	mr := miniredis.RunT(t)
-	s, closeFn, err = newStorage(redisOpts, &redisopts.Options{Endpoint: mr.Addr()})
+	s, closeFn, err = newStorage(redisOpts, redisConn(mr.Addr()))
 	require.NoError(t, err)
 	require.NoError(t, s.Store(t.Context(), "k", []byte("v")))
 	require.NoError(t, closeFn())
 
+	// valkey storage takes valkey connection settings
+	valkeyOpts := &acmeopts.StorageOptions{
+		Provider: acmeopts.StorageValkey,
+		Valkey: &acmeopts.ValkeyStorageOptions{
+			KeyPrefix: acmeopts.DefaultRedisKeyPrefix,
+			LockTTL:   acmeopts.DefaultRedisLockTTL,
+		},
+	}
+	vc := valkeyopts.New()
+	vc.Endpoint = mr.Addr()
+	s, closeFn, err = newStorage(valkeyOpts, &cacheopts.Options{Provider: providers.Valkey,
+		ProviderID: providers.ValkeyID, Valkey: vc})
+	require.NoError(t, err)
+	b, err := s.Load(t.Context(), "k")
+	require.NoError(t, err)
+	require.Equal(t, "v", string(b))
+	require.NoError(t, closeFn())
+
+	// connection settings no client can use are refused
+	bad := redisConn(mr.Addr())
+	bad.Redis.Protocol = "udp"
+	_, _, err = newStorage(redisOpts, bad)
+	require.Error(t, err)
+
 	// an unreachable server is retried by the client rather than refused
 	addr := mr.Addr()
 	mr.Close()
-	s, closeFn, err = newStorage(redisOpts, &redisopts.Options{Endpoint: addr})
+	s, closeFn, err = newStorage(redisOpts, redisConn(addr))
 	require.NoError(t, err)
 	require.NotNil(t, s)
 	require.NoError(t, closeFn())
 }
 
-func TestRedisConnection(t *testing.T) {
+func redisConn(addr string) *cacheopts.Options {
+	return &cacheopts.Options{Provider: providers.Redis, ProviderID: providers.RedisID,
+		Redis: &redisopts.Options{Endpoint: addr}}
+}
+
+func TestStorageConnection(t *testing.T) {
 	conf := testConfig(t, t.TempDir())
-	require.Nil(t, redisConnection(conf))
+	require.Nil(t, storageConnection(conf))
+	conf.ACME.Storage = nil
+	require.Nil(t, storageConnection(conf))
+
 	conn := &redisopts.Options{Endpoint: "127.0.0.1:6379"}
 	conf.ACME.Storage = &acmeopts.StorageOptions{
 		Provider: acmeopts.StorageRedis,
 		Redis:    &acmeopts.RedisStorageOptions{Connection: conn},
 	}
-	require.Same(t, conn, redisConnection(conf))
+	got := storageConnection(conf)
+	require.Equal(t, providers.RedisID, got.ProviderID)
+	require.True(t, conn.Equal(got.Redis))
+	require.NotSame(t, conn, got.Redis)
 	borrowed := &redisopts.Options{Endpoint: "127.0.0.1:6380"}
 	conf.Caches = cacheopts.Lookup{"shared": &cacheopts.Options{Redis: borrowed}}
 	conf.ACME.Storage.Redis = &acmeopts.RedisStorageOptions{CacheName: "shared"}
-	require.Same(t, borrowed, redisConnection(conf))
+	require.True(t, borrowed.Equal(storageConnection(conf).Redis))
 	conf.ACME.Storage.Redis.CacheName = "missing"
-	require.Nil(t, redisConnection(conf))
+	require.Nil(t, storageConnection(conf))
+	conf.ACME.Storage.Redis = &acmeopts.RedisStorageOptions{}
+	require.Nil(t, storageConnection(conf))
+
+	// a valkey connection drops the read features a lock can't use
+	vc := valkeyopts.New()
+	vc.ClientSideCache.Enabled = true
+	vc.ReplicaReads.Mode = valkeyopts.ReplicaReadsPreferReplica
+	conf.ACME.Storage = &acmeopts.StorageOptions{
+		Provider: acmeopts.StorageValkey,
+		Valkey:   &acmeopts.ValkeyStorageOptions{Connection: vc},
+	}
+	got = storageConnection(conf)
+	require.Equal(t, providers.ValkeyID, got.ProviderID)
+	require.False(t, got.Valkey.ClientSideCache.Enabled)
+	require.False(t, got.Valkey.ReadsReplicas())
+	require.True(t, vc.ClientSideCache.Enabled)
+	conf.Caches = cacheopts.Lookup{"shared": &cacheopts.Options{Valkey: vc}}
+	conf.ACME.Storage.Valkey = &acmeopts.ValkeyStorageOptions{CacheName: "shared"}
+	require.Equal(t, vc.Endpoint, storageConnection(conf).Valkey.Endpoint)
+	conf.ACME.Storage.Valkey.CacheName = "missing"
+	require.Nil(t, storageConnection(conf))
+	conf.ACME.Storage.Valkey = &acmeopts.ValkeyStorageOptions{}
+	require.Nil(t, storageConnection(conf))
+}
+
+func TestSameConnection(t *testing.T) {
+	a, b := redisConn("a:6379"), redisConn("a:6379")
+	require.True(t, sameConnection(nil, nil))
+	require.False(t, sameConnection(a, nil))
+	require.False(t, sameConnection(nil, b))
+	require.True(t, sameConnection(a, b))
+	require.False(t, sameConnection(a, redisConn("b:6379")))
 }
 
 func TestNewPlan(t *testing.T) {

@@ -56,7 +56,9 @@ const (
 
 func startWTEndpoint(t *testing.T, h http.Handler) string {
 	t.Helper()
-	return startWTMember(t, h).LocalAddr().String()
+	addr := startWTMember(t, h).LocalAddr().String()
+	forgetOrigin(t, addr)
+	return addr
 }
 
 func startWTMember(t *testing.T, h http.Handler) *quicmux.Member {

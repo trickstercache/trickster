@@ -558,14 +558,23 @@ func (c *Config) String() string {
 		cp.Authenticators[k] = o.CloneYAMLSafe()
 	}
 
-	// strip Redis password
-	for k, v := range cp.Caches {
-		if v != nil && cp.Caches[k].Redis != nil && cp.Caches[k].Redis.Password != "" {
-			cp.Caches[k].Redis.Password = "*****"
+	// strip Redis and Valkey passwords
+	for _, v := range cp.Caches {
+		if v == nil {
+			continue
+		}
+		if v.Redis != nil && v.Redis.Password != "" {
+			v.Redis.Password = "*****"
+		}
+		if v.Valkey != nil && v.Valkey.Password != "" {
+			v.Valkey.Password = "*****"
 		}
 	}
 	if r := cp.ACME.RedisConnection(); r != nil && r.Password != "" {
 		r.Password = "*****"
+	}
+	if v := cp.ACME.ValkeyConnection(); v != nil && v.Password != "" {
+		v.Password = "*****"
 	}
 
 	bytes, err := yamlencoding.Marshal(cp)

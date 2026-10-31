@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -111,16 +110,20 @@ func acmeBackend(c *config.Config, name string, hosts, listenerNames []string,
 }
 
 func acmeStorageCache(c *config.Config) error {
-	name := c.ACME.RedisCacheName()
+	name := c.ACME.StorageCacheName()
 	if name == "" {
 		return nil
 	}
+	// the storage provider names the cache provider it borrows from, as each has its own settings
+	provider := c.ACME.Storage.Provider
 	co, ok := c.Caches[name]
 	if !ok || co == nil {
-		return fmt.Errorf("acme.storage.redis references undefined cache %q", name)
+		return fmt.Errorf("acme.storage.%s references undefined cache %q", provider, name)
 	}
-	if strings.ToLower(co.Provider) != cp.Redis || co.Redis == nil {
-		return fmt.Errorf("acme.storage.redis cache %q is not a redis cache", name)
+	isRedis := co.Provider == cp.Redis && co.Redis != nil
+	isValkey := co.Provider == cp.Valkey && co.Valkey != nil
+	if (provider == cp.Redis && !isRedis) || (provider == cp.Valkey && !isValkey) {
+		return fmt.Errorf("acme.storage.%s cache %q is not a %s cache", provider, name, provider)
 	}
 	return nil
 }

@@ -275,13 +275,13 @@
 # caches:
 #   default:
 #     # provider defines what kind of cache Trickster uses
-#     # options are bbolt, badger, filesystem, memory, and redis
+#     # options are bbolt, badger, filesystem, memory, redis and valkey
 #     # The default is memory.
 #     provider: memory
 
 #     ## Configuration options for the Cache Index
 #     # The Cache Index handles key management and retention for bbolt, filesystem and memory
-#     # Redis and BadgerDB handle those functions natively and does not use the Tricksters Cache Index
+#     # Redis, Valkey and BadgerDB handle those functions natively and do not use the Tricksters Cache Index
 #     index:
 #       # reap_interval defines how long the Cache Index reaper sleeps between reap cycles. Default is 3 (3s)
 #       reap_interval: 3s
@@ -316,7 +316,9 @@
 #       # default is 500000
 #       num_counters: 500000
 
-#     ## Configuration options when using a Redis Cache
+#     ## Configuration options when using a Redis Cache (provider: redis)
+#     ## The redis provider serves Redis and compatible servers, Valkey included, with a pooled
+#     ## connection per command. A valkey cache takes these same options under 'valkey' instead.
 #     redis:
 #       # client_type indicates which kind of Redis client to use. Options are: standard, cluster and sentinel
 #       # default is standard
@@ -344,8 +346,7 @@
 #       sentinel_master: ''
 
 #       ## Supported by all Redis Client Types ###############################
-#       ## See the go-redis documentation at https://github.com/redis/go-redis/blob/master/options.go
-#       ## for more information on tuning these settings
+#       ## See docs/caches.md for how these settings apply to the client
 
 #       # protocol defines the protocol for connecting to redis (unix or tcp). tcp is default
 #       protocol: tcp
@@ -356,7 +357,8 @@
 #       password: ''
 #       # db is the Database to be selected after connecting to the server. default is 0
 #       db: 0
-#       # max_retries is the maximum number of retries before giving up on the command
+#       # max_retries is the maximum number of times a read is retried after a network error. default is 3,
+#       # and -1 disables retries. writes are not retried
 #       max_retries: 0
 #       # min_retry_backoff is the minimum backoff time between each retry
 #       min_retry_backoff: 8ms
@@ -364,22 +366,67 @@
 #       max_retry_backoff: 512ms
 #       # dial_timeout is the timeout for establishing new connections
 #       dial_timeout: 5s
-#       # read_timeout is the timeout for socket reads. If reached, commands will fail with a timeout instead of blocking.
+#       # read_timeout and write_timeout bound a command's wait on its connection; the longer of the two applies.
+#       # default is 3s. If reached, commands will fail with a timeout instead of blocking.
 #       read_timeout: 3s
-#       # write_timeout is the timeout for socket writes. If reached, commands will fail with a timeout instead of blocking.
 #       write_timeout: 3s
-#       # pool_size is the maximum number of socket connections.
+#       # pool_size is the maximum number of socket connections to each server. default is 10 per CPU
 #       pool_size: 20
 #       # min_idle_conns is the minimum number of idle connections which is useful when establishing new connection is slow.
 #       min_idle_conns: 0
 #       # max_conn_age is the connection age at which client retires (closes) the connection.
 #       max_conn_age: 0ms
-#       # pool_timeout is the amount of time client waits for connection if all connections are busy before returning an error.
+#       # pool_timeout has no effect: a command waits for a pooled connection until one frees, within the
+#       # connection's timeouts. It is accepted so that existing configurations still load
 #       pool_timeout: 4000ms
 #       # idle_timeout is the amount of time after which client closes idle connections.
 #       idle_timeout: 5m
 #       # use_tls indicates if the Redis server uses TLS encryption. default is false
 #       use_tls: false
+
+#     ## Configuration options when using a Valkey Cache (provider: valkey) ##
+#     ## A valkey cache takes every option of the redis section above, with the defaults it lists except
+#     ## endpoint and endpoints, which default to valkey:6379, plus these Valkey-only settings.
+#     ## A redis cache can't have a valkey section, nor a valkey cache a redis section.
+#     valkey:
+#       client_type: standard
+#       endpoint: valkey:6379
+#       # in cluster mode, db selects a numbered database, which Valkey 9 serves when its
+#       # cluster-databases is above the db. default is 0
+#       db: 0
+#       # auto_pipelining shares connections among concurrent commands. when false, each command takes a
+#       # pooled connection of its own, as with the redis provider. it suits caches of small objects only,
+#       # since a small read pipelined behind a multi-megabyte reply waits for it. default is false
+#       auto_pipelining: false
+#       # pipeline_multiplex is the log2 of the pipelined connections to each node, from 0 (one connection)
+#       # to 8. when unset, the client uses up to 4 for a single server and 1 for each cluster node
+#       pipeline_multiplex: 2
+#       # max_flush_delay pauses the pipeline's write loop up to this long, to send more commands per
+#       # write. default is 0
+#       max_flush_delay: 0s
+#       # read_buffer_bytes and write_buffer_bytes size each connection's buffers. default is 524288
+#       read_buffer_bytes: 524288
+#       write_buffer_bytes: 524288
+#       replica_reads:
+#         # mode is where cache reads go: none (the primary), prefer_replica, az_affinity (a replica in
+#         # availability_zone) or az_affinity_with_primary (any node in availability_zone). default is none
+#         mode: none
+#         # availability_zone is this instance's zone, which the az_affinity modes require
+#         availability_zone: ''
+#         # replica_endpoints lists read replicas of a standard (single server) client
+#         replica_endpoints: []
+#       client_side_cache:
+#         # enabled keeps recently read objects in this process, invalidated by the server. default is false
+#         enabled: false
+#         # mode is optin, where the server tracks the keys read through the cache, or broadcast, where it
+#         # tracks every key under prefixes. default is optin
+#         mode: optin
+#         # prefixes are the key prefixes tracked in broadcast mode
+#         prefixes: []
+#         # size_bytes_per_connection is the cache budget of each connection to each node. default is 16MB
+#         size_bytes_per_connection: 16777216
+#         # max_ttl caps how long an object is kept; the server's TTL for it can shorten it. default is 30s
+#         max_ttl: 30s
 
 #     ## Configuration options when using a Filesystem Cache ###############
 #     filesystem:
@@ -2033,13 +2080,18 @@ backends:
 #   # at most. default is 0, which never holds readiness
 #   wait_on_startup: 90s
 #   storage:
-#     # provider is filesystem or redis; default is filesystem
+#     # provider is filesystem, redis or valkey; default is filesystem
 #     provider: filesystem
 #     # path is the storage directory, required for filesystem storage
 #     path: /var/lib/trickster/acme
 #     # redis keeps ACME state in Redis, shared by every instance using the same keyspace
 #     # redis:
 #     #   cache_name: shared-redis      # borrow a redis cache's connection settings, or set connection
+#     #   key_prefix: "trickster:acme:"
+#     #   lock_ttl: 1m
+#     # valkey keeps ACME state in Valkey the same way, and its locks work on a server without Lua
+#     # valkey:
+#     #   cache_name: shared-valkey     # borrow a valkey cache's connection settings, or set connection
 #     #   key_prefix: "trickster:acme:"
 #     #   lock_ttl: 1m
 #   issuers:

@@ -252,3 +252,183 @@ caches:
 		t.Error("Equal ignored a use_cache_chunking difference")
 	}
 }
+
+func decodeCaches(t *testing.T, raw string) Lookup {
+	t.Helper()
+	var d struct {
+		Caches Lookup `yaml:"caches"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &d); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	return d.Caches
+}
+
+func TestValkeyProvider(t *testing.T) {
+	t.Parallel()
+
+	l := decodeCaches(t, `
+caches:
+  vk:
+    provider: valkey
+    valkey:
+      client_type: cluster
+      endpoints: [v0:6379]
+      db: 2
+      auto_pipelining: false
+      pool_size: 8
+      pool_timeout: 1s
+`)
+	warnings, err := l.Initialize(sets.New([]string{"vk"}))
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	o := l["vk"]
+	if o.ProviderID != providers.ValkeyID || o.Redis != nil || o.Valkey == nil || o.Index != nil {
+		t.Fatalf("unexpected provider wiring: %+v", o)
+	}
+	if o.Valkey.DB != 2 || o.Valkey.AutoPipelining {
+		t.Fatalf("unexpected valkey options: %+v", o.Valkey)
+	}
+	// a pooled valkey cache uses its pool keys, but pool_timeout has no effect, and its db is no warning
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want only the pool_timeout warning", warnings)
+	}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	c := o.Clone()
+	if !o.Equal(c) {
+		t.Fatal("valkey options should be equal to clone")
+	}
+	c.Valkey.Endpoints[0] = "other"
+	if o.Equal(c) || o.Valkey.Endpoints[0] != "v0:6379" {
+		t.Fatal("expected a deep clone whose difference makes the options unequal")
+	}
+	o.ClearProviderOptions()
+	if o.Valkey != nil {
+		t.Fatal("expected valkey options to be cleared")
+	}
+}
+
+func TestValkeyProviderDefaultsAndPoolWarnings(t *testing.T) {
+	t.Parallel()
+
+	l := decodeCaches(t, `
+caches:
+  vk:
+    provider: valkey
+    valkey:
+      auto_pipelining: true
+      pool_size: 8
+      min_idle_conns: 2
+      idle_timeout: 1m
+`)
+	warnings, err := l.Initialize(sets.New([]string{"vk"}))
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if got := l["vk"].Valkey.Endpoint; got != "valkey:6379" {
+		t.Fatalf("endpoint = %q, want the valkey default", got)
+	}
+	// a pipelining valkey cache doesn't use the pool keys
+	if len(warnings) != 3 {
+		t.Fatalf("warnings = %v, want one per pool key", warnings)
+	}
+
+	// a valkey cache without a valkey key gets the valkey defaults
+	o := New()
+	o.Provider = providers.Valkey
+	o.Valkey = nil
+	if err := o.Initialize("bare"); err != nil || o.Valkey == nil {
+		t.Fatalf("Initialize bare valkey: %v %+v", err, o.Valkey)
+	}
+}
+
+func TestRedisClusterDBWarning(t *testing.T) {
+	t.Parallel()
+
+	o := New()
+	o.Provider = providers.Redis
+	o.Redis.ClientType = "cluster"
+	o.Redis.DB = 3
+	warnings, err := Lookup{"c": o}.Initialize(sets.New([]string{"c"}))
+	if err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want the cluster db warning", warnings)
+	}
+}
+
+func TestProviderKeysDoNotMix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{"redis with redis", "provider: redis\n    redis:\n      endpoint: r:6379\n", true},
+		{"valkey with valkey", "provider: valkey\n    valkey:\n      endpoint: v:6379\n", true},
+		{"valkey without a key", "provider: valkey\n", true},
+		{"redis with valkey", "provider: redis\n    valkey:\n      endpoint: v:6379\n", false},
+		{"memory with valkey", "provider: memory\n    valkey:\n      endpoint: v:6379\n", false},
+		{"valkey with redis", "provider: valkey\n    redis:\n      endpoint: r:6379\n", false},
+		{"valkey with a bad setting", "provider: valkey\n    valkey:\n      pipeline_multiplex: 9\n", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			l := decodeCaches(t, "caches:\n  c:\n    "+test.raw)
+			if _, err := l.Initialize(sets.New([]string{"c"})); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
+			if err := l.Validate(); (err == nil) != test.ok {
+				t.Fatalf("Validate() = %v, want ok=%v", err, test.ok)
+			}
+		})
+	}
+}
+
+func TestInitializeFillsMissingProviderBlocks(t *testing.T) {
+	t.Parallel()
+	for _, p := range []string{providers.Redis, providers.Valkey, providers.Filesystem,
+		providers.BBolt, providers.BadgerDB, providers.Memory} {
+		o := New()
+		o.ClearProviderOptions()
+		o.Provider = p
+		o.TimeseriesChunkFactor, o.ByterangeChunkSize = 0, 0
+		if err := o.Initialize("default"); err != nil {
+			t.Fatalf("Initialize %s: %v", p, err)
+		}
+		c := o.Clone()
+		if !o.Equal(c) {
+			t.Fatalf("%s options should equal their clone", p)
+		}
+		if o.TimeseriesChunkFactor == 0 || o.ByterangeChunkSize == 0 {
+			t.Fatalf("%s chunk defaults were not set", p)
+		}
+		c.Name = "other"
+		if o.Equal(c) {
+			t.Fatalf("%s options should differ by name", p)
+		}
+	}
+}
+
+func TestEqualIndexMismatch(t *testing.T) {
+	t.Parallel()
+	o := New()
+	o2 := o.Clone()
+	o2.Index = nil
+	if o.Equal(o2) || o.Equal(nil) {
+		t.Fatal("expected a missing index or nil options to make options unequal")
+	}
+}
+
+func TestUnmarshalYAMLError(t *testing.T) {
+	t.Parallel()
+	var o Options
+	if err := yaml.Unmarshal([]byte("provider: [redis]\n"), &o); err == nil {
+		t.Fatal("expected an error decoding a sequence into provider")
+	}
+}

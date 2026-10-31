@@ -9,6 +9,7 @@ There are several cache types supported by Trickster
 * bbolt
 * BadgerDB
 * Redis (basic, cluster, and sentinel)
+* Valkey (basic, cluster, and sentinel)
 
 The sample configuration ([examples/conf/example.full.yaml](../examples/conf/example.full.yaml)) demonstrates how to select and configure a particular cache type, as well as how to configure generic cache configurations such as Retention Policy.
 
@@ -84,17 +85,63 @@ The Filesystem Cache also accepts `min_free_bytes`, the space to keep free on th
 
 [BadgerDB](https://github.com/dgraph-io/badger) works similarly to bbolt, in that it is a filesystem-based key/value datastore. BadgerDB provides its own native object lifecycle management (TTL) and other additional features that distinguish it from bbolt. See the configuration for more info on using BadgerDB with Trickster.
 
-## Redis
+## Redis and Valkey
 
-Note: Trickster does not come with a Redis server. You must provide a pre-existing Redis endpoint for Trickster to use.
+Note: Trickster does not come with a Redis or Valkey server. You must provide a pre-existing endpoint for Trickster to use.
 
-Redis is a good option for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache. This allows Trickster to scale better than a Filesystem Cache, but you will need to provide your own Redis instance at which to point your Trickster instance. The default Redis endpoint is `redis:6379`, and should work for most docker and kube deployments with containers or services named `redis`. The sample configuration demonstrates how to customize the Redis endpoint. In addition to supporting TCP endpoints, Trickster supports Unix sockets for Trickster and Redis running on the same VM or bare-metal host.
+Redis and [Valkey](https://valkey.io) are good options for larger dashboard setups that also have heavy user traffic, where you might see degraded performance with a Filesystem Cache, and for several Trickster instances that share one cache. They allow Trickster to scale better than a Filesystem Cache, but you will need to provide your own server at which to point your Trickster instance. Ensure that the server is located close to your Trickster instance in order to minimize additional roundtrip latency.
 
-Ensure that your Redis instance is located close to your Trickster instance in order to minimize additional roundtrip latency.
+Trickster has a provider for each, which share one implementation:
 
-In addition to basic Redis, Trickster also supports Redis Cluster and Redis Sentinel. Refer to the sample configuration for customizing the Redis client type.
+* `redis` serves Redis, and any server compatible with it, Valkey included. It keeps the behavior Trickster has always had with Redis: each command takes a pooled connection of its own.
+* `valkey` serves Valkey 7.2 and later, including managed services such as Amazon ElastiCache and MemoryDB for Valkey and Google Memorystore for Valkey. It takes every `redis` option, adds settings only Valkey supports, and by default pipelines concurrent commands over a few shared connections.
 
-Trickster supports Redis servers that use TLS encryption by setting `use_tls: true` in the config. Refer to the sample configuration for more info.
+Each provider has its own section, and a cache uses only its provider's: a `redis` cache configures its `redis` section, and a `valkey` cache its `valkey` section. Trickster refuses a configuration that gives a cache the other provider's section, so moving a cache from `redis` to `valkey` means renaming its section:
+
+```yaml
+caches:
+  shared:
+    provider: valkey
+    valkey:
+      client_type: cluster
+      endpoints: [valkey-0:6379, valkey-1:6379, valkey-2:6379]
+```
+
+The default endpoint is `redis:6379` for a `redis` cache and `valkey:6379` for a `valkey` cache, which works for most docker and kube deployments with containers or services of those names. In addition to TCP endpoints, both providers support Unix sockets (`protocol: unix`), for Trickster and the server running on the same VM or bare-metal host, and TLS (`use_tls: true`). Both support basic (`standard`), Cluster and Sentinel client types; refer to the sample configuration for each option.
+
+| Behavior | `redis` | `valkey` |
+|---|---|---|
+| Default endpoint | `redis:6379` | `valkey:6379` |
+| Connections | a pooled connection per command, up to `pool_size` (default 10 per CPU) | the same by default; `auto_pipelining` shares pipelined connections among concurrent commands |
+| `db` in cluster mode | ignored, with a warning, as Redis Cluster serves db 0 only | selected, for a Valkey 9 cluster whose `cluster-databases` is above it |
+| Client-side cache | none | `client_side_cache` |
+| Replica reads | none | `replica_reads` |
+| ACME storage without Lua | not supported | supported |
+
+Both providers connect the same way:
+
+* A server that is unreachable when Trickster starts or reloads is not fatal. The client connects once the server is up, and until then cache operations fail, so requests go to the origin.
+* `read_timeout` and `write_timeout` bound a command's wait, the longer of the two applying (3s by default). On a pooled connection, it is the command's own deadline. A pipelined connection that has had no reply for a second is sent a PING, and is dropped, failing the commands waiting on it, when the PING takes longer than that timeout.
+* A read is retried up to `max_retries` times (3 by default; `-1` disables retries) after a network error, backing off between `min_retry_backoff` and `max_retry_backoff`. Writes are not retried.
+* Purges unlink their keys, so the server frees large objects in the background. In cluster mode, each key is unlinked on its own, as the keys of one command must share a slot.
+* `pool_timeout` has no effect, and Trickster warns when it is set; a command waits for a pooled connection until one frees. A `valkey` cache with `auto_pipelining` on uses its pool only for the rare command that can't be pipelined, so Trickster warns when it sets `pool_size`, `min_idle_conns` or `idle_timeout` too.
+* Trickster logs a warning when a `valkey` cache's server is not Valkey, since its Valkey-only settings may then fail, and a hint when a `redis` cache's server is Valkey.
+
+### Valkey-only settings
+
+**Pipelining.** With `auto_pipelining: true` (off by default), commands issued at once share a few connections, written and read in batches, instead of each taking a pooled connection of its own. `pipeline_multiplex` sets how many pipelined connections the client opens to each node, as the log2 of the count: `0` is one connection, and `3` is eight. Left unset, the client opens up to 4 to a single server and 1 to each cluster node.
+
+Turn pipelining on for a cache whose objects are all small, such as one that serves only time series backends. In Trickster's benchmarks, it cut the time per read by about half with 8 to 512 concurrent readers of small objects. It is off by default because a reply holds up every reply queued behind it on its connection. When the cache also moves multi-megabyte objects, as a cache for video segments or large files does, the slowest 1% of small reads took 3 to 6 times longer than with pooled connections. More pipelined connections narrow that gap without closing it.
+
+**Client-side cache.** With `client_side_cache.enabled`, the client keeps the objects it reads in this process, and the server tells it when another client changes or deletes one, so a purge on any Trickster instance sharing the server reaches every instance's copy. An entry lives at most `max_ttl` (30s by default), and no longer than the object's own TTL. In `optin` mode (the default), the server tracks the keys this client read through the cache; in `broadcast` mode, it tracks every key under `prefixes`, which costs the server less memory and sends the client more invalidations. Note:
+
+* Each connection has its own budget, `size_bytes_per_connection` (16MB by default), so the most memory it takes is the number of nodes, times the pipelined connections to each, times that budget.
+* The server keeps a tracking table of the keys its clients cache, which takes server memory.
+* Some managed services refuse client tracking. A `valkey` cache with the client-side cache enabled can't connect to them, nor to a server that only speaks the RESP2 protocol.
+
+**Replica reads.** `replica_reads.mode` sends cache reads to replicas: `prefer_replica` reads from any replica of the shard, `az_affinity` from a replica in `availability_zone`, and `az_affinity_with_primary` from any node there, saving the cross-zone hop and its transfer cost. A replica can lag the primary, so an object just stored may read as a miss there for a moment, which Trickster answers from the origin. For a single server with read replicas, list them in `replica_endpoints`. Writes always go to the primary, and ACME storage never reads from replicas.
+
+**Numbered databases in cluster mode.** Valkey 9 serves numbered databases in cluster mode, which Redis Cluster does not, so a `valkey` cache selects its `db` there. A cluster that rejects the selection, such as a Redis Cluster, fails the connection.
 
 ## Purging an Item from the Cache
 
