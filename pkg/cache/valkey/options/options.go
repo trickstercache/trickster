@@ -24,7 +24,6 @@ import (
 	"slices"
 
 	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"go.yaml.in/yaml/v3"
@@ -62,7 +61,7 @@ type ReplicaReadOptions struct {
 	// Mode is none, prefer_replica, az_affinity or az_affinity_with_primary
 	Mode string `yaml:"mode,omitempty"`
 	// AvailabilityZone is this instance's zone, which the az_affinity modes prefer
-	AvailabilityZone types.EnvString `yaml:"availability_zone,omitempty"`
+	AvailabilityZone string `yaml:"availability_zone,omitempty"`
 	// ReplicaEndpoints lists read replicas of a standard (single server) client
 	ReplicaEndpoints []string `yaml:"replica_endpoints,omitempty"`
 }

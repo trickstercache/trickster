@@ -142,7 +142,7 @@ func applySettings(o *valkey.ClientOption, ro *redisopts.Options, s *valkeyopts.
 }
 
 func applyReplicaReads(o *valkey.ClientOption, r *valkeyopts.ReplicaReadOptions) {
-	az := string(r.AvailabilityZone)
+	az := r.AvailabilityZone
 	switch r.Mode {
 	case valkeyopts.ReplicaReadsPreferReplica:
 		o.ReadNodeSelector = valkey.PreferReplicaNodeSelector()

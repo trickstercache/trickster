@@ -23,6 +23,7 @@ import (
 
 	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -113,6 +114,9 @@ func TestMarshalRoundTrip(t *testing.T) {
 	}
 	o2 := &Options{}
 	require.NoError(t, yaml.Unmarshal(out, o2))
+	// the password writes out redacted, so it alone doesn't survive the trip
+	require.Equal(t, secret.Secret(secret.Token), o2.Password)
+	o2.Password = o.Password
 	require.True(t, o.Equal(o2))
 }
 
