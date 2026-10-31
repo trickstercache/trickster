@@ -25,7 +25,6 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 )
@@ -45,7 +44,7 @@ func TestGreptimeDBMultipleNativeProtocols(t *testing.T) {
 			o.Postgres = po.New()
 			o.Postgres.UpstreamURL = "postgres://reader:dev-password@db.example/public"
 			o.AuthenticatorName = "native-clients"
-			o.AuthOptions = &autho.Options{Users: types.EnvStringMap{"client": "dev-password"}}
+			o.AuthOptions = &autho.Options{Users: map[string]string{"client": "dev-password"}}
 			c.Backends = bo.Lookup{"greptime": o}
 			if err := Listeners(c); err != nil {
 				t.Fatal(err)

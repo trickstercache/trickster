@@ -26,7 +26,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -55,7 +54,7 @@ func TestPathNormalizationGuardsUnauthenticatedPaths(t *testing.T) {
 	o.Hosts = []string{"example.com"}
 	o.AuthOptions = &autho.Options{
 		Name: "client-auth", Provider: basic.ID,
-		Users: configtypes.EnvStringMap{user: password},
+		Users: map[string]string{user: password},
 	}
 	var err error
 	if o.AuthOptions.Authenticator, err = basic.New(map[string]any{"options": o.AuthOptions}); err != nil {

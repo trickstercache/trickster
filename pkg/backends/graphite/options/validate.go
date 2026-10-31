@@ -51,7 +51,7 @@ func (o *Options) AuthHeader() (string, error) {
 		if o.OriginUsername != "" || o.OriginPassword != "" {
 			return "", ErrOriginAuthConflict
 		}
-		return o.OriginAuthorization, nil
+		return string(o.OriginAuthorization), nil
 	}
 	if o.OriginUsername == "" {
 		if o.OriginPassword != "" {
@@ -60,7 +60,7 @@ func (o *Options) AuthHeader() (string, error) {
 		return "", nil
 	}
 	return "Basic " + base64.StdEncoding.EncodeToString(
-		[]byte(o.OriginUsername+":"+o.OriginPassword)), nil
+		[]byte(o.OriginUsername+":"+string(o.OriginPassword))), nil
 }
 
 // ValidateWithPaths checks the declarative origin-auth option combinations,

@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -53,7 +53,7 @@ func TestEqual(t *testing.T) {
 		Protocol:        DefaultRedisProtocol,
 		Endpoint:        DefaultRedisEndpoint,
 		Endpoints:       []string{DefaultRedisEndpoint},
-		Password:        ct.EnvString("secret"),
+		Password:        secret.Secret("secret"),
 		MinRetryBackoff: timeconv.Duration(time.Second),
 		UseTLS:          true,
 	}

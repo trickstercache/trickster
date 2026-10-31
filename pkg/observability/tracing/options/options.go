@@ -69,6 +69,7 @@ func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.StdOutOptions = so
 	out.Tags = maps.Clone(o.Tags)
+	out.Headers = maps.Clone(o.Headers)
 	out.OmitTagsList = slices.Clone(o.OmitTagsList)
 	if o.SampleRate != nil {
 		out.SampleRate = new(*o.SampleRate)

@@ -36,7 +36,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -269,7 +268,7 @@ func pgwireHarness(t *testing.T, target pgwireTarget) (tricksterHarness, string)
 		backend.CacheName = "mem1"
 		backend.AuthenticatorName = pgwireConformanceName
 		c.Authenticators[pgwireConformanceName] = &autho.Options{
-			Provider: "basic", Users: configtypes.EnvStringMap{
+			Provider: "basic", Users: map[string]string{
 				target.ClientUser: target.ClientPassword, pgwireSecondUser: target.ClientPassword,
 			},
 		}

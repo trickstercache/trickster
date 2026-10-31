@@ -39,7 +39,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
-	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	logmgr "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
@@ -136,7 +135,7 @@ func TestDesiredRoutedMySQLListener(t *testing.T) {
 	}
 	router.AuthenticatorName = "mysql-listener-clients"
 	router.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"alice": "alice-password"},
+		Users: map[string]string{"alice": "alice-password"},
 	}
 	target := bo.New()
 	target.Name = "mysql-a"
@@ -144,7 +143,7 @@ func TestDesiredRoutedMySQLListener(t *testing.T) {
 	target.OriginURL = "mysql://origin:password@127.0.0.1/database"
 	target.AuthenticatorName = "mysql-clients"
 	target.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"alice": "alice-password"},
+		Users: map[string]string{"alice": "alice-password"},
 	}
 	c.Backends = bo.Lookup{"mysql-users": router, "mysql-a": target}
 
@@ -470,7 +469,7 @@ func TestApplyMySQLListenerRestartsWhenTLSFileContentsRotate(t *testing.T) {
 	backend.OriginURL = "mysql://origin:password@127.0.0.1/database"
 	backend.AuthenticatorName = "mysql-clients"
 	backend.AuthOptions = &autho.Options{
-		Users: configtypes.EnvStringMap{"client": "client-password"},
+		Users: map[string]string{"client": "client-password"},
 	}
 	backend.TLS.ServeTLS = true
 	backend.TLS.FullChainCertPath = certPath

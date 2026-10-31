@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	awsopts "github.com/trickstercache/trickster/v2/pkg/discovery/aws/options"
 	consulopts "github.com/trickstercache/trickster/v2/pkg/discovery/consul/options"
 	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
@@ -237,7 +236,7 @@ func TestHTTPOptionsValidation(t *testing.T) {
 				Endpoint: "https://example.com",
 				Interval: timeconv.Duration(5 * time.Second),
 				Timeout:  timeconv.Duration(time.Second),
-				Headers:  types.EnvStringMap{"X-Consul-Token": "abc"},
+				Headers:  map[string]string{"X-Consul-Token": "abc"},
 				Username: "u", Password: "p",
 			}, "",
 		},
@@ -318,7 +317,7 @@ func TestHTTPOptionsCloneIsDeep(t *testing.T) {
 		Provider: providers.File,
 		HTTP: &HTTPOptions{
 			Endpoint: "http://example.com",
-			Headers:  types.EnvStringMap{"X-Token": "original"},
+			Headers:  map[string]string{"X-Token": "original"},
 			TLS:      &to.Options{InsecureSkipVerify: true},
 		},
 	}

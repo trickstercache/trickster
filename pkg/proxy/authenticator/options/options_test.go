@@ -23,7 +23,6 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
-	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 )
@@ -90,7 +89,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestCloneYAMLSafe(t *testing.T) {
-	o := &Options{Users: ct.EnvStringMap{
+	o := &Options{Users: map[string]string{
 		"bob":   "bob-password",
 		"alice": "alice-password",
 	}}
