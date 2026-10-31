@@ -43,12 +43,13 @@ Try a new configuration against a staging directory first, such as `https://acme
 | Setting | Description | Default |
 |---|---|---|
 | `wait_on_startup` | Holds readiness at startup until missing certificates are issued, or this long at most. See [Startup Wait](#startup-wait). | `0` (no wait) |
-| `storage.provider` | `filesystem` or `redis`. See [Storage and Clusters](#storage-and-clusters). | `filesystem` |
+| `storage.provider` | `filesystem`, `redis` or `valkey`. See [Storage and Clusters](#storage-and-clusters). | `filesystem` |
 | `storage.path` | The storage directory, required for `filesystem` storage. | none |
 | `storage.redis.cache_name` | Borrows the connection settings of a named `redis` cache. | none |
 | `storage.redis.connection` | Redis connection settings, with the same fields as a cache's `redis` section, when `cache_name` is not used. | none |
 | `storage.redis.key_prefix` | Namespaces every ACME key. | `trickster:acme:` |
 | `storage.redis.lock_ttl` | The lease of a distributed lock, refreshed while it is held. At least `5s`. | `1m` |
+| `storage.valkey.*` | The same settings as `storage.redis`, for `valkey` storage: `cache_name` borrows a `valkey` cache, and `connection` has the fields of a cache's `valkey` section. | as `storage.redis` |
 | `issuers` | Named issuers, which backends reference. At least one is required. | none |
 | `on_demand` | Enables issuance during the first handshake for names no backend lists. See [On-Demand TLS](#on-demand-tls). | none |
 
@@ -138,7 +139,17 @@ acme:
       key_prefix: "trickster:acme:"
 ```
 
-ACME storage never shares the cache's keyspace, even when it borrows a cache's connection settings. Eviction would destroy account keys and certificates, so the Redis server must not evict these keys: run it with `maxmemory-policy noeviction`, or without `maxmemory`.
+**Valkey** storage works the same way, with the `valkey` provider and its `valkey` section, and borrows only a `valkey` cache, as Redis storage borrows only a `redis` cache. Its locks work on a Valkey server that runs without its Lua engine: when the server can't run the lock scripts, the locks are released and renewed with Valkey's native conditional commands. Redis storage needs Lua scripting. A borrowed `valkey` cache's client-side cache and replica reads are not used for ACME storage, as a lock must see the latest write.
+
+```yaml
+acme:
+  storage:
+    provider: valkey
+    valkey:
+      cache_name: shared-valkey  # borrow the connection settings of a valkey cache
+```
+
+ACME storage never shares the cache's keyspace, even when it borrows a cache's connection settings. Eviction would destroy account keys and certificates, so the server must not evict these keys: run it with `maxmemory-policy noeviction`, or without `maxmemory`.
 
 ## Startup Wait
 
@@ -209,7 +220,7 @@ See [metrics.md](./metrics.md) for details.
 
 ## Kubernetes
 
-ACME is not supported together with the [Kubernetes controller](./kubernetes-gateway.md). With the controller, certificates come from TLS Secrets, and [cert-manager](https://cert-manager.io/) is the established way to issue them. A Trickster Deployment that does not run the controller can use ACME, with a persistent volume for filesystem storage, or with Redis storage when it has several replicas.
+ACME is not supported together with the [Kubernetes controller](./kubernetes-gateway.md). With the controller, certificates come from TLS Secrets, and [cert-manager](https://cert-manager.io/) is the established way to issue them. A Trickster Deployment that does not run the controller can use ACME, with a persistent volume for filesystem storage, or with Redis or Valkey storage when it has several replicas.
 
 ## Limitations
 

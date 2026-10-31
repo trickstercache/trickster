@@ -21,6 +21,7 @@ import (
 	"time"
 
 	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	valkeyopts "github.com/trickstercache/trickster/v2/pkg/cache/valkey/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
@@ -104,7 +105,8 @@ func TestNilOptions(t *testing.T) {
 	require.False(t, o.IsEnabled())
 	require.Nil(t, o.Clone())
 	require.NoError(t, o.Validate())
-	require.Empty(t, o.RedisCacheName())
+	require.Empty(t, o.StorageCacheName())
+	require.Nil(t, o.ValkeyConnection())
 	o.Initialize()
 	require.True(t, o.Equal(nil))
 	require.False(t, o.Equal(&Options{}))
@@ -147,6 +149,29 @@ func TestValidateErrors(t *testing.T) {
 			o.Storage = &StorageOptions{Provider: StorageRedis, Redis: &RedisStorageOptions{
 				CacheName: testCache, LockTTL: timeconv.Duration(time.Second),
 			}}
+		},
+		"valkey block on filesystem": func(o *Options) {
+			o.Storage.Valkey = &ValkeyStorageOptions{}
+		},
+		"valkey block on redis": func(o *Options) {
+			o.Storage = &StorageOptions{Provider: StorageRedis, Redis: &RedisStorageOptions{CacheName: testCache},
+				Valkey: &ValkeyStorageOptions{}}
+			o.Storage.initialize()
+		},
+		"redis block on valkey": func(o *Options) {
+			o.Storage = &StorageOptions{Provider: StorageValkey, Valkey: &ValkeyStorageOptions{CacheName: testCache},
+				Redis: &RedisStorageOptions{}}
+			o.Storage.initialize()
+		},
+		"valkey neither": func(o *Options) {
+			o.Storage = &StorageOptions{Provider: StorageValkey}
+			o.Storage.initialize()
+		},
+		"valkey bad connection": func(o *Options) {
+			c := valkeyopts.New()
+			c.ReplicaReads.Mode = "x"
+			o.Storage = &StorageOptions{Provider: StorageValkey, Valkey: &ValkeyStorageOptions{Connection: c}}
+			o.Storage.initialize()
 		},
 		"nil issuer":  func(o *Options) { o.Issuers["x"] = nil },
 		"no terms":    func(o *Options) { o.Issuers[testIssuer].AgreeToTerms = false },
@@ -249,7 +274,9 @@ func TestStorageInitialize(t *testing.T) {
 	s.Redis.CacheName = testCache
 	require.NoError(t, s.validate())
 	o := &Options{Storage: s}
-	require.Equal(t, testCache, o.RedisCacheName())
+	require.Equal(t, testCache, o.StorageCacheName())
+	require.Equal(t, DefaultRedisKeyPrefix, s.KeyPrefix())
+	require.Equal(t, time.Duration(DefaultRedisLockTTL), s.LockTTL())
 	require.Nil(t, o.RedisConnection())
 	rc := &redisopts.Options{Endpoint: "127.0.0.1:6379"}
 	require.Same(t, rc, (&Options{Storage: &StorageOptions{Redis: &RedisStorageOptions{Connection: rc}}}).RedisConnection())
@@ -262,6 +289,40 @@ func TestStorageInitialize(t *testing.T) {
 	require.Equal(t, "a", conn.Connection.Endpoints[0])
 	require.False(t, cc.Equal(conn))
 	require.False(t, conn.Equal(nil))
+}
+
+func TestValkeyStorage(t *testing.T) {
+	s := &StorageOptions{Provider: " Valkey "}
+	s.initialize()
+	require.Equal(t, StorageValkey, s.Provider)
+	require.Equal(t, DefaultRedisKeyPrefix, s.KeyPrefix())
+	require.Equal(t, time.Duration(DefaultRedisLockTTL), s.LockTTL())
+	s.Valkey.CacheName = testCache
+	require.NoError(t, s.validate())
+	o := &Options{Storage: s}
+	require.Equal(t, testCache, o.StorageCacheName())
+	require.Nil(t, o.ValkeyConnection())
+
+	vc := valkeyopts.New()
+	vc.Endpoints = []string{"a"}
+	s = &StorageOptions{Provider: StorageValkey, Valkey: &ValkeyStorageOptions{Connection: vc}}
+	s.initialize()
+	require.NoError(t, s.validate())
+	require.Empty(t, s.CacheName())
+	require.Same(t, vc, (&Options{Storage: s}).ValkeyConnection())
+	c := s.Clone()
+	require.True(t, c.Equal(s))
+	c.Valkey.Connection.Endpoints[0] = "b"
+	require.Equal(t, "a", vc.Endpoints[0])
+	require.False(t, c.Equal(s))
+	require.False(t, s.Valkey.Equal(nil))
+	require.Nil(t, (*ValkeyStorageOptions)(nil).Clone())
+
+	// the storage settings of a provider without a block are empty
+	none := &StorageOptions{Provider: StorageFilesystem}
+	require.Empty(t, none.CacheName())
+	require.Empty(t, none.KeyPrefix())
+	require.Zero(t, none.LockTTL())
 }
 
 func TestBackendOptions(t *testing.T) {

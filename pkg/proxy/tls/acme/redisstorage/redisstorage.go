@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// Package redisstorage keeps ACME accounts, certificates and locks in Redis, so instances
-// sharing the keyspace share certificates and coordinate issuance.
+// Package redisstorage keeps ACME accounts, certificates and locks in Redis or Valkey, so
+// instances sharing the keyspace share certificates and coordinate issuance.
 package redisstorage
 
 import (
@@ -28,10 +28,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/caddyserver/certmagic"
-	redis "github.com/redis/go-redis/v9"
+	"github.com/valkey-io/valkey-go"
 )
 
 const (
@@ -44,18 +45,23 @@ const (
 	pathSeparator = "/"
 	minimumPoll   = 50 * time.Millisecond
 	maximumPoll   = time.Second
+
+	// a Valkey server without its Lua engine answers EVAL with this, and an older one without
+	// scripting answers that the command is unknown
+	errNoScriptingEngine = "could not find scripting engine"
+	errUnknownCommand    = "unknown command"
 )
 
 // ErrLockNotHeld is returned when unlocking or renewing a lock this Storage does not hold
 var ErrLockNotHeld = errors.New("acme storage lock is not held by this instance")
 
-var releaseScript = redis.NewScript(`
+var releaseScript = valkey.NewLuaScript(`
 if redis.call("GET", KEYS[1]) == ARGV[1] then
 	return redis.call("DEL", KEYS[1])
 end
 return 0`)
 
-var refreshScript = redis.NewScript(`
+var refreshScript = valkey.NewLuaScript(`
 if redis.call("GET", KEYS[1]) == ARGV[1] then
 	return redis.call("PEXPIRE", KEYS[1], ARGV[2])
 end
@@ -66,14 +72,24 @@ var (
 	_ certmagic.LockLeaseRenewer = (*Storage)(nil)
 )
 
-// Storage implements certmagic.Storage on Redis. Every key shares one hash tag, so the keyspace
-// lives in a single cluster slot and multi-key operations stay valid on Redis Cluster.
+// ClientSource returns the client that a Storage sends its commands on, or an error while the
+// server is not yet connected
+type ClientSource interface {
+	Client() (valkey.Client, error)
+}
+
+// Storage implements certmagic.Storage on Redis or Valkey. Every key shares one hash tag, so the
+// keyspace lives in a single cluster slot and multi-key operations stay valid on a cluster.
 type Storage struct {
-	client  redis.Cmdable
+	src     ClientSource
 	prefix  string
 	lockTTL time.Duration
 	mtx     sync.Mutex
 	held    map[string]*heldLock
+	// nativeLocks allows releasing and refreshing locks with Valkey's DELIFEQ and SET IFEQ
+	// when the server has no Lua; noLua records that a script found it missing
+	nativeLocks bool
+	noLua       atomic.Bool
 }
 
 type heldLock struct {
@@ -82,13 +98,15 @@ type heldLock struct {
 	done  chan struct{}
 }
 
-// New returns a Storage that namespaces its keys under keyPrefix and leases locks for lockTTL
-func New(client redis.Cmdable, keyPrefix string, lockTTL time.Duration) *Storage {
+// New returns a Storage that namespaces its keys under keyPrefix and leases locks for lockTTL.
+// nativeLocks lets a Valkey server without Lua release and refresh locks with native commands.
+func New(src ClientSource, keyPrefix string, lockTTL time.Duration, nativeLocks bool) *Storage {
 	return &Storage{
-		client:  client,
-		prefix:  "{" + keyPrefix + "}",
-		lockTTL: lockTTL,
-		held:    make(map[string]*heldLock),
+		src:         src,
+		prefix:      "{" + keyPrefix + "}",
+		lockTTL:     lockTTL,
+		held:        make(map[string]*heldLock),
+		nativeLocks: nativeLocks,
 	}
 }
 
@@ -104,21 +122,50 @@ func (s *Storage) lockKey(name string) string {
 	return s.prefix + lockPrefix + name
 }
 
+// tx runs cmds in one MULTI/EXEC transaction and returns the first error among them
+func tx(ctx context.Context, c valkey.Client, cmds ...valkey.Completed) error {
+	multi := make(valkey.Commands, 0, len(cmds)+2)
+	multi = append(multi, c.B().Multi().Build())
+	multi = append(multi, cmds...)
+	multi = append(multi, c.B().Exec().Build())
+	res := c.DoMulti(ctx, multi...)
+	for _, r := range res[:len(res)-1] {
+		if err := r.Error(); err != nil {
+			return err
+		}
+	}
+	replies, err := res[len(res)-1].ToArray()
+	if err != nil {
+		return err
+	}
+	for _, r := range replies {
+		if err := r.Error(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Store puts value at key, recording its modification time
 func (s *Storage) Store(ctx context.Context, key string, value []byte) error {
-	_, err := s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		p.HSet(ctx, s.valueKey(key), fieldValue, value,
-			fieldModified, strconv.FormatInt(time.Now().UnixNano(), 10))
-		p.SAdd(ctx, s.indexKey(), key)
-		return nil
-	})
-	return err
+	c, err := s.src.Client()
+	if err != nil {
+		return err
+	}
+	return tx(ctx, c,
+		c.B().Hset().Key(s.valueKey(key)).FieldValue().FieldValue(fieldValue, valkey.BinaryString(value)).
+			FieldValue(fieldModified, strconv.FormatInt(time.Now().UnixNano(), 10)).Build(),
+		c.B().Sadd().Key(s.indexKey()).Member(key).Build())
 }
 
 // Load returns the value at key, or fs.ErrNotExist
 func (s *Storage) Load(ctx context.Context, key string) ([]byte, error) {
-	b, err := s.client.HGet(ctx, s.valueKey(key), fieldValue).Bytes()
-	if errors.Is(err, redis.Nil) {
+	c, err := s.src.Client()
+	if err != nil {
+		return nil, err
+	}
+	b, err := c.Do(ctx, c.B().Hget().Key(s.valueKey(key)).Field(fieldValue).Build()).AsBytes()
+	if valkey.IsValkeyNil(err) {
 		return nil, fs.ErrNotExist
 	}
 	return b, err
@@ -126,34 +173,47 @@ func (s *Storage) Load(ctx context.Context, key string) ([]byte, error) {
 
 // Delete removes key and, when key is a directory, every key beneath it
 func (s *Storage) Delete(ctx context.Context, key string) error {
-	keys, err := s.keysUnder(ctx, key, true)
+	c, err := s.src.Client()
+	if err != nil {
+		return err
+	}
+	keys, err := s.keysUnder(ctx, c, key, true)
 	if err != nil {
 		return err
 	}
 	keys = append(keys, key)
-	_, err = s.client.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		for _, k := range keys {
-			p.Del(ctx, s.valueKey(k))
-			p.SRem(ctx, s.indexKey(), k)
-		}
-		return nil
-	})
-	return err
+	cmds := make([]valkey.Completed, 0, len(keys)*2)
+	for _, k := range keys {
+		cmds = append(cmds, c.B().Del().Key(s.valueKey(k)).Build(), c.B().Srem().Key(s.indexKey()).Member(k).Build())
+	}
+	return tx(ctx, c, cmds...)
 }
 
 // Exists reports whether key is a file or a directory holding files
 func (s *Storage) Exists(ctx context.Context, key string) bool {
-	n, err := s.client.Exists(ctx, s.valueKey(key)).Result()
+	c, err := s.src.Client()
+	if err != nil {
+		return false
+	}
+	return s.exists(ctx, c, key)
+}
+
+func (s *Storage) exists(ctx context.Context, c valkey.Client, key string) bool {
+	n, err := c.Do(ctx, c.B().Exists().Key(s.valueKey(key)).Build()).AsInt64()
 	if err == nil && n > 0 {
 		return true
 	}
-	keys, err := s.keysUnder(ctx, key, true)
+	keys, err := s.keysUnder(ctx, c, key, true)
 	return err == nil && len(keys) > 0
 }
 
 // List returns the keys under path: every file beneath it when recursive, or else its children
 func (s *Storage) List(ctx context.Context, path string, recursive bool) ([]string, error) {
-	keys, err := s.keysUnder(ctx, path, recursive)
+	c, err := s.src.Client()
+	if err != nil {
+		return nil, err
+	}
+	keys, err := s.keysUnder(ctx, c, path, recursive)
 	if err != nil {
 		return nil, err
 	}
@@ -165,30 +225,34 @@ func (s *Storage) List(ctx context.Context, path string, recursive bool) ([]stri
 
 // Stat describes key, which may be a file or a directory
 func (s *Storage) Stat(ctx context.Context, key string) (certmagic.KeyInfo, error) {
-	vals, err := s.client.HMGet(ctx, s.valueKey(key), fieldValue, fieldModified).Result()
+	c, err := s.src.Client()
 	if err != nil {
 		return certmagic.KeyInfo{}, err
 	}
-	if len(vals) == 2 && vals[0] != nil {
+	vals, err := c.Do(ctx, c.B().Hmget().Key(s.valueKey(key)).Field(fieldValue, fieldModified).Build()).ToArray()
+	if err != nil {
+		return certmagic.KeyInfo{}, err
+	}
+	if len(vals) == 2 && !vals[0].IsNil() {
 		info := certmagic.KeyInfo{Key: key, IsTerminal: true}
-		if v, ok := vals[0].(string); ok {
+		if v, err := vals[0].ToString(); err == nil {
 			info.Size = int64(len(v))
 		}
-		if m, ok := vals[1].(string); ok {
+		if m, err := vals[1].ToString(); err == nil {
 			if ns, err := strconv.ParseInt(m, 10, 64); err == nil {
 				info.Modified = time.Unix(0, ns)
 			}
 		}
 		return info, nil
 	}
-	if s.Exists(ctx, key) {
+	if s.exists(ctx, c, key) {
 		return certmagic.KeyInfo{Key: key}, nil
 	}
 	return certmagic.KeyInfo{}, fs.ErrNotExist
 }
 
-func (s *Storage) keysUnder(ctx context.Context, dir string, recursive bool) ([]string, error) {
-	members, err := s.client.SMembers(ctx, s.indexKey()).Result()
+func (s *Storage) keysUnder(ctx context.Context, c valkey.Client, dir string, recursive bool) ([]string, error) {
+	members, err := c.Do(ctx, c.B().Smembers().Key(s.indexKey()).Build()).AsStrSlice()
 	if err != nil {
 		return nil, err
 	}
@@ -222,13 +286,18 @@ func (s *Storage) Lock(ctx context.Context, name string) error {
 	}
 	poll := min(max(s.lockTTL/10, minimumPoll), maximumPoll)
 	for {
-		ok, err := s.client.SetNX(ctx, s.lockKey(name), token, s.lockTTL).Result()
+		c, err := s.src.Client()
 		if err != nil {
 			return err
 		}
-		if ok {
+		err = c.Do(ctx, c.B().Set().Key(s.lockKey(name)).Value(token).Nx().
+			PxMilliseconds(s.lockTTL.Milliseconds()).Build()).Error()
+		if err == nil {
 			s.hold(name, token)
 			return nil
+		}
+		if !valkey.IsValkeyNil(err) {
+			return err
 		}
 		select {
 		case <-ctx.Done():
@@ -256,8 +325,7 @@ func (s *Storage) keepAlive(name string, h *heldLock) {
 			return
 		case <-t.C:
 			// a lost lease is not fatal here: the holder learns of it on Unlock
-			_, _ = refreshScript.Run(context.Background(), s.client, []string{s.lockKey(name)},
-				h.token, s.lockTTL.Milliseconds()).Result()
+			_, _ = s.refresh(context.Background(), name, h.token, s.lockTTL)
 		}
 	}
 }
@@ -273,11 +341,11 @@ func (s *Storage) Unlock(ctx context.Context, name string) error {
 	}
 	close(h.stop)
 	<-h.done
-	n, err := releaseScript.Run(ctx, s.client, []string{s.lockKey(name)}, h.token).Int()
+	released, err := s.release(ctx, name, h.token)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if !released {
 		return ErrLockNotHeld
 	}
 	return nil
@@ -291,15 +359,71 @@ func (s *Storage) RenewLockLease(ctx context.Context, name string, leaseDuration
 	if !ok {
 		return ErrLockNotHeld
 	}
-	n, err := refreshScript.Run(ctx, s.client, []string{s.lockKey(name)}, h.token,
-		leaseDuration.Milliseconds()).Int()
+	renewed, err := s.refresh(ctx, name, h.token, leaseDuration)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	if !renewed {
 		return ErrLockNotHeld
 	}
 	return nil
+}
+
+// release deletes the named lock if token still holds it
+func (s *Storage) release(ctx context.Context, name, token string) (bool, error) {
+	c, err := s.src.Client()
+	if err != nil {
+		return false, err
+	}
+	key := s.lockKey(name)
+	if !s.noLua.Load() {
+		n, err := releaseScript.Exec(ctx, c, []string{key}, []string{token}).AsInt64()
+		if !s.lacksLua(err) {
+			return n == 1, err
+		}
+	}
+	n, err := c.Do(ctx, c.B().Delifeq().Key(key).Value(token).Build()).AsInt64()
+	return n == 1, err
+}
+
+// refresh extends the named lock's lease to lease if token still holds it
+func (s *Storage) refresh(ctx context.Context, name, token string, lease time.Duration) (bool, error) {
+	c, err := s.src.Client()
+	if err != nil {
+		return false, err
+	}
+	key := s.lockKey(name)
+	ms := lease.Milliseconds()
+	if !s.noLua.Load() {
+		n, err := refreshScript.Exec(ctx, c, []string{key}, []string{token, strconv.FormatInt(ms, 10)}).AsInt64()
+		if !s.lacksLua(err) {
+			return n == 1, err
+		}
+	}
+	// a SET IFEQ to the held token is a no-op on the value that renews only its lease
+	err = c.Do(ctx, c.B().Set().Key(key).Value(token).Ifeq(token).PxMilliseconds(ms).Build()).Error()
+	if valkey.IsValkeyNil(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+// lacksLua reports whether err says the server can't run Lua, and if native lock commands may
+// take over, switches to them for this Storage's lifetime
+func (s *Storage) lacksLua(err error) bool {
+	if err == nil || !s.nativeLocks {
+		return false
+	}
+	ve, ok := valkey.IsValkeyErr(err)
+	if !ok {
+		return false
+	}
+	msg := strings.ToLower(ve.Error())
+	if !strings.Contains(msg, errNoScriptingEngine) && !strings.Contains(msg, errUnknownCommand) {
+		return false
+	}
+	s.noLua.Store(true)
+	return true
 }
 
 // Close stops refreshing held locks and releases them

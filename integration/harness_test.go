@@ -386,6 +386,7 @@ func defaultCacheProviders() []cacheProviderCase {
 		{Name: "memory", Backend: "prom1"},
 		{Name: "filesystem", Backend: "prom2"},
 		{Name: "redis", Backend: "prom3"},
+		{Name: "valkey", Backend: "prom4"},
 	}
 }
 

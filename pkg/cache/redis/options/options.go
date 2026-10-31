@@ -17,6 +17,8 @@
 package options
 
 import (
+	"slices"
+
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
@@ -25,7 +27,7 @@ import (
 
 // Options is a collection of Configurations for Connecting to Redis
 type Options struct {
-	// ClientType defines the type of Redis Client ("standard", "cluster", "sentinel")
+	// ClientType defines the type of Redis Client (ClientTypeStandard, ClientTypeCluster or ClientTypeSentinel)
 	ClientType string `yaml:"client_type,omitempty"`
 	// Protocol represents the connection method (e.g., "tcp", "unix", etc.)
 	Protocol string `yaml:"protocol,omitempty"`
@@ -82,13 +84,51 @@ func New() *Options {
 }
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
+	*o = *New()
+	return o.DecodeYAML(value)
+}
+
+// DecodeYAML decodes value onto o, keeping o's values for the keys value leaves out. A type
+// embedding Options decodes through it, since Options' UnmarshalYAML would replace its defaults.
+func (o *Options) DecodeYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*New())
+	lo := loadOptions(*o)
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)
 	return nil
+}
+
+// IneffectivePoolKeys returns the configured pool keys a client won't use: pool_timeout always,
+// as a command waits for a pooled connection until one frees, and the rest when it isn't pooled
+func (o *Options) IneffectivePoolKeys(pooled bool) []string {
+	var out []string
+	if !pooled {
+		if o.PoolSize != 0 {
+			out = append(out, KeyPoolSize)
+		}
+		if o.MinIdleConns != 0 {
+			out = append(out, KeyMinIdleConns)
+		}
+		if o.ConnMaxIdleTime != 0 {
+			out = append(out, KeyIdleTimeout)
+		}
+	}
+	if o.PoolTimeout != 0 {
+		out = append(out, KeyPoolTimeout)
+	}
+	return out
+}
+
+// Clone returns a deep copy of the Options
+func (o *Options) Clone() *Options {
+	if o == nil {
+		return nil
+	}
+	out := *o
+	out.Endpoints = slices.Clone(o.Endpoints)
+	return &out
 }
 
 // Equal returns true if all values in the Options are identical

@@ -190,6 +190,19 @@ caches:
       endpoint: redis:6379
       endpoints:
       - redis:6379
+    valkey:
+      client_type: standard
+      protocol: tcp
+      endpoint: valkey:6379
+      endpoints:
+      - valkey:6379
+      auto_pipelining: false
+      replica_reads:
+        mode: none
+      client_side_cache:
+        mode: optin
+        size_bytes_per_connection: 16777216
+        max_ttl: 30s
     filesystem:
       cache_path: /tmp/trickster
     bbolt:
@@ -221,6 +234,19 @@ caches:
       endpoint: redis:6379
       endpoints:
       - redis:6379
+    valkey:
+      client_type: standard
+      protocol: tcp
+      endpoint: valkey:6379
+      endpoints:
+      - valkey:6379
+      auto_pipelining: false
+      replica_reads:
+        mode: none
+      client_side_cache:
+        mode: optin
+        size_bytes_per_connection: 16777216
+        max_ttl: 30s
     filesystem:
       cache_path: /tmp/trickster
     bbolt:
@@ -252,6 +278,19 @@ caches:
       endpoint: redis:6379
       endpoints:
       - redis:6379
+    valkey:
+      client_type: standard
+      protocol: tcp
+      endpoint: valkey:6379
+      endpoints:
+      - valkey:6379
+      auto_pipelining: false
+      replica_reads:
+        mode: none
+      client_side_cache:
+        mode: optin
+        size_bytes_per_connection: 16777216
+        max_ttl: 30s
     filesystem:
       cache_path: /var/cache/trickster/tenant-b
     bbolt:

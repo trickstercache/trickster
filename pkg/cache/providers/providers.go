@@ -32,12 +32,15 @@ const (
 	BBoltID
 	// BadgerDBID indicates a BadgerDB cache
 	BadgerDBID
+	// ValkeyID indicates a Valkey cache
+	ValkeyID
 
 	Memory     = "memory"
 	Filesystem = "filesystem"
 	Redis      = "redis"
 	BBolt      = "bbolt"
 	BadgerDB   = "badger"
+	Valkey     = "valkey"
 )
 
 // Names is a map of cache providers keyed by name
@@ -47,6 +50,7 @@ var Names = map[string]Provider{
 	Redis:      RedisID,
 	BBolt:      BBoltID,
 	BadgerDB:   BadgerDBID,
+	Valkey:     ValkeyID,
 }
 
 // Values is a map of cache providers keyed by internal id
@@ -68,5 +72,6 @@ func (p Provider) String() string {
 // UsesIndex returns true if the providerName uses an index
 // providerName is expected to already be lowercase/no-space
 func UsesIndex(providerName string) bool {
-	return providerName != BadgerDB && providerName != Redis && providerName != Memory
+	return providerName != BadgerDB && providerName != Redis && providerName != Valkey &&
+		providerName != Memory
 }

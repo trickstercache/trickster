@@ -36,6 +36,8 @@ listeners:
 caches:
   shared:
     provider: redis
+  vshared:
+    provider: valkey
   mem:
     provider: memory
 acme:
@@ -107,6 +109,18 @@ func TestValidateACMEErrors(t *testing.T) {
 			"path: /var/lib/trickster/acme",
 			"provider: redis\n    redis:\n      cache_name: mem",
 		}, "is not a redis cache"},
+		"redis storage on a valkey cache": {[]string{
+			"path: /var/lib/trickster/acme",
+			"provider: redis\n    redis:\n      cache_name: vshared",
+		}, "is not a redis cache"},
+		"valkey storage on a redis cache": {[]string{
+			"path: /var/lib/trickster/acme",
+			"provider: valkey\n    valkey:\n      cache_name: shared",
+		}, "acme.storage.valkey cache \"shared\" is not a valkey cache"},
+		"valkey cache undefined": {[]string{
+			"path: /var/lib/trickster/acme",
+			"provider: valkey\n    valkey:\n      cache_name: none",
+		}, "acme.storage.valkey references undefined cache"},
 		"no tls port": {[]string{"tls_port: 8483", "tls_port: 0"}, "an http listener with a tls_port"},
 		"on demand nowhere": {
 			[]string{
@@ -191,4 +205,11 @@ func TestValidateACMEOnDemandListener(t *testing.T) {
 		"backends:\n  site:", "backends:\n  plain:\n    provider: rp\n    origin_url: http://127.0.0.1:9092\n"+
 			"    cache_name: mem\n    listeners: [edge]\n  site:")
 	require.ErrorContains(t, err, "must be an http listener with a tls_port")
+}
+
+func TestValidateACMEValkeyStorageKeepsBorrowedCache(t *testing.T) {
+	c, err := loadACMEConfig(t, "path: /var/lib/trickster/acme",
+		"provider: valkey\n    valkey:\n      cache_name: vshared")
+	require.NoError(t, err)
+	require.Contains(t, c.Caches, "vshared", "a cache only ACME storage uses must not be pruned")
 }

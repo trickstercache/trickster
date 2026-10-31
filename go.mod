@@ -39,9 +39,9 @@ require (
 	github.com/prometheus/prometheus v0.315.0
 	github.com/quic-go/quic-go v0.63.0
 	github.com/quic-go/webtransport-go v0.13.0
-	github.com/redis/go-redis/v9 v9.23.0
 	github.com/stretchr/testify v1.12.1
 	github.com/tinylib/msgp v1.6.5
+	github.com/valkey-io/valkey-go v1.0.79
 	go.etcd.io/bbolt v1.5.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.72.0
 	go.opentelemetry.io/otel v1.47.0

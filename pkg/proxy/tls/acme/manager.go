@@ -32,7 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	cacheopts "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -114,7 +114,7 @@ type epoch struct {
 	storage      certmagic.Storage
 	closeStorage func() error
 	storageOpts  *acmeopts.StorageOptions
-	redisConn    *redisopts.Options
+	storageConn  *cacheopts.Options
 	done         chan struct{}
 }
 
@@ -172,8 +172,8 @@ func (m *Manager) Apply(conf *config.Config) (err error) {
 		m.teardownLocked()
 		return nil
 	}
-	conn := redisConnection(conf)
-	if ep := m.epoch; ep == nil || !ep.storageOpts.Equal(conf.ACME.Storage) || !ep.redisConn.Equal(conn) {
+	conn := storageConnection(conf)
+	if ep := m.epoch; ep == nil || !ep.storageOpts.Equal(conf.ACME.Storage) || !sameConnection(ep.storageConn, conn) {
 		m.teardownLocked()
 		ep, epErr := m.newEpoch(conf.ACME.Storage, conn)
 		if epErr != nil {
@@ -286,7 +286,7 @@ func (m *Manager) newIssuer(name string, o *acmeopts.IssuerOptions, ports issuer
 	}, nil
 }
 
-func (m *Manager) newEpoch(o *acmeopts.StorageOptions, conn *redisopts.Options) (*epoch, error) {
+func (m *Manager) newEpoch(o *acmeopts.StorageOptions, conn *cacheopts.Options) (*epoch, error) {
 	storage, closeStorage, err := newStorage(o, conn)
 	if err != nil {
 		return nil, err
@@ -294,7 +294,7 @@ func (m *Manager) newEpoch(o *acmeopts.StorageOptions, conn *redisopts.Options) 
 	ctx, cancel := context.WithCancel(context.Background())
 	ep := &epoch{
 		ctx: ctx, cancel: cancel, storage: storage, closeStorage: closeStorage,
-		storageOpts: o.Clone(), redisConn: conn, done: make(chan struct{}),
+		storageOpts: o.Clone(), storageConn: conn, done: make(chan struct{}),
 	}
 	ep.cache = certmagic.NewCache(certmagic.CacheOptions{
 		GetConfigForCert: m.configForCert,

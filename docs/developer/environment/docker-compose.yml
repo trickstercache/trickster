@@ -23,6 +23,45 @@ services:
       timeout: 2s
       retries: 5
 
+  valkey:
+    image: valkey/valkey:9-alpine
+    restart: always
+    ports:
+     - 6380:6379
+    volumes:
+     - valkey-data:/data
+    command: valkey-server --appendonly yes --stop-writes-on-bgsave-error no
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+  # a three-node Valkey cluster in one container, whose nodes announce 127.0.0.1 so that the
+  # host reaches each one at its own published port; for the redis cache benchmarks and live tests
+  valkey_cluster:
+    image: valkey/valkey:9-alpine
+    profiles: [cache-cluster]
+    ports:
+     - 7001-7003:7001-7003
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        for p in 7001 7002 7003; do
+          valkey-server --port $$p --cluster-enabled yes --cluster-config-file nodes-$$p.conf \
+            --cluster-announce-ip 127.0.0.1 --cluster-databases 16 --daemonize yes --dir /tmp \
+            --save '' --appendonly no
+        done
+        sleep 1
+        valkey-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 \
+          --cluster-replicas 0 --cluster-yes
+        tail -f /dev/null
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -p 7001 cluster info | grep -q cluster_state:ok"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
   # ui's
 
   grafana:
@@ -908,3 +947,4 @@ volumes:
   mimir-east-data:
   mimir-west-data:
   redis-data:
+  valkey-data:

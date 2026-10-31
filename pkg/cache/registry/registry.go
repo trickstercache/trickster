@@ -67,7 +67,7 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 			co.IndexCliOpts.MinFreeBytes = cfg.Filesystem.MinFreeBytes
 		}
 		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), co, cfg)
-	case providers.Redis:
+	case providers.Redis, providers.Valkey:
 		c = manager.NewCache(redis.New(context.Background(), cacheName, cfg), co, cfg)
 	case providers.BBolt:
 		co.IndexCliOpts.NeedsFlushInterval = true
