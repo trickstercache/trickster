@@ -17,6 +17,8 @@
 package options
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
@@ -431,4 +433,56 @@ func TestUnmarshalYAMLError(t *testing.T) {
 	if err := yaml.Unmarshal([]byte("provider: [redis]\n"), &o); err == nil {
 		t.Fatal("expected an error decoding a sequence into provider")
 	}
+}
+
+func TestMarshalYAMLKeepsOwnProviderBlock(t *testing.T) {
+	t.Parallel()
+	blocks := []string{"index", redisKey, valkeyKey, providers.Filesystem, providers.BBolt, "badger", providers.Memory}
+	tests := []struct {
+		provider string
+		want     []string
+	}{
+		{providers.Redis, []string{redisKey}},
+		{" Valkey ", []string{valkeyKey}},
+		{providers.Filesystem, []string{"index", providers.Filesystem}},
+		{providers.BBolt, []string{"index", providers.BBolt}},
+		{providers.BadgerDB, []string{"badger"}},
+		{providers.Memory, []string{providers.Memory}},
+		// an unknown name keeps the block of the provider ID that New set
+		{"unknown", []string{"index", providers.Memory}},
+	}
+	for _, test := range tests {
+		t.Run(test.provider, func(t *testing.T) {
+			// decoding without Initialize leaves every block New filled
+			l := decodeCaches(t, "caches:\n  c:\n    provider: '"+test.provider+"'\n")
+			out, err := yaml.Marshal(l)
+			if err != nil {
+				t.Fatalf("yaml.Marshal: %v", err)
+			}
+			var m map[string]map[string]any
+			if err := yaml.Unmarshal(out, &m); err != nil {
+				t.Fatalf("yaml.Unmarshal: %v", err)
+			}
+			for _, b := range blocks {
+				if _, ok := m["c"][b]; ok != slices.Contains(test.want, b) {
+					t.Fatalf("block %q present=%v, want %v:\n%s", b, ok, !ok, out)
+				}
+			}
+			if strings.TrimSpace(test.provider) == "unknown" {
+				return
+			}
+			// the written config loads back without tripping the provider key checks
+			l = decodeCaches(t, "caches:\n"+indent(string(out)))
+			if _, err := l.Initialize(sets.New([]string{"c"})); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
+			if err := l.Validate(); err != nil {
+				t.Fatalf("Validate: %v\n%s", err, out)
+			}
+		})
+	}
+}
+
+func indent(s string) string {
+	return "  " + strings.ReplaceAll(strings.TrimRight(s, "\n"), "\n", "\n  ") + "\n"
 }

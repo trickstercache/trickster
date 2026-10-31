@@ -220,55 +220,36 @@ func (o *Options) Initialize(name string) error {
 		}
 	}
 
-	if providers.UsesIndex(o.Provider) {
-		if o.Index == nil {
-			o.Index = index.New()
-		}
-	} else {
-		o.Index = nil
+	if providers.UsesIndex(o.Provider) && o.Index == nil {
+		o.Index = index.New()
 	}
-	if o.ProviderID == providers.RedisID {
+	switch o.ProviderID {
+	case providers.RedisID:
 		if o.Redis == nil {
 			o.Redis = redis.New()
 		}
-	} else {
-		o.Redis = nil
-	}
-	if o.ProviderID == providers.ValkeyID {
+	case providers.ValkeyID:
 		if o.Valkey == nil {
 			o.Valkey = valkey.New()
 		}
-	} else {
-		o.Valkey = nil
-	}
-	if o.ProviderID == providers.FilesystemID {
+	case providers.FilesystemID:
 		if o.Filesystem == nil {
 			o.Filesystem = filesystem.New()
 		}
-	} else {
-		o.Filesystem = nil
-	}
-	if o.ProviderID == providers.BBoltID {
+	case providers.BBoltID:
 		if o.BBolt == nil {
 			o.BBolt = bbolt.New()
 		}
-	} else {
-		o.BBolt = nil
-	}
-	if o.ProviderID == providers.BadgerDBID {
+	case providers.BadgerDBID:
 		if o.Badger == nil {
 			o.Badger = badger.New()
 		}
-	} else {
-		o.Badger = nil
-	}
-	if o.ProviderID == providers.MemoryID {
+	case providers.MemoryID:
 		if o.Memory == nil {
 			o.Memory = memory.New()
 		}
-	} else {
-		o.Memory = nil
 	}
+	o.keepProviderBlock(o.Provider, o.ProviderID)
 
 	if o.TimeseriesChunkFactor == 0 {
 		o.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
@@ -278,6 +259,31 @@ func (o *Options) Initialize(name string) error {
 	}
 
 	return nil
+}
+
+// keepProviderBlock clears every provider block but id's, and the index when the provider doesn't use one
+func (o *Options) keepProviderBlock(name string, id providers.Provider) {
+	if !providers.UsesIndex(name) {
+		o.Index = nil
+	}
+	if id != providers.RedisID {
+		o.Redis = nil
+	}
+	if id != providers.ValkeyID {
+		o.Valkey = nil
+	}
+	if id != providers.FilesystemID {
+		o.Filesystem = nil
+	}
+	if id != providers.BBoltID {
+		o.BBolt = nil
+	}
+	if id != providers.BadgerDBID {
+		o.Badger = nil
+	}
+	if id != providers.MemoryID {
+		o.Memory = nil
+	}
 }
 
 // Initialize initializes all cache options in the lookup with default values
@@ -362,6 +368,19 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*o = Options(lo)
 	return nil
+}
+
+// MarshalYAML writes only the cache's own provider block, since New fills them all and the loader
+// rejects the valkey block on any other provider
+func (o Options) MarshalYAML() (any, error) {
+	type plainOptions Options
+	name := strings.TrimSpace(strings.ToLower(o.Provider))
+	id, ok := providers.Names[name]
+	if !ok {
+		id = o.ProviderID
+	}
+	o.keepProviderBlock(name, id)
+	return plainOptions(o), nil
 }
 
 func (o *Options) ClearProviderOptions() {

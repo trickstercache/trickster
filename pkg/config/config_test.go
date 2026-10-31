@@ -25,6 +25,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -93,6 +94,7 @@ func TestString(t *testing.T) {
 
 	c1.Backends["default"].Paths = append(c1.Backends["default"].Paths, &po.Options{Path: "test"})
 
+	c1.Caches["default"].Provider = providers.Redis
 	c1.Caches["default"].Redis.Password = "plaintext-password"
 	c1.Authenticators = auth.Lookup{
 		"basic": {
