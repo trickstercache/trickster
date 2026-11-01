@@ -39,7 +39,7 @@ func main() {
 		fmt.Println()
 		os.Exit(1)
 	}
-	fmt.Print("\nWeak randomness uses the reviewed wrappers and standalone-core exceptions.\n\n")
+	fmt.Print("\n\033[1;32m✓\033[0m Weak randomness uses the reviewed wrappers and standalone-core exceptions.\n\n")
 }
 
 func check(repoRoot string) ([]string, error) {
