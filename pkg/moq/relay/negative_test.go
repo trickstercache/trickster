@@ -113,7 +113,9 @@ func TestNegativeOnlyNotFound(t *testing.T) {
 }
 
 func TestNegativeForgottenWhenPublished(t *testing.T) {
-	h := negativeHarness(t, time.Minute)
+	m := newMetrics()
+	h := newHarness(t, relay.Options{Metrics: m}, nil)
+	h.relay.SetNegativeTTL(time.Minute)
 	h.relay.SetAccess(relay.Access{Publish: true})
 	h.o.refuse["ghost"] = message.RequestDoesNotExist
 	cl := h.client()
@@ -124,12 +126,18 @@ func TestNegativeForgottenWhenPublished(t *testing.T) {
 	req, _ := subscribe(t, cl, "ghost", message.Params{})
 	subscribed(t, req)
 	req.Cancel(message.ResetCancelled)
+	eventually(t, "the subscriber to leave", func() bool {
+		return metricValue(m.ActiveSubscriptions.WithLabelValues("downstream")) == 0
+	})
 	// once the publisher leaves, the origin is asked again rather than the old refusal repeated
 	_ = pubSess.Close(message.CodeNoError, "")
-	eventually(t, "the origin to be asked again", func() bool {
-		subscribeRefused(t, cl, "ghost", message.RequestDoesNotExist)
-		return h.o.subscribes.Load() >= 2
+	eventually(t, "the publisher to leave", func() bool {
+		return metricValue(m.Publishers) == 0
 	})
+	subscribeRefused(t, cl, "ghost", message.RequestDoesNotExist)
+	if n := h.o.subscribes.Load(); n != 2 {
+		t.Errorf("the origin was asked %d times, want 2", n)
+	}
 }
 
 func TestNegativeForgottenWhenAnnounced(t *testing.T) {
