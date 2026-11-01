@@ -273,30 +273,6 @@ backends:
 caches:
   default:
     provider: memory
-    index:
-      reap_interval: 3s
-      flush_interval: 5s
-      index_expiry: 8760h0m0s
-      max_size_bytes: 536870912
-      max_size_backoff_bytes: 16777216
-      max_size_backoff_objects: 100
-      scan_interval: 24h0m0s
-      scan_batch_size: 512
-      scan_batch_pause: 50ms
-    redis:
-      client_type: standard
-      protocol: tcp
-      endpoint: redis:6379
-      endpoints:
-      - redis:6379
-    filesystem:
-      cache_path: /tmp/trickster
-    bbolt:
-      filename: trickster.db
-      bucket: trickster
-    badger:
-      directory: /tmp/trickster
-      value_directory: /tmp/trickster
     memory:
       max_size_bytes: 536870912
       num_counters: 500000

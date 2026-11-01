@@ -23,15 +23,20 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	cp "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	vo "github.com/trickstercache/trickster/v2/pkg/cache/valkey/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -41,7 +46,7 @@ const (
 
 func setupBenchmark(b *testing.B) *CacheClient {
 	b.Helper()
-	rc, closeServer := setupRedisCache(clientTypeStandard)
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
 	if err := rc.Connect(); err != nil {
 		closeServer()
 		b.Fatal(err)
@@ -55,188 +60,149 @@ func setupBenchmark(b *testing.B) *CacheClient {
 	return rc
 }
 
-func setupRedisCache(ct clientType) (*CacheClient, func()) {
+func setupRedisCache(ct string) (*CacheClient, func()) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	s, err := miniredis.Run()
 	if err != nil {
 		panic(err)
 	}
-	conf := config.NewConfig()
-	rcfg := &ro.Options{Endpoint: s.Addr(), ClientType: ct.String()}
-	if ct != clientTypeStandard {
+	rcfg := redisOptions(ct, s.Addr())
+	cacheConfig := &co.Options{Provider: cp.Redis, ProviderID: cp.RedisID, Redis: rcfg}
+	return New(context.Background(), "test", cacheConfig), s.Close
+}
+
+func redisOptions(ct, addr string) *ro.Options {
+	rcfg := &ro.Options{Endpoint: addr, ClientType: ct}
+	if ct != ro.ClientTypeStandard {
 		rcfg.Endpoint = ""
-		rcfg.Endpoints = []string{s.Addr()}
-		if ct == clientTypeSentinel {
-			rcfg.SentinelMaster = s.Addr()
+		rcfg.Endpoints = []string{addr}
+		if ct == ro.ClientTypeSentinel {
+			rcfg.SentinelMaster = addr
 		}
 	}
-	close := func() {
-		s.Close()
-	}
-	cacheConfig := &co.Options{Provider: "redis", Redis: rcfg}
-	conf.Caches = co.Lookup{"default": cacheConfig}
-
-	return New(context.Background(), "test", cacheConfig), close
+	return rcfg
 }
 
-func TestClientSelectionSentinel(t *testing.T) {
+// setupValkeyCache returns a valkey cache, whose settings are the valkey provider's defaults
+// with the client-side cache off, as miniredis has no CLIENT TRACKING
+func setupValkeyCache(t *testing.T, ct string, mut func(*vo.Options)) (*CacheClient, *miniredis.Miniredis) {
+	t.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected1 = "ERR unknown command `sentinel`"
-	args := []string{
-		"-config", "../../../testdata/test.redis-sentinel.conf",
-		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info",
+	s := miniredis.RunT(t)
+	v := vo.New()
+	v.Options = *redisOptions(ct, s.Addr())
+	if mut != nil {
+		mut(v)
 	}
-	conf, err := config.Load(args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const cacheName = "test"
-	cfg, ok := conf.Caches[cacheName]
-	if !ok {
-		t.Errorf("expected cache named %s", cacheName)
-	}
-	cache := New(context.Background(), cacheName, cfg)
-	if err != nil {
-		t.Error(err)
-	}
-	err = cache.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
-	}
+	rc := New(context.Background(), "test", &co.Options{Provider: cp.Valkey, ProviderID: cp.ValkeyID, Valkey: v})
+	t.Cleanup(func() { _ = rc.Close() })
+	return rc, s
 }
 
-func TestSentinelOpts(t *testing.T) {
-	const expected1 = `invalid 'endpoints' config`
-	const expected2 = `invalid 'sentinel_master' config`
-
-	rc, close := setupRedisCache(clientTypeSentinel)
-	defer close()
-
-	// test empty endpoint
-	rc.Config.Redis.Endpoints = nil
-	err := rc.Connect()
-	if err == nil || err.Error() != expected1 {
-		t.Errorf("expected error for %s", expected1)
-	}
-
-	rc.Config.Redis.Endpoints = []string{"test"}
-	rc.Config.Redis.SentinelMaster = ""
-
-	// test empty SentinelMaster
-	err = rc.Connect()
-	if err == nil || err.Error() != expected2 {
-		t.Errorf("expected error for %s", expected2)
-	}
-}
-
-func TestClusterOpts(t *testing.T) {
-	const expected1 = `invalid 'endpoints' config`
-
-	rc, close := setupRedisCache(clientTypeCluster)
-	defer close()
-
-	// test empty endpoint
-	rc.Config.Redis.Endpoints = nil
-	err := rc.Connect()
-	if err == nil || err.Error() != expected1 {
-		t.Errorf("expected error for %s", expected1)
-	}
-}
-
-func TestClientOpts(t *testing.T) {
-	const expected1 = `invalid endpoint: `
-
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
-
-	// test empty endpoint
-	rc.Config.Redis.Endpoint = ""
-	err := rc.Connect()
-	if err == nil || err.Error() != expected1 {
-		t.Errorf("expected error for %s", expected1)
-	}
-}
-
-func TestClientSelectionCluster(t *testing.T) {
+func loadTestConfig(t *testing.T, path string) *co.Options {
+	t.Helper()
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	expected1 := "invalid endpoint"
-	args := []string{
-		"-config", "../../../testdata/test.redis-cluster.conf",
-		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info",
-	}
-	conf, err := config.Load(args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const cacheName = "test"
-	cfg, ok := conf.Caches[cacheName]
-	if !ok {
-		t.Errorf("expected cache named %s", cacheName)
-	}
-	cache := New(context.Background(), cacheName, cfg)
-	if err != nil {
-		t.Error(err)
-	}
-	err = cache.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
+	conf, err := config.Load([]string{"-config", path, "-origin-url", "http://0.0.0.0", "-provider",
+		providers.ReverseProxyCacheShort, "-log-level", "info"})
+	require.NoError(t, err)
+	cfg, ok := conf.Caches["test"]
+	require.True(t, ok, "expected cache named test")
+	return cfg
+}
+
+func TestClientSelectionFromConfig(t *testing.T) {
+	for _, ct := range []string{ro.ClientTypeStandard, ro.ClientTypeCluster, ro.ClientTypeSentinel} {
+		t.Run(ct, func(t *testing.T) {
+			cfg := loadTestConfig(t, "../../../testdata/test.redis-"+ct+".conf")
+			require.Equal(t, ct, cfg.Redis.ClientType)
+			c := New(context.Background(), "test", cfg)
+			// the test configs name a protocol no client can dial
+			require.ErrorIs(t, c.Connect(), ErrInvalidProtocolConfig)
+			require.Nil(t, c.Holder())
+			require.NoError(t, c.Close())
+		})
 	}
 }
 
-func TestClientSelectionStandard(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	expected1 := "invalid endpoint"
-	args := []string{
-		"-config", "../../../testdata/test.redis-standard.conf",
-		"-origin-url", "http://0.0.0.0", "-provider",
-		providers.ReverseProxyCacheShort, "-log-level", "info",
+func TestConnectOptionErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		ct   string
+		mut  func(*ro.Options)
+		err  error
+	}{
+		{"standard without endpoint", ro.ClientTypeStandard, func(o *ro.Options) { o.Endpoint = "" }, ErrInvalidEndpointConfig},
+		{"cluster without endpoints", ro.ClientTypeCluster, func(o *ro.Options) { o.Endpoints = nil }, ErrInvalidEndpointsConfig},
+		{"sentinel without endpoints", ro.ClientTypeSentinel, func(o *ro.Options) { o.Endpoints = nil }, ErrInvalidEndpointsConfig},
+		{"sentinel without master", ro.ClientTypeSentinel, func(o *ro.Options) { o.SentinelMaster = "" }, ErrInvalidSentinalMasterConfig},
+		{"unknown protocol", ro.ClientTypeStandard, func(o *ro.Options) { o.Protocol = "udp" }, ErrInvalidProtocolConfig},
 	}
-	conf, err := config.Load(args)
-	if err != nil {
-		t.Fatal(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rc, closeServer := setupRedisCache(test.ct)
+			defer closeServer()
+			test.mut(rc.Config.Redis)
+			require.ErrorIs(t, rc.Connect(), test.err)
+		})
 	}
-	const cacheName = "test"
-	cfg, ok := conf.Caches[cacheName]
-	if !ok {
-		t.Errorf("expected cache named %s", cacheName)
-	}
-	cache := New(context.Background(), cacheName, cfg)
-	if err != nil {
-		t.Error(err)
-	}
-	err = cache.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
-	}
+}
+
+func TestNotConnected(t *testing.T) {
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.ErrorIs(t, rc.Store(cacheKey, []byte("data"), time.Minute), ErrNotConnected)
+	_, ls, err := rc.Retrieve(cacheKey)
+	require.ErrorIs(t, err, ErrNotConnected)
+	require.Equal(t, status.LookupStatusError, ls)
+	require.ErrorIs(t, rc.Remove(cacheKey), ErrNotConnected)
+	require.NoError(t, rc.Close())
 }
 
 func TestRedisCache_Connect(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.NoError(t, rc.Connect())
+	first := rc.Holder()
+	// connecting again replaces, and closes, the previous client
+	require.NoError(t, rc.Connect())
+	require.NotSame(t, first, rc.Holder())
+	_, err := first.Client()
+	require.ErrorIs(t, err, ErrNotConnected)
+	require.NoError(t, rc.Close())
+}
 
-	// it should connect
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
+func TestRedisCache_StoreTTL(t *testing.T) {
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.NoError(t, rc.Connect())
+	defer rc.Close()
+	s := miniredisOf(t, rc)
+	require.NoError(t, rc.Store("forever", []byte("data"), 0))
+	require.Zero(t, s.TTL("forever"))
+	require.NoError(t, rc.Store("minute", []byte("data"), time.Minute))
+	require.Equal(t, time.Minute, s.TTL("minute"))
+	// a ttl under a millisecond rounds up to one, as PX 0 would be rejected
+	require.NoError(t, rc.Store("brief", []byte("data"), time.Microsecond))
+	require.Equal(t, time.Millisecond, s.TTL("brief"))
+}
+
+// miniredisOf returns the miniredis server that a standard test cache is connected to
+func miniredisOf(t *testing.T, rc *CacheClient) *miniredis.Miniredis {
+	t.Helper()
+	s := miniredis.NewMiniRedis()
+	require.NoError(t, s.StartAddr("127.0.0.1:0"))
+	t.Cleanup(s.Close)
+	rc.Config.Redis.Endpoint = s.Addr()
+	require.NoError(t, rc.Connect())
+	return s
 }
 
 func TestRedisCache_Store(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
-
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should store a value
-	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.NoError(t, rc.Connect())
+	defer rc.Close()
+	require.NoError(t, rc.Store(cacheKey, []byte("data"), 60*time.Second))
 }
 
 func BenchmarkCache_Store(b *testing.B) {
@@ -252,29 +218,30 @@ func BenchmarkCache_Store(b *testing.B) {
 }
 
 func TestRedisCache_Retrieve(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
-
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.NoError(t, rc.Connect())
+	defer rc.Close()
+	require.NoError(t, rc.Store(cacheKey, []byte("data"), 60*time.Second))
 	data, ls, err := rc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\"", "data", data)
-	}
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, ls)
+	require.Equal(t, "data", string(data))
+
+	_, ls, err = rc.Retrieve("missing")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, ls)
+}
+
+func TestRedisCache_RetrieveError(t *testing.T) {
+	rc, s := setupValkeyCache(t, ro.ClientTypeStandard, nil)
+	require.NoError(t, rc.Connect())
+	// a GET of a hash is a WRONGTYPE error, not a miss
+	s.HSet("hash", "f", "v")
+	_, ls, err := rc.Retrieve("hash")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusError, ls)
 }
 
 func BenchmarkCache_Retrieve(b *testing.B) {
@@ -282,7 +249,6 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 	if err := rc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
 		b.Fatal(err)
 	}
-
 	for b.Loop() {
 		data, ls, err := rc.Retrieve(cacheKey)
 		if err != nil {
@@ -298,58 +264,33 @@ func BenchmarkCache_Retrieve(b *testing.B) {
 }
 
 func TestRedisCache_Close(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
-
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should close
-	err = rc.Close()
-	if err != nil {
-		t.Error(err)
-	}
+	rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+	defer closeServer()
+	require.NoError(t, rc.Connect())
+	require.NoError(t, rc.Close())
+	// closing twice is harmless
+	require.NoError(t, rc.Close())
 }
 
 func TestCache_Remove(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
+	for _, ct := range []string{ro.ClientTypeStandard, ro.ClientTypeCluster} {
+		t.Run(ct, func(t *testing.T) {
+			rc, closeServer := setupRedisCache(ct)
+			defer closeServer()
+			require.NoError(t, rc.Connect())
+			defer rc.Close()
 
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer rc.Close()
+			require.NoError(t, rc.Store(cacheKey, []byte("data"), 60*time.Second))
+			data, ls, err := rc.Retrieve(cacheKey)
+			require.NoError(t, err)
+			require.Equal(t, "data", string(data))
+			require.Equal(t, status.LookupStatusHit, ls)
 
-	// it should store a value
-	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := rc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	rc.Remove(cacheKey)
-
-	// it should be a cache miss
-	_, ls, err = rc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+			require.NoError(t, rc.Remove(cacheKey))
+			_, ls, err = rc.Retrieve(cacheKey)
+			require.ErrorIs(t, err, cache.ErrKNF)
+			require.Equal(t, status.LookupStatusKeyMiss, ls)
+		})
 	}
 }
 
@@ -368,43 +309,34 @@ func BenchmarkCache_Remove(b *testing.B) {
 }
 
 func TestCache_BulkRemove(t *testing.T) {
-	rc, close := setupRedisCache(clientTypeStandard)
-	defer close()
+	for _, ct := range []string{ro.ClientTypeStandard, ro.ClientTypeCluster} {
+		t.Run(ct, func(t *testing.T) {
+			rc, closeServer := setupRedisCache(ct)
+			defer closeServer()
+			require.NoError(t, rc.Connect())
+			defer rc.Close()
+			keys := []string{"alpha", "bravo", "charlie"}
+			for _, k := range keys {
+				require.NoError(t, rc.Store(k, []byte(k), time.Minute))
+			}
+			require.NoError(t, rc.Remove(keys...))
+			for _, k := range keys {
+				_, ls, _ := rc.Retrieve(k)
+				require.Equal(t, status.LookupStatusKeyMiss, ls, k)
+			}
+			require.NoError(t, rc.Remove())
+		})
+	}
+}
 
-	err := rc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer rc.Close()
-
-	// it should store a value
-	err = rc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := rc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	rc.Remove(cacheKey)
-
-	// it should be a cache miss
-	_, ls, err = rc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
+func TestCache_BulkRemoveError(t *testing.T) {
+	rc, s := setupValkeyCache(t, ro.ClientTypeStandard, func(o *vo.Options) {
+		o.MaxRetries = -1
+		o.DialTimeout = timeconv.Duration(50 * time.Millisecond)
+	})
+	require.NoError(t, rc.Connect())
+	s.Close()
+	require.Error(t, rc.Remove("a", "b"))
 }
 
 func BenchmarkCache_BulkRemove(b *testing.B) {
@@ -416,7 +348,6 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 		keys[n] = cacheKey + suffix
 		values[n] = []byte("data" + suffix)
 	}
-
 	for b.Loop() {
 		b.StopTimer()
 		for n, key := range keys {
@@ -432,17 +363,49 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }
 
-func TestCmdable(t *testing.T) {
-	rc, closeServer := setupRedisCache(clientTypeStandard)
-	defer closeServer()
-	if rc.Cmdable() != nil {
-		t.Error("expected no client before Connect")
-	}
-	if err := rc.Connect(); err != nil {
-		t.Fatal(err)
-	}
-	defer rc.Close()
-	if err := rc.Cmdable().Ping(context.Background()).Err(); err != nil {
-		t.Error(err)
+func TestValkeyCache(t *testing.T) {
+	multiplex := 0
+	rc, _ := setupValkeyCache(t, ro.ClientTypeStandard, func(o *vo.Options) { o.PipelineMultiplex = &multiplex })
+	require.NoError(t, rc.Connect())
+	gotRedis, gotSettings := rc.connection()
+	require.Same(t, &rc.Config.Valkey.Options, gotRedis)
+	require.Same(t, &rc.Config.Valkey.Settings, gotSettings)
+	require.False(t, rc.clientCache)
+	require.NoError(t, rc.Store(cacheKey, []byte("data"), time.Minute))
+	data, ls, err := rc.Retrieve(cacheKey)
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, ls)
+	require.Equal(t, "data", string(data))
+}
+
+func TestValkeyCacheClientCacheRefused(t *testing.T) {
+	rc, _ := setupValkeyCache(t, ro.ClientTypeStandard, func(o *vo.Options) { o.ClientSideCache.Enabled = true })
+	// miniredis has no CLIENT TRACKING, as some managed services don't, so the client can't connect
+	require.Error(t, rc.Connect())
+	require.True(t, rc.clientCache)
+	require.NotNil(t, rc.localHits)
+}
+
+func TestConnectionWithoutRedisOptions(t *testing.T) {
+	// a valkey block alone picks the valkey provider's settings, as ACME storage passes it
+	c := New(context.Background(), "test", &co.Options{Valkey: vo.New()})
+	r, s := c.connection()
+	require.NotNil(t, s)
+	require.Equal(t, vo.DefaultValkeyEndpoint, r.Endpoint)
+	c = New(context.Background(), "test", &co.Options{Redis: ro.New(), Valkey: vo.New()})
+	_, s = c.connection()
+	require.Nil(t, s)
+}
+
+func TestCheckServer(t *testing.T) {
+	for _, isValkey := range []bool{false, true} {
+		rc, closeServer := setupRedisCache(ro.ClientTypeStandard)
+		require.NoError(t, rc.Connect())
+		cl, err := rc.Holder().Client()
+		require.NoError(t, err)
+		// miniredis reports neither server, which is logged for a valkey cache only
+		rc.checkServer(cl, isValkey)
+		require.NoError(t, rc.Close())
+		closeServer()
 	}
 }

@@ -26,7 +26,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * [Automatic certificates](./docs/acme.md) from Let's Encrypt or any ACME certificate authority, including wildcard and on-demand issuance
 * Can serve as Kubernetes [Ingress](./docs/kubernetes-ingress.md) and/or [Gateway](./docs/kubernetes-gateway.md) Controller
 * WebSocket and HTTP Upgrade tunneling, response trailers (gRPC), and incremental delivery of streaming responses
-* Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
+* Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis, Valkey and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages

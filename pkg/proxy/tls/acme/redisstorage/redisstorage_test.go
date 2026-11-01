@@ -18,13 +18,17 @@ package redisstorage
 
 import (
 	"context"
+	"errors"
 	"io/fs"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	redis "github.com/redis/go-redis/v9"
+	"github.com/alicebob/miniredis/v2/server"
 	"github.com/stretchr/testify/require"
+	"github.com/valkey-io/valkey-go"
 )
 
 const (
@@ -37,14 +41,75 @@ const (
 	lockName   = "issue_cert_www.acme.test"
 )
 
+type staticSource struct {
+	c valkey.Client
+}
+
+func (s staticSource) Client() (valkey.Client, error) {
+	return s.c, nil
+}
+
+var errNoClient = errors.New("no client")
+
+type noSource struct{}
+
+func (noSource) Client() (valkey.Client, error) {
+	return nil, errNoClient
+}
+
+func newSource(t *testing.T, addr string, mut func(*valkey.ClientOption)) staticSource {
+	t.Helper()
+	o := valkey.ClientOption{InitAddress: []string{addr}, ForceSingleClient: true, DisableCache: true}
+	if mut != nil {
+		mut(&o)
+	}
+	c, err := valkey.NewClient(o)
+	require.NoError(t, err)
+	t.Cleanup(c.Close)
+	return staticSource{c: c}
+}
+
 func newTestStorage(t *testing.T) (*Storage, *miniredis.Miniredis) {
 	t.Helper()
 	mr := miniredis.RunT(t)
-	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	t.Cleanup(func() { client.Close() })
-	s := New(client, testPrefix, testTTL)
+	s := New(newSource(t, mr.Addr(), nil), testPrefix, testTTL, false)
 	t.Cleanup(func() { _ = s.Close() })
 	return s, mr
+}
+
+// withoutLua makes mr answer scripts as a Valkey server without its Lua engine does, and serve
+// Valkey's DELIFEQ and SET IFEQ, which miniredis lacks
+func withoutLua(mr *miniredis.Miniredis) {
+	mr.Server().SetPreHook(func(c *server.Peer, cmd string, args ...string) bool {
+		switch strings.ToUpper(cmd) {
+		case "EVALSHA":
+			c.WriteError("NOSCRIPT No matching script.")
+		case "EVAL":
+			c.WriteError("ERR Could not find scripting engine 'lua'")
+		case "DELIFEQ":
+			if got, err := mr.Get(args[0]); err == nil && got == args[1] {
+				mr.Del(args[0])
+				c.WriteInt(1)
+				return true
+			}
+			c.WriteInt(0)
+		case "SET":
+			if len(args) < 6 || !strings.EqualFold(args[2], "IFEQ") {
+				return false
+			}
+			if got, err := mr.Get(args[0]); err != nil || got != args[3] {
+				c.WriteNull()
+				return true
+			}
+			ms, _ := strconv.Atoi(args[5])
+			mr.Set(args[0], args[1])
+			mr.SetTTL(args[0], time.Duration(ms)*time.Millisecond)
+			c.WriteOK()
+		default:
+			return false
+		}
+		return true
+	})
 }
 
 func TestStoreLoadListStatDelete(t *testing.T) {
@@ -104,7 +169,7 @@ func TestLocks(t *testing.T) {
 	require.NoError(t, s.Lock(ctx, lockName))
 
 	// a second holder waits, and gives up when its context ends
-	other := New(redis.NewClient(&redis.Options{Addr: mr.Addr()}), testPrefix, testTTL)
+	other := New(newSource(t, mr.Addr(), nil), testPrefix, testTTL, false)
 	waitCtx, cancel := context.WithTimeout(ctx, 3*testTTL)
 	defer cancel()
 	require.ErrorIs(t, other.Lock(waitCtx, lockName), context.DeadlineExceeded)
@@ -138,12 +203,11 @@ func TestLockLost(t *testing.T) {
 func TestErrorsWhenUnreachable(t *testing.T) {
 	mr := miniredis.RunT(t)
 	// no retries and a short dial, so each call against the stopped server fails at once
-	client := redis.NewClient(&redis.Options{
-		Addr: mr.Addr(), MaxRetries: -1,
-		DialTimeout: 50 * time.Millisecond,
+	src := newSource(t, mr.Addr(), func(o *valkey.ClientOption) {
+		o.DisableRetry = true
+		o.Dialer.Timeout = 50 * time.Millisecond
 	})
-	t.Cleanup(func() { client.Close() })
-	s := New(client, testPrefix, testTTL)
+	s := New(src, testPrefix, testTTL, false)
 	ctx := context.Background()
 	require.NoError(t, s.Lock(ctx, lockName))
 	mr.Close()
@@ -159,4 +223,69 @@ func TestErrorsWhenUnreachable(t *testing.T) {
 	require.Error(t, s.Lock(ctx, "other"))
 	require.Error(t, s.RenewLockLease(ctx, lockName, time.Minute))
 	require.Error(t, s.Close())
+}
+
+func TestErrorsWithoutClient(t *testing.T) {
+	s := New(noSource{}, testPrefix, testTTL, true)
+	ctx := context.Background()
+	require.ErrorIs(t, s.Store(ctx, certKey, nil), errNoClient)
+	_, err := s.Load(ctx, certKey)
+	require.ErrorIs(t, err, errNoClient)
+	require.ErrorIs(t, s.Delete(ctx, certKey), errNoClient)
+	require.False(t, s.Exists(ctx, certKey))
+	_, err = s.List(ctx, "", true)
+	require.ErrorIs(t, err, errNoClient)
+	_, err = s.Stat(ctx, certKey)
+	require.ErrorIs(t, err, errNoClient)
+	require.ErrorIs(t, s.Lock(ctx, lockName), errNoClient)
+	_, err = s.release(ctx, lockName, "t")
+	require.ErrorIs(t, err, errNoClient)
+	_, err = s.refresh(ctx, lockName, "t", time.Minute)
+	require.ErrorIs(t, err, errNoClient)
+}
+
+func TestLocksWithoutLua(t *testing.T) {
+	mr := miniredis.RunT(t)
+	withoutLua(mr)
+	s := New(newSource(t, mr.Addr(), nil), testPrefix, testTTL, true)
+	ctx := context.Background()
+	require.NoError(t, s.Lock(ctx, lockName))
+	// the background refresh switches to native commands and keeps the lease alive
+	time.Sleep(2 * testTTL)
+	require.True(t, s.noLua.Load())
+	require.True(t, mr.Exists(s.lockKey(lockName)))
+	require.NoError(t, s.RenewLockLease(ctx, lockName, time.Minute))
+
+	// a lease another instance took is neither renewed nor released
+	mr.Set(s.lockKey(lockName), "someone-else")
+	require.ErrorIs(t, s.RenewLockLease(ctx, lockName, time.Minute), ErrLockNotHeld)
+	require.ErrorIs(t, s.Unlock(ctx, lockName), ErrLockNotHeld)
+	got, err := mr.Get(s.lockKey(lockName))
+	require.NoError(t, err)
+	require.Equal(t, "someone-else", got)
+
+	mr.Del(s.lockKey(lockName))
+	require.NoError(t, s.Lock(ctx, lockName))
+	require.NoError(t, s.Unlock(ctx, lockName))
+	require.False(t, mr.Exists(s.lockKey(lockName)))
+}
+
+func TestLocksWithoutLuaOrFallback(t *testing.T) {
+	mr := miniredis.RunT(t)
+	withoutLua(mr)
+	// a redis storage never falls back, so a server without Lua fails its lock calls
+	s := New(newSource(t, mr.Addr(), nil), testPrefix, testTTL, false)
+	ctx := context.Background()
+	require.NoError(t, s.Lock(ctx, lockName))
+	err := s.RenewLockLease(ctx, lockName, time.Minute)
+	require.ErrorContains(t, err, "scripting engine")
+	require.False(t, s.noLua.Load())
+	require.ErrorContains(t, s.Unlock(ctx, lockName), "scripting engine")
+}
+
+func TestLacksLua(t *testing.T) {
+	s := New(noSource{}, testPrefix, testTTL, true)
+	require.False(t, s.lacksLua(nil))
+	require.False(t, s.lacksLua(errNoClient))
+	require.False(t, s.noLua.Load())
 }

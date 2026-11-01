@@ -23,6 +23,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -31,6 +33,9 @@ const (
 	KeyGet       = "get"
 	KeyDel       = "del"
 	KeyNone      = "none"
+
+	// EventClientCacheHit is the event of a read that a client-side cache served in this process
+	EventClientCacheHit = "client_cache_hit"
 )
 
 // ObserveCacheMiss records a full cache key miss
@@ -63,6 +68,12 @@ func ObserveCacheOperation(cache, cacheProvider, operation, opStatus string, byt
 	if bytes > 0 {
 		metrics.CacheByteOperations.WithLabelValues(cache, cacheProvider, operation, opStatus).Add(bytes)
 	}
+}
+
+// ClientCacheHits returns the counter of a cache's reads that its client-side cache served,
+// resolved once so that counting a hit costs only the increment
+func ClientCacheHits(cache, cacheProvider string) prometheus.Counter {
+	return metrics.CacheEvents.WithLabelValues(cache, cacheProvider, EventClientCacheHit, KeyNone)
 }
 
 // ObserveCacheEvent increments counters as cache events occur

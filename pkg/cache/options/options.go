@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	valkey "github.com/trickstercache/trickster/v2/pkg/cache/valkey/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -44,12 +45,15 @@ type Lookup map[string]*Options
 type Options struct {
 	// Name is the Name of the cache, taken from the Key in the Caches map[string]*CacheConfig
 	Name string `yaml:"-"`
-	// Provider represents the type of cache that we wish to use: "boltdb", "memory", "filesystem", or "redis"
+	// Provider represents the type of cache that we wish to use: "bbolt", "badger", "memory", "filesystem",
+	// "redis" or "valkey"
 	Provider string `yaml:"provider,omitempty"`
 	// Index provides options for the Cache Index
 	Index *index.Options `yaml:"index,omitempty"`
 	// Redis provides options for Redis caching
 	Redis *redis.Options `yaml:"redis,omitempty"`
+	// Valkey provides options for Valkey caching: the Redis options and the Valkey-only settings
+	Valkey *valkey.Options `yaml:"valkey,omitempty"`
 	// Filesystem provides options for Filesystem caching
 	Filesystem *filesystem.Options `yaml:"filesystem,omitempty"`
 	// BBolt provides options for BBolt caching
@@ -71,7 +75,15 @@ type Options struct {
 	// ProviderID represents the internal constant for the provided Provider string
 	// and is automatically populated at startup
 	ProviderID providers.Provider `yaml:"-"`
+
+	// which of the redis and valkey keys the YAML set, as their pointers are filled by New
+	hasRedisKey, hasValkeyKey bool
 }
+
+const (
+	redisKey  = "redis"
+	valkeyKey = "valkey"
+)
 
 var _ types.ConfigOptions[Options] = &Options{}
 
@@ -83,6 +95,7 @@ func New() *Options {
 		Provider:              defaults.DefaultCacheProvider,
 		ProviderID:            defaults.DefaultCacheProviderID,
 		Redis:                 redis.New(),
+		Valkey:                valkey.New(),
 		Filesystem:            filesystem.New(),
 		BBolt:                 bbolt.New(),
 		Badger:                badger.New(),
@@ -97,7 +110,8 @@ func New() *Options {
 // Clone returns an exact copy of a *CachingConfig
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
-	out.Redis = pointers.Clone(o.Redis)
+	out.Redis = o.Redis.Clone()
+	out.Valkey = o.Valkey.Clone()
 	out.Filesystem = pointers.Clone(o.Filesystem)
 	out.BBolt = pointers.Clone(o.BBolt)
 	out.Badger = pointers.Clone(o.Badger)
@@ -127,6 +141,8 @@ func (o *Options) Equal(o2 *Options) bool {
 	switch o.ProviderID {
 	case providers.RedisID:
 		return o.Redis.Equal(o2.Redis)
+	case providers.ValkeyID:
+		return o.Valkey.Equal(o2.Valkey)
 	case providers.FilesystemID:
 		return o.Filesystem.Equal(o2.Filesystem)
 	case providers.BBoltID:
@@ -141,6 +157,9 @@ func (o *Options) Equal(o2 *Options) bool {
 func (o *Options) Validate() (bool, error) {
 	if o.Name == "" || reserved.IsReference(o.Name) {
 		return false, ErrInvalidName
+	}
+	if err := o.validateProviderKeys(); err != nil {
+		return false, err
 	}
 	if o.Index == nil {
 		return true, nil
@@ -161,11 +180,32 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
+// validateProviderKeys rejects the redis key on a valkey cache and the valkey key on any other
+func (o *Options) validateProviderKeys() error {
+	if o.ProviderID == providers.ValkeyID {
+		if o.hasRedisKey {
+			return fmt.Errorf("cache %q: %w", o.Name, errRedisKeyOnValkey)
+		}
+		if o.Valkey != nil {
+			if err := o.Valkey.Validate(); err != nil {
+				return fmt.Errorf("cache %q: %w", o.Name, err)
+			}
+		}
+		return nil
+	}
+	if o.hasValkeyKey {
+		return fmt.Errorf("cache %q: %w", o.Name, errValkeyKeyOnOther)
+	}
+	return nil
+}
+
 var (
 	errMaxSizeBackoffBytesTooBig   = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
 	errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
 	errNegativeScanOption          = errors.New("ScanInterval, ScanBatchSize and ScanBatchPause can't be negative")
 	errNegativeMinFreeBytes        = errors.New("MinFreeBytes can't be negative")
+	errRedisKeyOnValkey            = errors.New("a valkey cache takes its settings from 'valkey', not 'redis'")
+	errValkeyKeyOnOther            = errors.New("only a valkey cache can have 'valkey' settings")
 )
 
 // Initialize sets up the cache Options with default values and overlays
@@ -180,48 +220,36 @@ func (o *Options) Initialize(name string) error {
 		}
 	}
 
-	if providers.UsesIndex(o.Provider) {
-		if o.Index == nil {
-			o.Index = index.New()
-		}
-	} else {
-		o.Index = nil
+	if providers.UsesIndex(o.Provider) && o.Index == nil {
+		o.Index = index.New()
 	}
-	if o.ProviderID == providers.RedisID {
+	switch o.ProviderID {
+	case providers.RedisID:
 		if o.Redis == nil {
 			o.Redis = redis.New()
 		}
-	} else {
-		o.Redis = nil
-	}
-	if o.ProviderID == providers.FilesystemID {
+	case providers.ValkeyID:
+		if o.Valkey == nil {
+			o.Valkey = valkey.New()
+		}
+	case providers.FilesystemID:
 		if o.Filesystem == nil {
 			o.Filesystem = filesystem.New()
 		}
-	} else {
-		o.Filesystem = nil
-	}
-	if o.ProviderID == providers.BBoltID {
+	case providers.BBoltID:
 		if o.BBolt == nil {
 			o.BBolt = bbolt.New()
 		}
-	} else {
-		o.BBolt = nil
-	}
-	if o.ProviderID == providers.BadgerDBID {
+	case providers.BadgerDBID:
 		if o.Badger == nil {
 			o.Badger = badger.New()
 		}
-	} else {
-		o.Badger = nil
-	}
-	if o.ProviderID == providers.MemoryID {
+	case providers.MemoryID:
 		if o.Memory == nil {
 			o.Memory = memory.New()
 		}
-	} else {
-		o.Memory = nil
 	}
+	o.keepProviderBlock(o.Provider, o.ProviderID)
 
 	if o.TimeseriesChunkFactor == 0 {
 		o.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor
@@ -231,6 +259,31 @@ func (o *Options) Initialize(name string) error {
 	}
 
 	return nil
+}
+
+// keepProviderBlock clears every provider block but id's, and the index when the provider doesn't use one
+func (o *Options) keepProviderBlock(name string, id providers.Provider) {
+	if !providers.UsesIndex(name) {
+		o.Index = nil
+	}
+	if id != providers.RedisID {
+		o.Redis = nil
+	}
+	if id != providers.ValkeyID {
+		o.Valkey = nil
+	}
+	if id != providers.FilesystemID {
+		o.Filesystem = nil
+	}
+	if id != providers.BBoltID {
+		o.BBolt = nil
+	}
+	if id != providers.BadgerDBID {
+		o.Badger = nil
+	}
+	if id != providers.MemoryID {
+		o.Memory = nil
+	}
 }
 
 // Initialize initializes all cache options in the lookup with default values
@@ -249,31 +302,43 @@ func (l Lookup) Initialize(activeCaches sets.Set[string]) ([]string, error) {
 			return nil, err
 		}
 
-		if v.ProviderID == providers.RedisID {
-			var hasEndpoint, hasEndpoints bool
-
-			if v.Redis.Endpoint != "" {
-				hasEndpoint = true
+		switch v.ProviderID {
+		case providers.RedisID:
+			warnings = append(warnings, connectionWarnings(k, v.Redis, true)...)
+			if v.Redis.ClientType == redis.ClientTypeCluster && v.Redis.DB != 0 {
+				warnings = append(warnings, fmt.Sprintf("cache %q: client_type cluster ignores db %d, "+
+					"as Redis Cluster serves db 0 only; the valkey provider selects it", k, v.Redis.DB))
 			}
-			if len(v.Redis.Endpoints) > 0 {
-				hasEndpoints = true
-			}
-
-			if v.Redis.ClientType == "standard" {
-				if hasEndpoints && !hasEndpoint {
-					warnings = append(warnings,
-						"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
-				}
-			} else {
-				if hasEndpoint && !hasEndpoints {
-					warnings = append(warnings, fmt.Sprintf(
-						"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
-						v.Redis.ClientType))
-				}
-			}
+		case providers.ValkeyID:
+			warnings = append(warnings, connectionWarnings(k, &v.Valkey.Options, !v.Valkey.AutoPipelining)...)
 		}
 	}
 	return warnings, nil
+}
+
+// connectionWarnings flags endpoint settings that the client type won't read, and pool keys that
+// have no effect on a client that is pooled or not
+func connectionWarnings(name string, o *redis.Options, pooled bool) []string {
+	var warnings []string
+	hasEndpoint, hasEndpoints := o.Endpoint != "", len(o.Endpoints) > 0
+	if o.ClientType == redis.ClientTypeStandard {
+		if hasEndpoints && !hasEndpoint {
+			warnings = append(warnings,
+				"'standard' redis type configured, but 'endpoints' value is provided instead of 'endpoint'")
+		}
+	} else if hasEndpoint && !hasEndpoints {
+		warnings = append(warnings, fmt.Sprintf(
+			"'%s' redis type configured, but 'endpoint' value is provided instead of 'endpoints'",
+			o.ClientType))
+	}
+	for _, key := range o.IneffectivePoolKeys(pooled) {
+		reason := "while auto_pipelining is on"
+		if key == redis.KeyPoolTimeout {
+			reason = "as a command waits for a pooled connection until one frees"
+		}
+		warnings = append(warnings, fmt.Sprintf("cache %q: '%s' has no effect %s", name, key, reason))
+	}
+	return warnings
 }
 
 func (l Lookup) Validate() error {
@@ -293,13 +358,35 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		switch value.Content[i].Value {
+		case redisKey:
+			lo.hasRedisKey = true
+		case valkeyKey:
+			lo.hasValkeyKey = true
+		}
+	}
 	*o = Options(lo)
 	return nil
+}
+
+// MarshalYAML writes only the cache's own provider block, since New fills them all and the loader
+// rejects the valkey block on any other provider
+func (o Options) MarshalYAML() (any, error) {
+	type plainOptions Options
+	name := strings.TrimSpace(strings.ToLower(o.Provider))
+	id, ok := providers.Names[name]
+	if !ok {
+		id = o.ProviderID
+	}
+	o.keepProviderBlock(name, id)
+	return plainOptions(o), nil
 }
 
 func (o *Options) ClearProviderOptions() {
 	o.Index = nil
 	o.Redis = nil
+	o.Valkey = nil
 	o.Filesystem = nil
 	o.BBolt = nil
 	o.Badger = nil

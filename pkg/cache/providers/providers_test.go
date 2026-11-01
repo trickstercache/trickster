@@ -37,3 +37,12 @@ func TestProviderIDString(t *testing.T) {
 		t.Errorf("expected %s got %s", "13", t3.String())
 	}
 }
+
+func TestRedisAndValkeyAreDistinct(t *testing.T) {
+	if RedisID.String() != Redis || ValkeyID.String() != Valkey {
+		t.Errorf("expected %s and %s, got %s and %s", Redis, Valkey, RedisID, ValkeyID)
+	}
+	if UsesIndex(Redis) || UsesIndex(Valkey) {
+		t.Error("expected redis and valkey to manage their own expiry without an index")
+	}
+}

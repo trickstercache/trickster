@@ -161,8 +161,8 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 				}
 			}
 		}
-		// ACME storage may borrow a redis cache's connection settings
-		if name := c.ACME.RedisCacheName(); name != "" {
+		// ACME storage may borrow a redis or valkey cache's connection settings
+		if name := c.ACME.StorageCacheName(); name != "" {
 			activeCaches.Set(name)
 		}
 		warnings, err := c.Caches.Initialize(activeCaches)

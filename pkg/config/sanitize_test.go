@@ -664,3 +664,55 @@ acme:
 	}
 	sanitizeACME(nil, nil, nil)
 }
+
+func TestSanitizedStringValkey(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+caches:
+  vk:
+    provider: valkey
+    valkey:
+      endpoint: valkey.private.example:6379
+      endpoints: [valkey-a.private.example:6379]
+      password: cache-secret
+      replica_reads:
+        replica_endpoints: [replica.private.example:6379]
+  rd:
+    provider: redis
+    redis:
+      endpoint: redis.private.example:6379
+      password: redis-secret
+acme:
+  storage:
+    provider: valkey
+    valkey:
+      connection:
+        endpoint: acme.private.example:6379
+        password: acme-secret
+  issuers:
+    le:
+      agree_to_terms: true
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := conf.SanitizedString()
+	for _, private := range []string{
+		"valkey.private.example", "valkey-a.private.example", "replica.private.example", "cache-secret",
+		"redis.private.example", "redis-secret", "acme.private.example", "acme-secret",
+	} {
+		if strings.Contains(out, private) {
+			t.Errorf("sanitized output contains %q", private)
+		}
+	}
+	dump := conf.String()
+	for _, secret := range []string{"cache-secret", "redis-secret", "acme-secret"} {
+		if strings.Contains(dump, secret) {
+			t.Errorf("the config dump contains %q", secret)
+		}
+	}
+	conf.ACME.Storage.Valkey = &acmeopts.ValkeyStorageOptions{CacheName: "vk"}
+	if out := conf.SanitizedString(); strings.Contains(out, "cache_name: vk") {
+		t.Error("the borrowed cache name was not anonymized")
+	}
+}

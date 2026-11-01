@@ -20,11 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	cacheopts "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/redis"
-	redisopts "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -38,40 +37,76 @@ const redisClientName = "acme-storage"
 
 var errNoRedisConnection = errors.New("acme redis storage has no connection settings")
 
-func redisConnection(conf *config.Config) *redisopts.Options {
+// storageConnection returns the cache options that redis or valkey storage connects with: those
+// of the cache it borrows, or its own. A valkey connection keeps no client-side cache and reads
+// only from primaries, as a lock must see the latest write.
+func storageConnection(conf *config.Config) *cacheopts.Options {
 	s := conf.ACME.Storage
-	if s == nil || s.Provider != acmeopts.StorageRedis || s.Redis == nil {
+	if s == nil {
 		return nil
 	}
-	if s.Redis.CacheName != "" {
-		if c := conf.Caches[s.Redis.CacheName]; c != nil {
-			return c.Redis
+	name := s.CacheName()
+	borrowed := conf.Caches[name]
+	switch {
+	case s.Provider == acmeopts.StorageRedis && s.Redis != nil:
+		conn := s.Redis.Connection
+		if name != "" {
+			if borrowed == nil {
+				return nil
+			}
+			conn = borrowed.Redis
 		}
-		return nil
+		if conn == nil {
+			return nil
+		}
+		return &cacheopts.Options{Provider: providers.Redis, ProviderID: providers.RedisID, Redis: conn.Clone()}
+	case s.Provider == acmeopts.StorageValkey && s.Valkey != nil:
+		conn := s.Valkey.Connection
+		if name != "" {
+			if borrowed == nil {
+				return nil
+			}
+			conn = borrowed.Valkey
+		}
+		if conn == nil {
+			return nil
+		}
+		return &cacheopts.Options{
+			Provider: providers.Valkey, ProviderID: providers.ValkeyID,
+			Valkey: conn.WithoutReadFeatures(),
+		}
 	}
-	return s.Redis.Connection
+	return nil
 }
 
-func newStorage(o *acmeopts.StorageOptions, conn *redisopts.Options,
+// sameConnection reports whether two storage connections are identical, either being nil
+func sameConnection(a, b *cacheopts.Options) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.Equal(b)
+}
+
+func newStorage(o *acmeopts.StorageOptions, conn *cacheopts.Options,
 ) (certmagic.Storage, func() error, error) {
 	if o == nil {
 		return nil, nil, acmeopts.ErrStoragePathRequired
 	}
-	if o.Provider != acmeopts.StorageRedis {
+	if o.Provider != acmeopts.StorageRedis && o.Provider != acmeopts.StorageValkey {
 		return &certmagic.FileStorage{Path: o.Path}, func() error { return nil }, nil
 	}
 	if conn == nil {
 		return nil, nil, errNoRedisConnection
 	}
-	rc := redis.New(context.Background(), redisClientName, &cacheopts.Options{Redis: conn})
+	rc := redis.New(context.Background(), redisClientName, conn)
 	if err := rc.Connect(); err != nil {
-		if rc.Cmdable() == nil {
+		if rc.Holder() == nil {
 			return nil, nil, fmt.Errorf("acme redis storage: %w", err)
 		}
-		// the client reconnects on its own, so an unreachable server is retried rather than fatal
+		// the client connects once the server is up, so an unreachable server is retried rather than fatal
 		logger.Warn("acme redis storage is not reachable yet", logging.Pairs{"detail": err.Error()})
 	}
-	s := redisstorage.New(rc.Cmdable(), o.Redis.KeyPrefix, time.Duration(o.Redis.LockTTL))
+	s := redisstorage.New(rc.Holder(), o.KeyPrefix(), o.LockTTL(), o.Provider == acmeopts.StorageValkey)
 	return s, func() error {
 		err := s.Close()
 		if cerr := rc.Close(); err == nil {

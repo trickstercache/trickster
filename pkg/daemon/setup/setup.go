@@ -550,13 +550,14 @@ func globalALBCaches(c *config.Config) sets.Set[string] {
 }
 
 func closesAtOnce(name string, c cache.Cache, deferred sets.Set[string]) bool {
-	// only a memory or redis cache an old global ALB stores in waits for the old clients to retire before it closes;
+	// only a memory, redis or valkey cache an old global ALB stores in waits for the old clients to retire before it closes;
 	// one keeping its objects in local files can't, as the cache replacing it may open the same files
 	if !deferred.Contains(name) {
 		return true
 	}
 	conf := c.Configuration()
-	return conf == nil || (conf.ProviderID != providers.MemoryID && conf.ProviderID != providers.RedisID)
+	return conf == nil || (conf.ProviderID != providers.MemoryID && conf.ProviderID != providers.RedisID &&
+		conf.ProviderID != providers.ValkeyID)
 }
 
 // CloseReplacedCaches closes the caches of old, oldConf's, that current doesn't keep and applying it left open, which a reload

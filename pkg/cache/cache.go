@@ -116,6 +116,8 @@ type StreamClient interface {
 type Client interface {
 	Connect() error
 	Store(cacheKey string, data []byte, ttl time.Duration) error
+	// Retrieve returns bytes that may be shared with other callers and with the cache itself, so
+	// callers must not modify them; a decoder may keep views into them, but not write through them
 	Retrieve(cacheKey string) ([]byte, status.LookupStatus, error)
 	Remove(cacheKeys ...string) error
 	Close() error

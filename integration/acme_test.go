@@ -33,9 +33,9 @@ import (
 	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 
-	redis "github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/valkey-io/valkey-go"
 )
 
 const (
@@ -49,6 +49,7 @@ const (
 	acmeOrdersMetric    = `trickster_acme_orders_total{issuer="pebble",result="success"}`
 	acmeChallengeMetric = `trickster_acme_challenge_requests_total{result="served",type="%s"}`
 	acmeRedisEndpoint   = "127.0.0.1:6379"
+	acmeValkeyEndpoint  = "127.0.0.1:6380"
 )
 
 type acmeStack struct {
@@ -68,7 +69,10 @@ type acmeStackOptions struct {
 	hosts       []string
 	dnsIssuer   bool
 	onDemand    string
-	redisPrefix string
+	redisPrefix   string
+	redisEndpoint string
+	// redisProvider is the storage provider, redis or valkey, of a shared keyspace
+	redisProvider string
 }
 
 func newACMEStack(t *testing.T, o acmeStackOptions) *acmeStack {
@@ -98,8 +102,8 @@ func newACMEStack(t *testing.T, o acmeStackOptions) *acmeStack {
 	}
 	storage := "path: " + t.TempDir()
 	if o.redisPrefix != "" {
-		storage = fmt.Sprintf("provider: redis\n    redis:\n      key_prefix: %q\n"+
-			"      connection:\n        endpoint: %s", o.redisPrefix, acmeRedisEndpoint)
+		storage = fmt.Sprintf("provider: %[1]s\n    %[1]s:\n      key_prefix: %[2]q\n"+
+			"      connection:\n        endpoint: %[3]s", o.redisProvider, o.redisPrefix, o.redisEndpoint)
 	}
 	onDemand := ""
 	if o.onDemand != "" {
@@ -339,20 +343,31 @@ func TestACME_OnDemand(t *testing.T) {
 }
 
 func TestACME_RedisStorage(t *testing.T) {
+	for _, tc := range []struct{ provider, endpoint string }{
+		{"redis", acmeRedisEndpoint},
+		{"valkey", acmeValkeyEndpoint},
+	} {
+		t.Run(tc.provider, func(t *testing.T) { testACMERedisStorage(t, tc.provider, tc.endpoint) })
+	}
+}
+
+func testACMERedisStorage(t *testing.T, provider, endpoint string) {
 	const domain = "redis.acme.test"
-	// a prefix no earlier run used, since Redis outlives the test; its keys are removed afterward
+	// a prefix no earlier run used, since the server outlives the test; its keys are removed afterward
 	prefix := fmt.Sprintf("trickster:acme:it:%d:", time.Now().UnixNano())
-	rc := redis.NewClient(&redis.Options{Addr: acmeRedisEndpoint})
+	rc, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{endpoint},
+		ForceSingleClient: true, DisableCache: true})
+	require.NoError(t, err, "the developer environment's %s is required", endpoint)
 	t.Cleanup(func() {
 		ctx := context.Background()
-		keys, _ := rc.Keys(ctx, "{"+prefix+"}*").Result()
+		keys, _ := rc.Do(ctx, rc.B().Keys().Pattern("{"+prefix+"}*").Build()).AsStrSlice()
 		if len(keys) > 0 {
-			rc.Del(ctx, keys...)
+			rc.Do(ctx, rc.B().Del().Key(keys...).Build())
 		}
 		rc.Close()
 	})
-	require.NoError(t, rc.Ping(context.Background()).Err(), "the developer environment's Redis is required")
-	s := newACMEStack(t, acmeStackOptions{challenge: "http-01", hosts: []string{domain}, redisPrefix: prefix})
+	s := newACMEStack(t, acmeStackOptions{challenge: "http-01", hosts: []string{domain},
+		redisPrefix: prefix, redisEndpoint: endpoint, redisProvider: provider})
 	stop := s.start(t)
 	s.requireReady(t, acmeIssueTimeout)
 	serial := s.requireServed(t, domain)

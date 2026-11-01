@@ -18,9 +18,9 @@ require (
 	github.com/prometheus/common v0.72.1
 	github.com/quic-go/quic-go v0.63.0
 	github.com/quic-go/webtransport-go v0.13.0
-	github.com/redis/go-redis/v9 v9.23.0
 	github.com/stretchr/testify v1.12.1
 	github.com/trickstercache/trickster/v2 v2.0.0-00010101000000-000000000000
+	github.com/valkey-io/valkey-go v1.0.79
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0

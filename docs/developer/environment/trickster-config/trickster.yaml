@@ -77,6 +77,12 @@ caches:
       client_type: standard
       endpoint: localhost:6379
       protocol: tcp
+  valkey:
+    provider: valkey
+    valkey:
+      client_type: standard
+      endpoint: localhost:6380
+      protocol: tcp
 request_rewriters:
   remove-accept-encoding:
     instructions:
@@ -313,6 +319,10 @@ backends:
     provider: prometheus
     origin_url: 'http://127.0.0.1:9090'
     cache_name: redis
+  prom4:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: valkey
   flux1:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086/'

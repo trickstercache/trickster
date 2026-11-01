@@ -17,6 +17,7 @@
 package options
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -99,5 +100,62 @@ caches:
 	o := d.Caches["default"].Redis
 	if o == nil || o.ClientType != "sentinel" || o.Password != "secret" {
 		t.Fatalf("unexpected redis options: %+v", o)
+	}
+}
+
+func TestDecodeYAMLKeepsUnsetValues(t *testing.T) {
+	t.Parallel()
+	o := &Options{Endpoint: "kept:6379", DB: 4}
+	var n yaml.Node
+	if err := yaml.Unmarshal([]byte("db: 2\n"), &n); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.DecodeYAML(n.Content[0]); err != nil {
+		t.Fatal(err)
+	}
+	if o.Endpoint != "kept:6379" || o.DB != 2 {
+		t.Fatalf("unexpected options: %+v", o)
+	}
+	if err := yaml.Unmarshal([]byte("db: [1]\n"), &n); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.DecodeYAML(n.Content[0]); err == nil {
+		t.Fatal("expected an error decoding a sequence into db")
+	}
+}
+
+func TestIneffectivePoolKeys(t *testing.T) {
+	t.Parallel()
+	if keys := New().IneffectivePoolKeys(false); len(keys) != 0 {
+		t.Fatalf("expected no keys for defaults, got %v", keys)
+	}
+	o := &Options{PoolSize: 4, MinIdleConns: 1, ConnMaxIdleTime: timeconv.Duration(time.Minute),
+		PoolTimeout: timeconv.Duration(time.Second)}
+	if keys := o.IneffectivePoolKeys(true); !slices.Equal(keys, []string{KeyPoolTimeout}) {
+		t.Fatalf("expected only pool_timeout when pooled, got %v", keys)
+	}
+	want := []string{KeyPoolSize, KeyMinIdleConns, KeyIdleTimeout, KeyPoolTimeout}
+	if keys := o.IneffectivePoolKeys(false); !slices.Equal(keys, want) {
+		t.Fatalf("expected %v when not pooled, got %v", want, keys)
+	}
+}
+
+func TestClone(t *testing.T) {
+	t.Parallel()
+	var nilOpts *Options
+	if nilOpts.Clone() != nil {
+		t.Fatal("expected nil clone of nil options")
+	}
+	if nilOpts.Equal(New()) {
+		t.Fatal("expected nil options to differ from defaults")
+	}
+	o := New()
+	c := o.Clone()
+	if !c.Equal(o) {
+		t.Fatal("expected the clone to equal its source")
+	}
+	c.Endpoints[0] = "changed:6379"
+	if o.Endpoints[0] != DefaultRedisEndpoint {
+		t.Fatal("expected the clone's endpoints to be a separate slice")
 	}
 }

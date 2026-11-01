@@ -225,8 +225,8 @@ does. Memory is right for one replica and for objects that are cheap to fetch ag
 per replica, so two replicas behind one Service each fetch and store their own copy, and a
 restart starts cold.
 
-For several replicas, or for time series that are expensive to backfill, configure a Redis
-cache ([caches.md](./caches.md#redis)) and name it:
+For several replicas, or for time series that are expensive to backfill, configure a Redis or
+Valkey cache ([caches.md](./caches.md#redis-and-valkey)) and name it:
 
 ```yaml
 caches:

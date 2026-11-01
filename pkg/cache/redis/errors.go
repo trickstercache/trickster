@@ -26,3 +26,9 @@ var ErrInvalidEndpointsConfig = errors.New("invalid 'endpoints' config")
 
 // ErrInvalidSentinalMasterConfig indicates an invalid sentinel_master config
 var ErrInvalidSentinalMasterConfig = errors.New("invalid 'sentinel_master' config")
+
+// ErrInvalidProtocolConfig indicates a protocol other than tcp or unix
+var ErrInvalidProtocolConfig = errors.New("invalid 'protocol' config")
+
+// ErrNotConnected indicates a command was made before a client could connect
+var ErrNotConnected = errors.New("not connected to the redis or valkey server")

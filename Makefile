@@ -218,6 +218,29 @@ benchmark-mysql:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
 	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
 
+# benchmark-redis compares the redis and valkey cache clients against the developer environment's
+# servers; start it with COMPOSE_PROFILES=cache-cluster to include the Valkey cluster
+.PHONY: benchmark-redis
+benchmark-redis:
+	@TRICKSTER_REDIS_BENCH=1 go test ./pkg/cache/redis -run '^$$' -bench '^BenchmarkLive' -benchmem \
+		-count=$(or $(BENCH_COUNT),6) -timeout 3h
+
+REDIS_COMPAT_IMAGES ?= redis:6.2-alpine valkey/valkey:9-alpine
+REDIS_COMPAT_PORT ?= 6393
+# test-redis-compat runs the redis cache provider and ACME storage against each REDIS_COMPAT_IMAGES
+# server, started one at a time in a throwaway container on REDIS_COMPAT_PORT
+.PHONY: test-redis-compat
+test-redis-compat:
+	@set -e; for img in $(REDIS_COMPAT_IMAGES); do \
+		echo "== $$img"; \
+		docker run -d --rm --name trickster-redis-compat -p $(REDIS_COMPAT_PORT):6379 $$img >/dev/null; \
+		trap 'docker rm -f trickster-redis-compat >/dev/null 2>&1' EXIT; \
+		until docker exec trickster-redis-compat sh -c 'redis-cli ping 2>/dev/null || valkey-cli ping' 2>/dev/null | grep -q PONG; do sleep 0.2; done; \
+		TRICKSTER_REDIS_TEST=1 TRICKSTER_REDIS_COMPAT_ADDR=127.0.0.1:$(REDIS_COMPAT_PORT) go test -count=1 \
+			-run '^TestLiveCompat$$' ./pkg/cache/redis ./pkg/proxy/tls/acme/redisstorage; \
+		docker rm -f trickster-redis-compat >/dev/null; \
+	done
+
 .PHONY: benchmark-flightsql-smoke
 benchmark-flightsql-smoke:
 	@go test ./pkg/proxy/flightsql -run '^$$' -bench '^BenchmarkFlightSQLSmoke$$' -benchtime=1x -benchmem
@@ -444,7 +467,7 @@ get-msgpack:
 
 # --- Developer environment ---------------------------------------------------
 # Each TSDB backend in the compose file has its own profile; services without a
-# profile (redis, grafana, prometheus, devorigin, jaeger) always start.
+# profile (redis, valkey, grafana, prometheus, devorigin, jaeger) always start.
 # COMPOSE_PROFILES takes a comma-separated list, e.g. COMPOSE_PROFILES=mysql,clickhouse
 
 COMPOSE_ENV_DIR     := docs/developer/environment
@@ -453,7 +476,7 @@ COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
 DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite \
-	mimir thanos moq
+	mimir thanos moq cache-cluster
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -479,16 +502,18 @@ developer-start: check-docker
 	@$(MAKE) developer-credentials
 	@echo "Starting developer environment with profiles: $(COMPOSE_PROFILES)"
 	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose up -d
-	@echo "Waiting for Redis to be ready..."
-	@cd $(COMPOSE_ENV_DIR) && attempts=0; \
-	while [ $$attempts -lt 30 ]; do \
-		response=$$(docker compose exec -T redis redis-cli ping 2>&1 || true); \
-		echo "PING -> $${response:-no response}"; \
-		case "$$response" in *PONG*) exit 0;; esac; \
-		attempts=$$((attempts + 1)); \
-		sleep 1; \
-	done; \
-	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
+	@cd $(COMPOSE_ENV_DIR) && for svc in redis:redis-cli valkey:valkey-cli; do \
+		name=$${svc%%:*}; cli=$${svc#*:}; attempts=0; ready=; \
+		echo "Waiting for $$name to be ready..."; \
+		while [ $$attempts -lt 30 ]; do \
+			response=$$(docker compose exec -T $$name $$cli ping 2>&1 || true); \
+			echo "PING -> $${response:-no response}"; \
+			case "$$response" in *PONG*) ready=1; break;; esac; \
+			attempts=$$((attempts + 1)); \
+			sleep 1; \
+		done; \
+		[ -n "$$ready" ] || echo "WARNING: timed out waiting for $$name readiness; continuing anyway"; \
+	done
 	@echo "Waiting for prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	@# devorigin compiles on start, so its container runs well before it serves
