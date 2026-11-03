@@ -29,6 +29,9 @@ const (
 	maxLocationFilterFields = 4
 	reasonUnknownParam      = "unknown parameter"
 
+	// paramPaused is PAUSED, draft -23's inverse of FORWARD, whose code it leaves undefined
+	paramPaused uint64 = 0x11
+
 	legacyNextGroupStart = 0x1
 	legacyLargestObject  = 0x2
 	legacyAbsoluteStart  = 0x3
@@ -44,6 +47,10 @@ var (
 
 // KnownParams returns the parameters the draft defines
 func (c *Codec) KnownParams() message.ParamSet {
+	return c.known
+}
+
+func (c *Codec) knownParams() message.ParamSet {
 	s := message.Of(message.ParamObjectDeliveryTimeout, message.ParamAuthorizationToken,
 		message.ParamRendezvousTimeout, message.ParamExpires, message.ParamLargestObject, message.ParamForward,
 		message.ParamSubscriberPriority, message.ParamLocationFilter, message.ParamGroupOrder,
@@ -59,7 +66,30 @@ func (c *Codec) KnownParams() message.ParamSet {
 	if c.Has(CapFillFetch) {
 		s |= message.Of(message.ParamFillParameters, message.ParamIncludeProperties)
 	}
+	if c.Has(CapParams23) {
+		s |= message.Bit(message.ParamSubscribeTracksID)
+	}
 	return s
+}
+
+func (c *Codec) wireParamType(t message.ParamType) uint64 {
+	if t == message.ParamForward && c.Has(CapParams23) {
+		return paramPaused
+	}
+	return uint64(t)
+}
+
+func (c *Codec) paramType(w uint64) message.ParamType {
+	// a wire type this draft does not define maps to a type with no bit, which fails as unknown
+	if c.Has(CapParams23) {
+		switch w {
+		case paramPaused:
+			return message.ParamForward
+		case uint64(message.ParamForward):
+			return 0
+		}
+	}
+	return message.ParamType(w)
 }
 
 func (c *Codec) putVarint(b []byte, v uint64) []byte {
@@ -120,15 +150,16 @@ func paramCount(p *message.Params) uint64 {
 
 func (c *Codec) appendParams(b []byte, p *message.Params, allowed message.ParamSet) ([]byte, error) {
 	// a count, then each parameter in ascending type order with its type a delta from the one before
-	if p.Present()&^(allowed&c.KnownParams()) != 0 {
+	if p.Present()&^(allowed&c.known) != 0 {
 		return b, ErrParamNotAllowed
 	}
 	b = c.putVarint(b, paramCount(p))
 	var prev uint64
 	var err error
 	put := func(t message.ParamType) {
-		b = c.putVarint(b, uint64(t)-prev)
-		prev = uint64(t)
+		w := c.wireParamType(t)
+		b = c.putVarint(b, w-prev)
+		prev = w
 	}
 	for _, t := range message.ParamTypes {
 		switch t {
@@ -172,10 +203,13 @@ func (c *Codec) appendParams(b []byte, p *message.Params, allowed message.ParamS
 			b = c.putVarint(b, p.FillTimeout)
 		case message.ParamNewGroupRequest:
 			b = c.putVarint(b, p.NewGroupRequest)
+		case message.ParamSubscribeTracksID:
+			b = c.putVarint(b, p.SubscribeTracksID)
 		case message.ParamLargestObject:
 			b = c.putLocation(b, p.LargestObject)
 		case message.ParamForward:
-			b = append(b, boolByte(p.Forward))
+			// PAUSED, from -23, is set when the subscription does not forward
+			b = append(b, boolByte(p.Forward != c.Has(CapParams23)))
 		case message.ParamIncludeProperties:
 			b = append(b, boolByte(p.IncludeProperties))
 		case message.ParamSubscriberPriority:
@@ -193,11 +227,14 @@ func (c *Codec) appendParams(b []byte, p *message.Params, allowed message.ParamS
 			if fill == nil {
 				fill = &message.Params{}
 			}
+			// a count of parameters from -23, and before it a length around them
 			start := len(b)
 			if b, err = c.appendParams(b, fill, message.FillParams); err != nil {
 				return b, err
 			}
-			b = c.prefixLength(b, start)
+			if !c.Has(CapParams23) {
+				b = c.prefixLength(b, start)
+			}
 		}
 	}
 	return b, nil
@@ -288,13 +325,13 @@ func (c *Codec) parseLegacyFilter(r *wire.Reader) (message.LocationFilter, error
 		f.EndGroupDelta = sub.Varint()
 	default:
 		if sub.Err() == nil {
-			return f, message.Violation("unknown location filter type")
+			return f, c.SessionError(message.CodeInvalidParameter, "unknown location filter type")
 		}
 	}
 	if err := sub.Done(); err != nil {
-		return f, wireViolation(err)
+		return f, c.wireError(err)
 	}
-	return f, checkFilterEnd(f)
+	return f, c.checkFilterEnd(f)
 }
 
 func appendFilterFields(c *Codec, b []byte, f message.LocationFilter) []byte {
@@ -335,7 +372,7 @@ func (c *Codec) appendRangeFilter(b []byte, f *message.RangeFilter) ([]byte, err
 func (c *Codec) parseParams(r *wire.Reader, allowed message.ParamSet) (message.Params, error) {
 	// unknown parameters cannot be skipped, so any the message or draft does not carry ends the session
 	var p message.Params
-	allowed &= c.KnownParams()
+	allowed &= c.known
 	n := r.Count()
 	var prev uint64
 	for i := range n {
@@ -344,25 +381,26 @@ func (c *Codec) parseParams(r *wire.Reader, allowed message.ParamSet) (message.P
 			break
 		}
 		if d > math.MaxUint64-prev {
-			return p, message.Violation("parameter type overflows")
+			return p, c.SessionError(message.CodeDeltaEncodingOverflow, "parameter type overflows")
 		}
-		t := message.ParamType(prev + d)
+		w := prev + d
+		t := c.paramType(w)
 		if i > 0 && d == 0 && !message.Repeatable(t) {
-			return p, message.Violation(fmt.Sprintf("duplicate parameter %#x", uint64(t)))
+			return p, c.SessionError(message.CodeInvalidParameter, fmt.Sprintf("duplicate parameter %#x", w))
 		}
-		prev = uint64(t)
+		prev = w
 		if message.Bit(t) == 0 {
-			return p, message.Violation(reasonUnknownParam)
+			return p, c.SessionError(message.CodeInvalidParameter, reasonUnknownParam)
 		}
 		if !allowed.Has(t) {
-			return p, message.Violation(fmt.Sprintf("parameter %#x not allowed here", uint64(t)))
+			return p, c.SessionError(message.CodeInvalidParameter, fmt.Sprintf("parameter %#x not allowed here", w))
 		}
 		if err := c.parseParam(r, t, &p); err != nil {
 			return p, err
 		}
 	}
 	if err := r.Err(); err != nil {
-		return p, wireViolation(err)
+		return p, c.wireError(err)
 	}
 	return p, nil
 }
@@ -381,6 +419,8 @@ func (c *Codec) parseParam(r *wire.Reader, t message.ParamType, p *message.Param
 		p.FillTimeout = r.Varint()
 	case message.ParamNewGroupRequest:
 		p.NewGroupRequest = r.Varint()
+	case message.ParamSubscribeTracksID:
+		p.SubscribeTracksID = r.Varint()
 	case message.ParamLargestObject:
 		p.LargestObject = r.Location()
 	case message.ParamSubscriberPriority:
@@ -388,17 +428,18 @@ func (c *Codec) parseParam(r *wire.Reader, t message.ParamType, p *message.Param
 	case message.ParamForward, message.ParamIncludeProperties:
 		v := r.Uint8()
 		if v > 1 {
-			return message.Violation("boolean parameter out of range")
+			return c.SessionError(message.CodeInvalidParameter, "boolean parameter out of range")
 		}
 		if t == message.ParamForward {
-			p.Forward = v == 1
+			// PAUSED, from -23, is 1 when the subscription does not forward
+			p.Forward = (v == 1) != c.Has(CapParams23)
 		} else {
 			p.IncludeProperties = v == 1
 		}
 	case message.ParamGroupOrder:
 		p.GroupOrder = message.GroupOrder(r.Uint8())
 		if r.Err() == nil && !p.GroupOrder.Valid() {
-			return message.Violation("group order out of range")
+			return c.SessionError(message.CodeInvalidParameter, "group order out of range")
 		}
 	case message.ParamTrackNamespacePrefix:
 		p.TrackNamespacePrefix = r.Namespace()
@@ -415,22 +456,14 @@ func (c *Codec) parseParam(r *wire.Reader, t message.ParamType, p *message.Param
 		}
 		tok, err := wire.ParseToken(v)
 		if err != nil {
-			return &message.SessionError{Code: message.CodeKeyValueFormatting, Reason: err.Error()}
+			return c.tokenError(err)
 		}
 		p.AuthTokens = append(p.AuthTokens, tok)
 		return nil
 	case message.ParamFillParameters:
-		v := r.LenBytes(wire.MaxMessageLen)
-		if r.Err() != nil {
-			return nil
-		}
-		sub := wire.NewReader(v)
-		fill, err := c.parseParams(&sub, message.FillParams)
-		if err != nil {
+		fill, err := c.parseFill(r)
+		if err != nil || r.Err() != nil {
 			return err
-		}
-		if err = sub.Done(); err != nil {
-			return wireViolation(err)
 		}
 		p.Fill = &fill
 		if fill.Invalid != nil && p.Invalid == nil {
@@ -441,12 +474,32 @@ func (c *Codec) parseParam(r *wire.Reader, t message.ParamType, p *message.Param
 			c.parseRangeFilter(r, t, p)
 			return nil
 		}
-		return message.Violation(reasonUnknownParam)
+		return c.SessionError(message.CodeInvalidParameter, reasonUnknownParam)
 	}
 	if r.Err() == nil {
 		p.Mark(t)
 	}
 	return nil
+}
+
+func (c *Codec) parseFill(r *wire.Reader) (message.Params, error) {
+	// a count of parameters from -23, and before it a length around them
+	if c.Has(CapParams23) {
+		return c.parseParams(r, message.FillParams)
+	}
+	v := r.LenBytes(wire.MaxMessageLen)
+	if r.Err() != nil {
+		return message.Params{}, nil
+	}
+	sub := wire.NewReader(v)
+	fill, err := c.parseParams(&sub, message.FillParams)
+	if err != nil {
+		return fill, err
+	}
+	if err = sub.Done(); err != nil {
+		return fill, c.wireError(err)
+	}
+	return fill, nil
 }
 
 func (c *Codec) parseLocationFilter(r *wire.Reader) (message.LocationFilter, error) {
@@ -458,7 +511,7 @@ func (c *Codec) parseLocationFilter(r *wire.Reader) (message.LocationFilter, err
 		ft := r.Varint()
 		if ft > uint64(message.FilterNextObject) {
 			if r.Err() == nil {
-				return f, message.Violation("unknown location filter type")
+				return f, c.SessionError(message.CodeInvalidParameter, "unknown location filter type")
 			}
 			return f, nil
 		}
@@ -475,20 +528,20 @@ func (c *Codec) parseLocationFilter(r *wire.Reader) (message.LocationFilter, err
 			f.StartGroup, f.StartObject, f.EndGroupDelta = r.Varint(), r.Varint(), r.Varint()
 			f.EndObject = r.Varint()
 		}
-		return f, checkFilterEnd(f)
+		return f, c.checkFilterEnd(f)
 	}
 	sub := wire.NewReader(r.LenBytes(wire.MaxMessageLen))
 	var fields [maxLocationFilterFields]uint64
 	var n int
 	for sub.Remaining() > 0 {
 		if n == maxLocationFilterFields {
-			return f, message.Violation("location filter has too many fields")
+			return f, c.SessionError(message.CodeInvalidParameter, "location filter has too many fields")
 		}
 		fields[n] = sub.Varint()
 		n++
 	}
 	if err := sub.Err(); err != nil {
-		return f, wireViolation(err)
+		return f, c.wireError(err)
 	}
 	switch n {
 	case 0:
@@ -507,13 +560,13 @@ func (c *Codec) parseLocationFilter(r *wire.Reader) (message.LocationFilter, err
 		f.Type = message.FilterAbsoluteRange
 		f.StartGroup, f.StartObject, f.EndGroupDelta, f.EndObject = fields[0], fields[1], fields[2], fields[3]
 	}
-	return f, checkFilterEnd(f)
+	return f, c.checkFilterEnd(f)
 }
 
-func checkFilterEnd(f message.LocationFilter) error {
+func (c *Codec) checkFilterEnd(f message.LocationFilter) error {
 	if (f.Type == message.FilterAbsoluteStartGroupEnd || f.Type == message.FilterAbsoluteRange) &&
 		f.EndGroupDelta > math.MaxUint64-f.StartGroup {
-		return message.Violation("location filter end group overflows")
+		return c.SessionError(message.CodeDeltaEncodingOverflow, "location filter end group overflows")
 	}
 	return nil
 }
@@ -568,12 +621,4 @@ func (c *Codec) parseRangeFilter(r *wire.Reader, t message.ParamType, p *message
 		}
 	}
 	p.RangeFilters = append(p.RangeFilters, f)
-}
-
-func wireViolation(err error) error {
-	// framing errors end the session as a PROTOCOL_VIOLATION unless they already carry a code
-	if _, ok := errors.AsType[*message.SessionError](err); ok {
-		return err
-	}
-	return message.Violation(err.Error())
 }

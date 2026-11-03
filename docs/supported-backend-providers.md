@@ -12,7 +12,7 @@ Trickster can serve the contents of a local directory itself, with no upstream o
 
 ### <img src="./images/logos/trickster-logo.svg" width=24 /> Media over QUIC (MoQ) Relay
 
-Trickster relays live media as a caching Media over QUIC Transport relay, drafts -17 through -22, to native QUIC clients on a `protocol: moq` listener and to browsers by WebTransport over HTTP/3. One upstream subscription per track fans out to every subscriber, the newest groups stay in memory and older ones in a cache for FETCH, and publishers can send tracks to Trickster directly. Specify `'moq'` as the Provider when configuring Trickster. See the [MoQ Relay Document](./moq.md) for more information.
+Trickster relays live media as a caching Media over QUIC Transport relay, drafts -17 through -23, to native QUIC clients on a `protocol: moq` listener and to browsers by WebTransport over HTTP/3. One upstream subscription per track fans out to every subscriber, the newest groups stay in memory and older ones in a cache for FETCH, and publishers can send tracks to Trickster directly. Specify `'moq'` as the Provider when configuring Trickster. See the [MoQ Relay Document](./moq.md) for more information.
 
 ---
 

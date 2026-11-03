@@ -244,8 +244,13 @@ func (r *moqReceived) HandleSubgroup(_ *session.Request, in *session.IncomingSub
 func (r *moqReceived) HandleFetch(_ *session.Request, in *session.IncomingFetch) {
 	defer close(r.done)
 	for {
-		if _, err := in.Next(); err != nil {
+		fo, err := in.Next()
+		if err != nil {
 			return
+		}
+		if fo.EndOfRange != message.RangeEndNone {
+			// markers, such as the End of Group a -23 response closes with, carry no object
+			continue
 		}
 		b, _ := io.ReadAll(in)
 		r.fetched <- string(b)

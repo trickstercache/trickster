@@ -34,6 +34,13 @@ const (
 	OptionMaxFilterRanges       uint64 = 0x06
 	OptionImplementation        uint64 = 0x07
 	OptionMaxRequestUpdates     uint64 = 0x08
+	OptionMaxControlMessageSize uint64 = 0x09
+)
+
+// Error Detail types of a draft -23 REQUEST_ERROR
+const (
+	detailRedirect            uint64 = 0x01
+	detailUnsupportedProperty uint64 = 0x02
 )
 
 const (
@@ -42,20 +49,32 @@ const (
 	fetchTypeAbsoluteJoining = 0x3
 )
 
-// ErrUnknownMessage is returned when encoding a message the draft does not define
-var ErrUnknownMessage = errors.New("moq: message not defined in this draft")
+var (
+	// ErrUnknownMessage is returned when encoding a message the draft does not define
+	ErrUnknownMessage = errors.New("moq: message not defined in this draft")
+	// ErrEmptyTrackName is returned when encoding an empty Track Name in a draft that requires one
+	ErrEmptyTrackName = errors.New("moq: empty track name")
 
-// AppendMessage appends m framed as a control message: its type, a 16-bit length and its body
+	// a FETCH_OK before -23 carries neither of these, which a -23 REQUEST_OK answering a FETCH may
+	legacyFetchOKDropped = message.Of(message.ParamExpires, message.ParamLargestObject)
+)
+
+// AppendMessage appends m framed as a control message: its type, its length (16 bits through -22, a varint from -23)
+// and its body, which is held to the default MAX_CONTROL_MESSAGE_SIZE every peer accepts
 func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 	typ, ok := c.MessageType(m.Kind())
 	if !ok {
 		return b, fmt.Errorf("%w: %s in draft %d", ErrUnknownMessage, m.Kind(), c.draft)
 	}
-	if err := checkNames(m); err != nil {
+	if err := c.checkNames(m); err != nil {
 		return b, err
 	}
 	start := len(b)
-	b, at := wire.BeginMessage(b, typ)
+	begin, end := wire.BeginMessage, wire.EndMessage
+	if c.Has(CapVarintMessageLength) {
+		begin, end = wire.BeginVarintMessage, wire.EndVarintMessage
+	}
+	b, at := begin(b, typ)
 	var err error
 	switch v := m.(type) {
 	case *message.Setup:
@@ -67,48 +86,45 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 			b = c.putVarint(b, v.RequestID)
 		}
 	case *message.RequestOK:
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindRequestOK))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindRequestOK))
 		if c.Has(CapTrackPropertiesInRequestOK) {
 			b = append(b, v.TrackProperties...)
 		}
 	case *message.RequestError:
-		b = c.putVarint(b, uint64(v.Code))
+		b = c.putVarint(b, uint64(c.RequestCode(v.Code)))
 		b = c.putVarint(b, v.RetryInterval)
 		b = c.putString(b, v.Reason)
-		if v.Code == message.RequestRedirect && c.Has(CapRedirect) {
-			rd := v.Redirect
-			if rd == nil {
-				rd = &message.Redirect{}
-			}
-			b = c.putString(b, rd.ConnectURI)
-			b = c.putNamespace(b, rd.Track.Namespace)
-			b = c.putBytes(b, rd.Track.Name)
+		switch {
+		case c.Has(CapErrorDetails):
+			b, err = c.appendErrorDetails(b, v)
+		case v.Code == message.RequestRedirect && c.Has(CapRedirect):
+			b = c.putRedirect(b, v.Redirect)
 		}
 	case *message.RequestUpdate:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindRequestUpdate))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindRequestUpdate))
 	case *message.Subscribe:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putTrack(b, v.Track)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindSubscribe))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindSubscribe))
 	case *message.SubscribeOK:
 		b = c.putVarint(b, v.TrackAlias)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindSubscribeOK))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindSubscribeOK))
 		b = append(b, v.TrackProperties...)
 	case *message.Publish:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putTrack(b, v.Track)
 		b = c.putVarint(b, v.TrackAlias)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublish))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindPublish))
 		b = append(b, v.TrackProperties...)
 	case *message.PublishOK:
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublishOK))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindPublishOK))
 	case *message.PublishDone:
-		b = c.putVarint(b, uint64(c.doneCode(v.Code)))
+		b = c.putVarint(b, uint64(c.sentDoneCode(v.Code)))
 		b = c.putVarint(b, v.StreamCount)
 		b = c.putString(b, v.Reason)
 	case *message.PublishStateNotify:
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublishStateNotify))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindPublishStateNotify))
 	case *message.Fetch:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		if c.Has(CapJoiningFetch) {
@@ -116,39 +132,35 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 			break
 		}
 		b = c.putTrack(b, v.Track)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindFetch))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindFetch))
 	case *message.FetchOK:
-		b = append(b, boolByte(v.EndOfTrack))
-		end := v.EndLocation
-		if c.Has(CapJoiningFetch) {
-			end = legacyFetchEnd(end)
-		}
-		b = c.putLocation(b, end)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindFetchOK))
-		b = append(b, v.TrackProperties...)
+		b, err = c.appendFetchOK(b, v)
 	case *message.TrackStatus:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putTrack(b, v.Track)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindTrackStatus))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindTrackStatus))
 	case *message.PublishNamespace:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putNamespace(b, v.Prefix)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublishNamespace))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindPublishNamespace))
 	case *message.SubscribeNamespace:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putNamespace(b, v.Prefix)
 		if !c.Has(CapSubscribeTracks) {
 			b = c.putVarint(b, v.Options)
 		}
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindSubscribeNamespace))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindSubscribeNamespace))
 	case *message.Namespace:
 		b = c.putNamespace(b, v.Suffix)
+		if c.Has(CapNamespaceParams) {
+			b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindNamespace))
+		}
 	case *message.NamespaceDone:
 		b = c.putNamespace(b, v.Suffix)
 	case *message.SubscribeTracks:
 		b = c.putVarint(b, v.RequestID)
 		b = c.putNamespace(b, v.Prefix)
-		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindSubscribeTracks))
+		b, err = c.appendParams(b, &v.Params, c.allowedParams(message.KindSubscribeTracks))
 	case *message.PublishSkipped:
 		b = c.putNamespace(b, v.Suffix)
 		b = c.putBytes(b, v.TrackName)
@@ -158,24 +170,155 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 	if err != nil {
 		return b[:start], err
 	}
-	b, err = wire.EndMessage(b, at)
+	b, err = end(b, at)
 	if err != nil {
 		return b[:start], err
 	}
 	return b, nil
 }
 
-func checkNames(m message.Message) error {
+// ReadMessage reads one control message, its type and its body, which is read into buf when it fits there. io.EOF
+// before the type is returned as is; a body over the default MAX_CONTROL_MESSAGE_SIZE is a *message.SessionError.
+func (c *Codec) ReadMessage(r wire.StreamReader, buf []byte) (uint64, []byte, error) {
+	return c.ReadMessageLimit(r, buf, wire.MaxMessageLen)
+}
+
+// ReadMessageLimit reads one control message as ReadMessage does, with limit, the MAX_CONTROL_MESSAGE_SIZE this
+// endpoint advertised, bounding the body from -23
+func (c *Codec) ReadMessageLimit(r wire.StreamReader, buf []byte, limit uint64) (uint64, []byte, error) {
+	typ, err := wire.ReadVarintFrom(r)
+	if err != nil {
+		return 0, nil, err
+	}
+	body, err := c.ReadMessageBodyLimit(r, buf, limit)
+	return typ, body, err
+}
+
+// ReadMessageBody reads a control message's length and body after its type, as ReadMessage does
+func (c *Codec) ReadMessageBody(r wire.StreamReader, buf []byte) ([]byte, error) {
+	return c.ReadMessageBodyLimit(r, buf, wire.MaxMessageLen)
+}
+
+// ReadMessageBodyLimit reads a control message's length and body after its type, as ReadMessageLimit does
+func (c *Codec) ReadMessageBodyLimit(r wire.StreamReader, buf []byte, limit uint64) ([]byte, error) {
+	if !c.Has(CapVarintMessageLength) {
+		return wire.ReadMessageBody(r, buf)
+	}
+	body, err := wire.ReadVarintMessageBody(r, buf, max(limit, wire.MaxMessageLen))
+	if errors.Is(err, wire.ErrMessageTooLong) {
+		return nil, c.SessionError(message.CodeFieldLengthExceeded, "control message longer than MAX_CONTROL_MESSAGE_SIZE")
+	}
+	return body, err
+}
+
+func (c *Codec) allowedParams(k message.Kind) message.ParamSet {
+	return c.allowed[k]
+}
+
+func (c *Codec) draftParams(k message.Kind) message.ParamSet {
+	// the parameters a message of kind k may carry in this draft, computed once per codec
+	s := message.AllowedParams(k) & c.known
+	switch k {
+	case message.KindFetchOK:
+		if !c.Has(CapFetchRequestOK) {
+			return 0
+		}
+	case message.KindPublish:
+		if !c.Has(CapParams23) {
+			s &^= message.Bit(message.ParamFillParameters)
+		}
+	case message.KindSubscribeTracks:
+		if c.Has(CapParams23) {
+			s &^= message.Of(message.ParamRendezvousTimeout, message.ParamNewGroupRequest)
+		} else {
+			s &^= message.Bit(message.ParamFillParameters)
+		}
+	}
+	return s
+}
+
+func (c *Codec) appendFetchOK(b []byte, v *message.FetchOK) ([]byte, error) {
+	// from -23 a REQUEST_OK whose LARGEST_OBJECT says where the response ends when it ends there; earlier drafts
+	// state the end and End Of Track, and carry neither EXPIRES nor LARGEST_OBJECT
+	p := &v.Params
+	if !c.Has(CapFetchRequestOK) {
+		b = append(b, boolByte(v.EndOfTrack))
+		end := v.EndLocation
+		if c.Has(CapJoiningFetch) {
+			end = legacyFetchEnd(end)
+		}
+		b = c.putLocation(b, end)
+		if p.Set&legacyFetchOKDropped != 0 {
+			legacy := *p
+			legacy.Set &^= legacyFetchOKDropped
+			p = &legacy
+		}
+	}
+	b, err := c.appendParams(b, p, c.allowedParams(message.KindFetchOK))
+	return append(b, v.TrackProperties...), err
+}
+
+func (c *Codec) putRedirect(b []byte, rd *message.Redirect) []byte {
+	if rd == nil {
+		rd = &message.Redirect{}
+	}
+	b = c.putString(b, rd.ConnectURI)
+	b = c.putNamespace(b, rd.Track.Namespace)
+	return c.putBytes(b, rd.Track.Name)
+}
+
+func (c *Codec) appendErrorDetails(b []byte, v *message.RequestError) ([]byte, error) {
+	// each detail goes only with the code it is defined for, REDIRECT's being required
+	var kvs []wire.KV
+	switch v.Code {
+	case message.RequestRedirect:
+		kvs = append(kvs, wire.KV{Type: detailRedirect, Bytes: c.putRedirect(nil, v.Redirect)})
+	case message.RequestUnsupportedExtension:
+		for _, t := range v.UnsupportedProperties {
+			kvs = append(kvs, wire.KV{Type: detailUnsupportedProperty, Uint: t})
+		}
+	}
+	return wire.AppendKVs(b, kvs)
+}
+
+func (c *Codec) parseErrorDetails(r *wire.Reader, v *message.RequestError) error {
+	// unknown details, and known ones with a code they are not defined for, are ignored
+	it := wire.NewKVIter(r.Rest())
+	for kv, ok := it.Next(); ok; kv, ok = it.Next() {
+		switch {
+		case kv.Type == detailRedirect && v.Code == message.RequestRedirect && v.Redirect == nil:
+			sub := wire.NewReader(kv.Bytes)
+			rd := &message.Redirect{ConnectURI: sub.URI()}
+			rd.Track.Namespace = sub.Namespace()
+			rd.Track.Name = sub.TrackName(rd.Track.Namespace)
+			if err := sub.Done(); err != nil {
+				return c.framingError(err, message.CodeKeyValueFormatting)
+			}
+			v.Redirect = rd
+		case kv.Type == detailUnsupportedProperty && v.Code == message.RequestUnsupportedExtension:
+			v.UnsupportedProperties = append(v.UnsupportedProperties, kv.Uint)
+		}
+	}
+	if err := it.Err(); err != nil {
+		return c.wireError(err)
+	}
+	if v.Code == message.RequestRedirect && v.Redirect == nil {
+		return c.SessionError(message.CodeMalformedMessage, "REDIRECT without its detail")
+	}
+	return nil
+}
+
+func (c *Codec) checkNames(m message.Message) error {
 	// a name the peer would reject as malformed must not leave this endpoint, since the peer closes the session
 	switch v := m.(type) {
 	case *message.Subscribe:
-		return v.Track.Namespace.Validate(v.Track.Name)
+		return c.checkTrack(v.Track)
 	case *message.Publish:
-		return v.Track.Namespace.Validate(v.Track.Name)
+		return c.checkTrack(v.Track)
 	case *message.Fetch:
-		return v.Track.Namespace.Validate(v.Track.Name)
+		return c.checkTrack(v.Track)
 	case *message.TrackStatus:
-		return v.Track.Namespace.Validate(v.Track.Name)
+		return c.checkTrack(v.Track)
 	case *message.PublishNamespace:
 		return v.Prefix.Validate(nil)
 	case *message.SubscribeNamespace:
@@ -187,13 +330,20 @@ func checkNames(m message.Message) error {
 	case *message.NamespaceDone:
 		return v.Suffix.Validate(nil)
 	case *message.PublishSkipped:
-		return v.Suffix.Validate(v.TrackName)
+		return c.checkTrack(message.FullTrackName{Namespace: v.Suffix, Name: v.TrackName})
 	case *message.RequestError:
 		if v.Redirect != nil {
 			return v.Redirect.Track.Namespace.Validate(v.Redirect.Track.Name)
 		}
 	}
 	return nil
+}
+
+func (c *Codec) checkTrack(t message.FullTrackName) error {
+	if len(t.Name) == 0 && c.Has(CapNonEmptyTrackNames) {
+		return ErrEmptyTrackName
+	}
+	return t.Namespace.Validate(t.Name)
 }
 
 func (c *Codec) putRequestID(b []byte, id, required uint64) []byte {
@@ -237,6 +387,11 @@ func (c *Codec) appendSetup(b []byte, s *message.Setup) ([]byte, error) {
 			kvs = append(kvs, wire.KV{Type: OptionMaxRequestUpdates, Uint: s.MaxRequestUpdates})
 		}
 	}
+	if c.Has(CapVarintMessageLength) && s.MaxControlMessageSize > 0 {
+		// an odd option type, so the varint is the value of a length-prefixed pair
+		v := c.putVarint(nil, max(s.MaxControlMessageSize, wire.MaxMessageLen))
+		kvs = append(kvs, wire.KV{Type: OptionMaxControlMessageSize, Bytes: v})
+	}
 	kvs = append(kvs, s.Unknown...)
 	wire.SortKVs(kvs)
 	return wire.AppendKVs(b, kvs)
@@ -247,7 +402,7 @@ func (c *Codec) appendSetup(b []byte, s *message.Setup) ([]byte, error) {
 func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 	k, ok := c.MessageKind(typ)
 	if !ok {
-		return nil, message.Violation(fmt.Sprintf("unknown message type %#x", typ))
+		return nil, c.SessionError(message.CodeUnexpectedMessage, fmt.Sprintf("unknown message type %#x", typ))
 	}
 	r := wire.NewReader(body)
 	var m message.Message
@@ -264,7 +419,7 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		m = v
 	case message.KindRequestOK:
 		v := &message.RequestOK{}
-		if v.Params, err = c.parseParams(&r, message.AllowedParams(k)); err == nil &&
+		if v.Params, err = c.parseParams(&r, c.allowedParams(k)); err == nil &&
 			c.Has(CapTrackPropertiesInRequestOK) {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
@@ -273,7 +428,11 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		v := &message.RequestError{
 			Code: message.RequestCode(r.Varint()), RetryInterval: r.Varint(), Reason: r.Reason(),
 		}
-		if v.Code == message.RequestRedirect && c.Has(CapRedirect) && r.Err() == nil {
+		switch {
+		case r.Err() != nil:
+		case c.Has(CapErrorDetails):
+			err = c.parseErrorDetails(&r, v)
+		case v.Code == message.RequestRedirect && c.Has(CapRedirect):
 			rd := &message.Redirect{ConnectURI: r.URI()}
 			rd.Track.Namespace = r.Namespace()
 			rd.Track.Name = r.TrackName(rd.Track.Namespace)
@@ -283,17 +442,17 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 	case message.KindRequestUpdate:
 		v := &message.RequestUpdate{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindSubscribe:
 		v := &message.Subscribe{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
 		v.Track = readTrack(&r)
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindSubscribeOK:
 		v := &message.SubscribeOK{TrackAlias: r.Varint()}
-		if v.Params, err = c.parseParams(&r, message.AllowedParams(k)); err == nil {
+		if v.Params, err = c.parseParams(&r, c.allowedParams(k)); err == nil {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
 		m = v
@@ -302,13 +461,13 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
 		v.Track = readTrack(&r)
 		v.TrackAlias = r.Varint()
-		if v.Params, err = c.parseParams(&r, message.AllowedParams(k)); err == nil {
+		if v.Params, err = c.parseParams(&r, c.allowedParams(k)); err == nil {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
 		m = v
 	case message.KindPublishOK:
 		v := &message.PublishOK{}
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindPublishDone:
 		m = &message.PublishDone{
@@ -317,7 +476,7 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		}
 	case message.KindPublishStateNotify:
 		v := &message.PublishStateNotify{}
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindFetch:
 		v := &message.Fetch{}
@@ -326,7 +485,7 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 			err = c.parseLegacyFetch(&r, v)
 		} else {
 			v.Track = readTrack(&r)
-			v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+			v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		}
 		m = v
 	case message.KindFetchOK:
@@ -340,7 +499,7 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		if c.Has(CapJoiningFetch) {
 			v.EndLocation = inclusiveFetchEnd(v.EndLocation)
 		}
-		if v.Params, err = c.parseParams(&r, message.AllowedParams(k)); err == nil {
+		if v.Params, err = c.parseParams(&r, c.allowedParams(k)); err == nil {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
 		m = v
@@ -348,13 +507,13 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		v := &message.TrackStatus{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
 		v.Track = readTrack(&r)
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindPublishNamespace:
 		v := &message.PublishNamespace{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
 		v.Prefix = r.Namespace()
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindSubscribeNamespace:
 		v := &message.SubscribeNamespace{}
@@ -365,15 +524,19 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 				return nil, message.Violation("unknown subscribe options")
 			}
 		}
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindNamespace:
-		m = &message.Namespace{Suffix: r.Namespace()}
+		v := &message.Namespace{Suffix: r.Namespace()}
+		if c.Has(CapNamespaceParams) {
+			v.Params, err = c.parseParams(&r, c.allowedParams(k))
+		}
+		m = v
 	case message.KindNamespaceDone:
 		m = &message.NamespaceDone{Suffix: r.Namespace()}
 	case message.KindSubscribeTracks:
 		v := &message.SubscribeTracks{RequestID: r.Varint(), Prefix: r.Namespace()}
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		v.Params, err = c.parseParams(&r, c.allowedParams(k))
 		m = v
 	case message.KindPublishSkipped:
 		v := &message.PublishSkipped{Suffix: r.Namespace()}
@@ -384,9 +547,46 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		return nil, err
 	}
 	if err = r.Done(); err != nil {
-		return nil, wireViolation(err)
+		return nil, c.wireError(err)
+	}
+	if err = c.checkReceivedNames(m); err != nil {
+		return nil, err
 	}
 	return m, nil
+}
+
+func (c *Codec) checkReceivedNames(m message.Message) error {
+	// from -23 a Track Name holds at least one byte
+	if !c.Has(CapNonEmptyTrackNames) {
+		return nil
+	}
+	var name []byte
+	switch v := m.(type) {
+	case *message.Subscribe:
+		name = v.Track.Name
+	case *message.Publish:
+		name = v.Track.Name
+	case *message.Fetch:
+		name = v.Track.Name
+	case *message.TrackStatus:
+		name = v.Track.Name
+	case *message.PublishSkipped:
+		name = v.TrackName
+	default:
+		return nil
+	}
+	if len(name) == 0 {
+		return c.SessionError(message.CodeProtocolViolation, "empty track name")
+	}
+	return nil
+}
+
+func (c *Codec) sentDoneCode(code message.DoneCode) message.DoneCode {
+	// a draft before -23 has no EXPIRED_AUTH_TOKEN, and learns only that the subscription is no longer authorized
+	if code == message.DoneExpiredAuthToken && !c.Has(CapSpecificSessionCodes) {
+		return message.DoneUnauthorized
+	}
+	return c.doneCode(code)
 }
 
 func (c *Codec) doneCode(code message.DoneCode) message.DoneCode {
@@ -523,7 +723,7 @@ func (c *Codec) parseSetup(body []byte) (*message.Setup, error) {
 		case OptionAuthorizationToken:
 			tok, err := wire.ParseToken(kv.Bytes)
 			if err != nil {
-				return nil, &message.SessionError{Code: message.CodeKeyValueFormatting, Reason: err.Error()}
+				return nil, c.tokenError(err)
 			}
 			s.AuthTokens = append(s.AuthTokens, tok)
 		case OptionMaxAuthTokenCacheSize:
@@ -537,6 +737,20 @@ func (c *Codec) parseSetup(body []byte) (*message.Setup, error) {
 		case OptionImplementation:
 			if once(kv.Type) {
 				s.Implementation = string(kv.Bytes)
+			}
+		case OptionMaxControlMessageSize:
+			if !c.Has(CapVarintMessageLength) {
+				s.Unknown = append(s.Unknown, kv)
+				continue
+			}
+			if once(kv.Type) {
+				// the option may not lower the size below the default, which every endpoint accepts
+				r := wire.NewReader(kv.Bytes)
+				v := r.Varint()
+				if err := r.Done(); err != nil {
+					return nil, c.SessionError(message.CodeKeyValueFormatting, "malformed MAX_CONTROL_MESSAGE_SIZE")
+				}
+				s.MaxControlMessageSize = max(v, wire.MaxMessageLen)
 			}
 		case OptionMaxFilterRanges, OptionMaxRequestUpdates:
 			if !c.Has(CapRangeFilters) {
@@ -555,7 +769,15 @@ func (c *Codec) parseSetup(body []byte) (*message.Setup, error) {
 		}
 	}
 	if err := it.Err(); err != nil {
-		return nil, wireViolation(err)
+		return nil, c.wireError(err)
 	}
 	return s, nil
+}
+
+func (c *Codec) tokenError(err error) error {
+	// an undecodable token is MALFORMED_AUTH_TOKEN from -23, and a key-value formatting error before it
+	if c.Has(CapSpecificSessionCodes) {
+		return c.SessionError(message.CodeMalformedAuthToken, err.Error())
+	}
+	return c.SessionError(message.CodeKeyValueFormatting, err.Error())
 }

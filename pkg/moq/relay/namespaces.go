@@ -49,6 +49,10 @@ func (p *nsPublisher) inScope(scope Scope) bool {
 type nsEvent struct {
 	suffix wire.Namespace
 	done   bool
+	// msg, when set, is sent in place of a NAMESPACE, so an answer keeps its place among them; fin then closes
+	// this side of the stream after it
+	msg message.Message
+	fin bool
 }
 
 type nsListener struct {
@@ -199,7 +203,10 @@ func (l *nsListener) run() {
 		l.events = l.events[1:]
 		l.mu.Unlock()
 		var m message.Message = &message.Namespace{Suffix: e.suffix}
-		if e.done {
+		switch {
+		case e.msg != nil:
+			m = e.msg
+		case e.done:
 			m = &message.NamespaceDone{Suffix: e.suffix}
 		}
 		if l.req.Send(m) != nil {
@@ -208,12 +215,54 @@ func (l *nsListener) run() {
 			l.req.Cancel(message.ResetCancelled)
 			return
 		}
+		if e.fin {
+			_ = l.req.CloseSend()
+		}
+	}
+}
+
+func (r *Relay) reprefixNamespaces(l *nsListener, prefix wire.Namespace, ok message.Message) {
+	// a SUBSCRIBE_NAMESPACE's new prefix withdraws what no longer matches before the answer, then reports what now
+	// matches after it, each relative to the prefix in force when it is sent; what matches both stays reported
+	n := &r.ns
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	old := l.prefix
+	withdrawn := make(map[string]struct{})
+	for _, p := range n.pubs {
+		if _, dup := withdrawn[p.key]; dup || !p.inScope(l.scope) {
+			continue
+		}
+		if p.prefix.HasPrefix(old) && !p.prefix.HasPrefix(prefix) {
+			withdrawn[p.key] = struct{}{}
+			l.push(nsEvent{suffix: p.prefix[len(old):], done: true})
+		}
+	}
+	l.push(nsEvent{msg: ok})
+	l.prefix = prefix
+	reported := make(map[string]struct{})
+	for _, p := range n.pubs {
+		if _, dup := reported[p.key]; dup || !p.inScope(l.scope) {
+			continue
+		}
+		if p.prefix.HasPrefix(prefix) && !p.prefix.HasPrefix(old) {
+			reported[p.key] = struct{}{}
+			l.push(nsEvent{suffix: p.prefix[len(prefix):]})
+		}
+	}
+	if l.up != nil {
+		r.releaseUpstreamLocked(l.up)
+		l.up = nil
+	}
+	if r.up != nil {
+		l.up = r.acquireUpstreamLocked(prefixNamespaces, l.scope, prefix)
 	}
 }
 
 type trackListener struct {
-	r      *Relay
-	scope  Scope
+	r     *Relay
+	scope Scope
+	// prefix changes under both the registry's lock and mu, so either guards a read
 	prefix wire.Namespace
 	req    *session.Request
 	params message.Params
@@ -231,15 +280,39 @@ func (r *Relay) addTrackListener(l *trackListener) {
 	if r.up != nil {
 		l.up = r.acquireUpstreamLocked(prefixTracks, l.scope, l.prefix)
 	}
+	prefix := l.prefix
 	n.mu.Unlock()
+	r.offerPublished(l, prefix)
+}
+
+func (r *Relay) offerPublished(l *trackListener, prefix wire.Namespace) {
 	r.tracks.each(func(t *track) {
-		if !t.name.Namespace.HasPrefix(l.prefix) {
+		if !t.name.Namespace.HasPrefix(prefix) {
 			return
 		}
 		if (t.scope == l.scope && t.hasPublisher()) || t.originPublished() {
 			l.offer(t)
 		}
 	})
+}
+
+func (r *Relay) reprefixTracks(l *trackListener, prefix wire.Namespace) {
+	// a SUBSCRIBE_TRACKS's new prefix leaves its subscriptions be and offers the tracks now under it, never one
+	// it already offered
+	n := &r.ns
+	n.mu.Lock()
+	l.mu.Lock()
+	l.prefix = prefix
+	l.mu.Unlock()
+	if l.up != nil {
+		r.releaseUpstreamLocked(l.up)
+		l.up = nil
+	}
+	if r.up != nil {
+		l.up = r.acquireUpstreamLocked(prefixTracks, l.scope, prefix)
+	}
+	n.mu.Unlock()
+	r.offerPublished(l, prefix)
 }
 
 func (r *Relay) removeTrackListener(l *trackListener) {
@@ -300,5 +373,11 @@ func (l *trackListener) offer(t *track) {
 }
 
 func (l *trackListener) skipped(name message.FullTrackName) {
-	_ = l.req.Send(&message.PublishSkipped{Suffix: name.Namespace[len(l.prefix):], TrackName: name.Name})
+	// a track no longer under the prefix cannot be named by a suffix, and the subscriber has stopped asking for it
+	l.mu.Lock()
+	prefix := l.prefix
+	l.mu.Unlock()
+	if name.Namespace.HasPrefix(prefix) {
+		_ = l.req.Send(&message.PublishSkipped{Suffix: name.Namespace[len(prefix):], TrackName: name.Name})
+	}
 }

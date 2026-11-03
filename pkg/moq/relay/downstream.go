@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
@@ -77,8 +78,7 @@ func (d *downstream) subscribe(req *session.Request, m *message.Subscribe) {
 		t.newGroupRequest(m.Params.NewGroupRequest)
 	}
 	if err := d.await(req, t, s.forward.Load(), &m.Params); err != nil {
-		code, reason := refusalFor(err)
-		s.refuse(code, reason)
+		s.refuseWith(refusal(err))
 		return
 	}
 	s.activate()
@@ -144,6 +144,11 @@ func (d *downstream) joiningRange(req *session.Request, m *message.Fetch) (*mess
 	return out, 0, ""
 }
 
+func relativeFilter(t message.FilterType) bool {
+	// the forms that start from Largest Object
+	return t == message.FilterRelativeStart || t == message.FilterNextObject
+}
+
 type fetchHandler struct{}
 
 func (fetchHandler) HandleMessage(r *session.Request, m message.Message) {
@@ -169,23 +174,28 @@ func (d *downstream) fetch(req *session.Request, m *message.Fetch) {
 		return
 	}
 	req.SetHandlers(fetchHandler{}, nil)
-	refuse := func(code message.RequestCode, reason string) {
-		_ = req.Reject(code, reason, 0)
+	refuse := func(re *message.RequestError) {
+		reject(req, re)
 		d.r.m.request(kindFetch, resultRefused)
 	}
 	if m.Params.Invalid != nil {
-		refuse(m.Params.Invalid.Code, m.Params.Invalid.Reason)
+		refuse(&message.RequestError{Code: m.Params.Invalid.Code, Reason: m.Params.Invalid.Reason})
+		return
+	}
+	if relativeFilter(m.Params.LocationFilter.Type) && req.Session().Codec().Has(codec.CapFetchRequestOK) {
+		// from -23 a FETCH names an absolute range
+		refuse(&message.RequestError{Code: message.RequestInvalidRange, Reason: reasonRelativeFetch})
 		return
 	}
 	t := d.r.tracks.acquire(d.r, d.scope, m.Track)
 	defer d.r.tracks.release(t)
-	largest, props, err := t.status(req.Context())
+	largest, props, err := t.status(req.Context(), req.Session().Codec().Has(codec.CapFreshLargest))
 	if err != nil {
-		refuse(refusalFor(err))
+		refuse(refusal(err))
 		return
 	}
 	if largest == nil {
-		refuse(message.RequestInvalidRange, "no objects published")
+		refuse(&message.RequestError{Code: message.RequestInvalidRange, Reason: "no objects published"})
 		return
 	}
 	start, end, _, ok := m.Params.LocationFilter.Bounds(largest, true)
@@ -198,10 +208,14 @@ func (d *downstream) fetch(req *session.Request, m *message.Fetch) {
 		}
 	}
 	if !ok || largest.Less(start) || end.Less(start) {
-		refuse(message.RequestInvalidRange, "range outside the track")
+		refuse(&message.RequestError{Code: message.RequestInvalidRange, Reason: "range outside the track"})
 		return
 	}
 	fok := &message.FetchOK{EndLocation: end, EndOfTrack: t.endsBy(end)}
+	if end == *largest {
+		// the response ends at Largest Object, which -23 conveys only this way
+		fok.Params.SetLargestObject(end)
+	}
 	if includeProperties(m) {
 		fok.TrackProperties = props
 	}
@@ -233,10 +247,9 @@ func (d *downstream) trackStatus(req *session.Request, m *message.TrackStatus) {
 	req.SetHandlers(nopRequestHandler{}, nil)
 	t := d.r.tracks.acquire(d.r, d.scope, m.Track)
 	defer d.r.tracks.release(t)
-	largest, props, err := t.status(req.Context())
+	largest, props, err := t.status(req.Context(), req.Session().Codec().Has(codec.CapFreshLargest))
 	if err != nil {
-		code, reason := refusalFor(err)
-		_ = req.Reject(code, reason, 0)
+		reject(req, refusal(err))
 		d.r.m.request(kindTrackStatus, resultRefused)
 		return
 	}

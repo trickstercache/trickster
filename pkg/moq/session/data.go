@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"time"
 
@@ -219,15 +220,70 @@ func (s *Session) routeAlias(alias uint64) *Request {
 }
 
 func (s *Session) routeFetch(id uint64, r *Request, order message.GroupOrder) {
-	s.mu.Lock()
-	s.fetches[id] = r
-	s.mu.Unlock()
 	r.mu.Lock()
 	if r.fetchOrders == nil {
 		r.fetchOrders = make(map[uint64]message.GroupOrder)
 	}
 	r.fetchOrders[id] = order
 	r.mu.Unlock()
+	s.mu.Lock()
+	s.fetches[id] = r
+	waiters := s.fetchWait[id]
+	delete(s.fetchWait, id)
+	s.parked -= len(waiters)
+	s.mu.Unlock()
+	for _, ch := range waiters {
+		ch <- r
+	}
+}
+
+func (s *Session) fetchRoute(id uint64) *Request {
+	// a fill of the peer's PUBLISH (-23) can overtake the PUBLISH, so a stream naming one of the peer's Request IDs
+	// waits briefly for it; every other fetch stream answers a request this endpoint sent, so is routed already
+	s.mu.Lock()
+	if r := s.fetches[id]; r != nil {
+		s.mu.Unlock()
+		return r
+	}
+	peers := (id%2 == 1) == (s.opts.Role == RoleClient)
+	if !peers || !s.codec.Has(codec.CapParams23) || s.parked >= s.opts.MaxParked || s.ctx.Err() != nil {
+		s.mu.Unlock()
+		return nil
+	}
+	ch := make(chan *Request, 1)
+	if s.fetchWait == nil {
+		s.fetchWait = make(map[uint64][]chan *Request)
+	}
+	s.fetchWait[id] = append(s.fetchWait[id], ch)
+	s.parked++
+	s.mu.Unlock()
+	t := time.NewTimer(s.opts.UnknownAliasWait)
+	defer t.Stop()
+	select {
+	case r, ok := <-ch:
+		if ok {
+			return r
+		}
+		return nil
+	case <-t.C:
+	}
+	s.mu.Lock()
+	if i := slices.Index(s.fetchWait[id], ch); i >= 0 {
+		s.fetchWait[id] = slices.Delete(s.fetchWait[id], i, i+1)
+		s.parked--
+		if len(s.fetchWait[id]) == 0 {
+			delete(s.fetchWait, id)
+		}
+	}
+	s.mu.Unlock()
+	select {
+	case r, ok := <-ch:
+		if ok {
+			return r
+		}
+	default:
+	}
+	return nil
 }
 
 func (r *Request) awaitData() (DataHandler, bool) {
@@ -293,9 +349,7 @@ func (s *Session) serveFetch(rs ReceiveStream, br *bufio.Reader) {
 	if err != nil {
 		return
 	}
-	s.mu.Lock()
-	r := s.fetches[id]
-	s.mu.Unlock()
+	r := s.fetchRoute(id)
 	if r == nil {
 		rs.CancelRead(uint64(message.ResetCancelled))
 		return
@@ -400,6 +454,8 @@ func (in *incoming) Cancel(code message.ResetCode) {
 }
 
 func (in *incoming) next(err error) error {
+	// a FIN within an object ends only its stream, by design: the session, closed with TRUNCATED_OBJECT as -23
+	// suggests, may carry many tracks that one cut stream need not end
 	if errors.Is(err, io.EOF) {
 		in.ended = true
 		return io.EOF
@@ -610,6 +666,10 @@ func (o *OutgoingFetch) WriteObject(obj *message.FetchObject) error {
 		return err
 	}
 	o.buf = b
+	if len(b) == 0 {
+		// a marker the draft lacks encodes to nothing
+		return nil
+	}
 	if _, err = o.st.Write(b); err != nil {
 		return streamErr(err)
 	}

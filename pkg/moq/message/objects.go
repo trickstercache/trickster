@@ -97,16 +97,25 @@ type Datagram struct {
 // RangeEnd marks a span of a fetch response that holds no serialized objects
 type RangeEnd uint8
 
-// End of Range kinds
+// End of Range kinds. Gone, End of Group and End of Track are draft -23's: an earlier codec writes Gone as Unknown
+// and drops the other two, which end the prior object's group or track and carry no Location of their own.
 const (
 	RangeEndNone RangeEnd = iota
 	RangeEndNonExistent
 	RangeEndUnknown
 	RangeEndTimedOut
+	RangeEndGone
+	RangeEndGroup
+	RangeEndTrack
 )
 
-// FetchObject is one entry on a fetch stream: an object, whose PayloadLen bytes of payload follow it, or an
-// End of Range marker naming the last Location of a span that is non-existent, unknown or timed out
+// EndsGroup reports whether the marker ends the prior object's group, which End of Track does too
+func (e RangeEnd) EndsGroup() bool {
+	return e == RangeEndGroup || e == RangeEndTrack
+}
+
+// FetchObject is one entry on a fetch stream: an object, whose PayloadLen bytes of payload follow it, or a marker
+// naming the last Location of a span without objects; a group end names its group and an Object of 2^64-1
 type FetchObject struct {
 	EndOfRange RangeEnd
 	Group      uint64

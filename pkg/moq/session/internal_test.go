@@ -311,3 +311,50 @@ func TestSubscribeAliasDuringFinish(t *testing.T) {
 		})
 	}
 }
+
+func TestNamespaceKeyPrefixes(t *testing.T) {
+	// a new prefix keeps the namespaces under it by whole fields, and checking them allocates nothing
+	nsOf := func(fields ...string) wire.Namespace {
+		out := make(wire.Namespace, len(fields))
+		for i, f := range fields {
+			out[i] = []byte(f)
+		}
+		return out
+	}
+	r := &Request{suffixes: map[string]struct{}{}}
+	for _, n := range []wire.Namespace{nsOf("a"), nsOf("a", "b"), nsOf("ab"), nsOf("b", "a")} {
+		if err := r.trackSuffix(&message.Namespace{Suffix: n}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	prefix := nsOf("a")
+	r.prefixesOut = []*wire.Namespace{&prefix}
+	r.answeredPrefixLocked()
+	want := map[string]bool{
+		string(appendNamespaceKey(nil, nsOf("a"))):      true,
+		string(appendNamespaceKey(nil, nsOf("a", "b"))): true,
+	}
+	if len(r.suffixes) != len(want) {
+		t.Fatalf("kept %d namespaces, want %d", len(r.suffixes), len(want))
+	}
+	for k := range r.suffixes {
+		if !want[k] {
+			t.Errorf("kept %x", k)
+		}
+	}
+	// a suffix of the prefix in force is withdrawn by its whole namespace
+	if err := r.trackSuffix(&message.NamespaceDone{Suffix: nsOf("b")}); err != nil || len(r.suffixes) != 1 {
+		t.Fatalf("withdrawing a/b: %v, %d left", err, len(r.suffixes))
+	}
+	empty := wire.Namespace{}
+	outs := []*wire.Namespace{&empty}
+	if n := testing.AllocsPerRun(100, func() {
+		r.prefixesOut = outs
+		r.answeredPrefixLocked()
+	}); n != 0 {
+		t.Errorf("a prefix answer allocates %.0f times", n)
+	}
+	if len(r.suffixes) != 1 {
+		t.Error("an empty prefix covers every namespace")
+	}
+}

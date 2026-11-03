@@ -30,6 +30,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 )
 
+// namespaceKeyBuf is the stack space a namespace key is built in, which a longer namespace outgrows onto the heap
+const namespaceKeyBuf = 256
+
 var (
 	// ErrNotAllowed is returned when sending a message the request's state does not permit
 	ErrNotAllowed = errors.New("moq: message not allowed in the request's state")
@@ -155,6 +158,8 @@ type Request struct {
 	goAwayIn    bool
 	goAwayOut   bool
 	suffixes    map[string]struct{}
+	nsPrefix    wire.Namespace
+	prefixesOut []*wire.Namespace
 	handler     RequestHandler
 	data        DataHandler
 	ready       chan struct{}
@@ -179,6 +184,9 @@ func newRequest(s *Session, st Stream, br *bufio.Reader, local bool, k message.K
 	r := &Request{
 		s: s, st: st, br: br, local: local, kind: k, msg: m, id: id, ready: make(chan struct{}),
 		resp: make(chan message.Message, 1),
+	}
+	if sn, ok := m.(*message.SubscribeNamespace); ok {
+		r.nsPrefix = sn.Prefix
 	}
 	r.ctx, r.cancel = context.WithCancel(s.ctx)
 	context.AfterFunc(st.Context(), func() {
@@ -407,11 +415,23 @@ func (r *Request) checkSend(m message.Message) error {
 		}
 	case message.KindRequestUpdate:
 		r.updatesOut++
+		if r.kind == message.KindSubscribeNamespace {
+			// the prefix an update names takes effect with its answer
+			var prefix *wire.Namespace
+			if u, isUpdate := m.(*message.RequestUpdate); isUpdate && u.Params.Has(message.ParamTrackNamespacePrefix) {
+				ns := u.Params.TrackNamespacePrefix.Clone()
+				prefix = &ns
+			}
+			r.prefixesOut = append(r.prefixesOut, prefix)
+		}
 	case message.KindPublishDone:
 		r.termSent = true
 	case message.KindGoAway:
 		if r.goAwayOut {
 			return fmt.Errorf("%w: a second GOAWAY", ErrNotAllowed)
+		}
+		if requester && r.s.codec.Has(codec.CapResponderGoAway) {
+			return fmt.Errorf("%w: GOAWAY from the sender of a request", ErrNotAllowed)
 		}
 		r.goAwayOut = true
 	}
@@ -429,17 +449,21 @@ func (r *Request) release() {
 func (r *Request) readLoop() {
 	defer r.release()
 	for {
-		typ, body, err := wire.ReadMessage(r.br, nil)
+		typ, body, err := r.s.codec.ReadMessageLimit(r.br, nil, r.s.recvLimit)
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			switch _, coded := errors.AsType[*message.SessionError](err); {
+			case coded:
+				r.s.fail(err)
+			case errors.Is(err, io.EOF):
 				r.receivedFIN()
-			} else {
+			default:
 				r.finish(streamErr(err))
 			}
 			return
 		}
 		if _, ok := r.s.codec.MessageKind(typ); !ok {
-			r.s.fail(message.Violation(fmt.Sprintf("unknown message type %#x on a request stream", typ)))
+			r.s.fail(r.s.violation(message.CodeUnexpectedMessage,
+				fmt.Sprintf("unknown message type %#x on a request stream", typ)))
 			return
 		}
 		m, err := r.s.codec.ParseMessage(typ, body)
@@ -455,11 +479,16 @@ func (r *Request) readLoop() {
 }
 
 func (r *Request) receive(m message.Message) error {
+	m = r.fromDraft(m)
 	first, err := r.checkReceive(m)
 	if err != nil {
 		return err
 	}
 	switch v := m.(type) {
+	case *message.RequestError:
+		if err = r.checkRedirect(v); err != nil {
+			return err
+		}
 	case *message.SubscribeOK:
 		if err = r.s.registerAlias(v.TrackAlias, r); err != nil {
 			return err
@@ -495,18 +524,58 @@ func (r *Request) receive(m message.Message) error {
 	return nil
 }
 
+func (r *Request) fromDraft(m message.Message) message.Message {
+	// from -23 a FETCH is answered with REQUEST_OK, whose LARGEST_OBJECT ends the response when present; the
+	// requested end does otherwise
+	ok, isOK := m.(*message.RequestOK)
+	if !isOK || !r.local || r.kind != message.KindFetch || !r.s.codec.Has(codec.CapFetchRequestOK) {
+		return m
+	}
+	r.mu.Lock()
+	responded := r.responded
+	r.mu.Unlock()
+	if responded {
+		return m
+	}
+	fok := &message.FetchOK{Params: ok.Params, TrackProperties: ok.TrackProperties}
+	if ok.Params.Has(message.ParamLargestObject) {
+		fok.EndLocation = ok.Params.LargestObject
+	} else if f, isFetch := r.msg.(*message.Fetch); isFetch {
+		_, fok.EndLocation, _, _ = f.Params.LocationFilter.Bounds(nil, true)
+	}
+	return fok
+}
+
+func (r *Request) checkRedirect(v *message.RequestError) error {
+	// a server is never sent elsewhere, and a namespace is redirected to a namespace only
+	if v.Redirect == nil {
+		return nil
+	}
+	if r.s.opts.Role == RoleServer && v.Redirect.ConnectURI != "" {
+		return r.s.violation(message.CodeRoleViolation, "a redirect may not send a server to another URI")
+	}
+	switch r.kind {
+	case message.KindSubscribeNamespace, message.KindPublishNamespace, message.KindSubscribeTracks:
+		if len(v.Redirect.Track.Name) > 0 {
+			return r.s.violation(message.CodeInvalidField, "a namespace redirect names a track")
+		}
+	}
+	return nil
+}
+
 func (r *Request) checkReceive(m message.Message) (bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	f := flows[r.kind]
 	k := m.Kind()
 	if r.termRecv {
-		return false, message.Violation(fmt.Sprintf("%s after the peer finished %s", k, r.kind))
+		return false, r.s.violation(message.CodeUnexpectedMessage, fmt.Sprintf("%s after the peer finished %s", k,
+			r.kind))
 	}
 	fromResponder := r.local
 	if fromResponder && !r.responded {
 		if !f.first.has(k) {
-			return false, message.Violation(fmt.Sprintf("%s cannot answer %s", k, r.kind))
+			return false, r.s.violation(message.CodeUnexpectedMessage, fmt.Sprintf("%s cannot answer %s", k, r.kind))
 		}
 		r.responded = true
 		r.refused = k == message.KindRequestError
@@ -517,18 +586,22 @@ func (r *Request) checkReceive(m message.Message) (bool, error) {
 	if fromResponder {
 		allowed = f.responder
 	}
+	if k == message.KindGoAway && !fromResponder && r.s.codec.Has(codec.CapResponderGoAway) {
+		return false, r.s.violation(message.CodeProtocolViolation, "GOAWAY from the sender of a request")
+	}
 	if !allowed.has(k) || !r.draftAllows(k) {
-		return false, message.Violation(fmt.Sprintf("%s not allowed on %s", k, r.kind))
+		return false, r.unexpected(k, fromResponder)
 	}
 	switch k {
 	case message.KindRequestOK, message.KindRequestError:
 		if r.updatesOut == 0 {
-			return false, message.Violation("an answer with no REQUEST_UPDATE outstanding")
+			return false, r.s.violation(message.CodeUnexpectedMessage, "an answer with no REQUEST_UPDATE outstanding")
 		}
 		if k == message.KindRequestError {
-			r.updatesOut = 0
+			r.updatesOut, r.prefixesOut = 0, nil
 		} else {
 			r.updatesOut--
+			r.answeredPrefixLocked()
 		}
 	case message.KindRequestUpdate:
 		r.updatesIn++
@@ -540,7 +613,7 @@ func (r *Request) checkReceive(m message.Message) (bool, error) {
 		r.termRecv = true
 	case message.KindGoAway:
 		if r.goAwayIn {
-			return false, message.Violation("a second GOAWAY on a request stream")
+			return false, r.s.violation(message.CodeUnexpectedMessage, "a second GOAWAY on a request stream")
 		}
 		r.goAwayIn = true
 	case message.KindNamespace, message.KindNamespaceDone:
@@ -549,8 +622,50 @@ func (r *Request) checkReceive(m message.Message) (bool, error) {
 	return false, nil
 }
 
+func (r *Request) unexpected(k message.Kind, fromResponder bool) error {
+	// this endpoint publishes a SUBSCRIBE it answers and a PUBLISH it sent
+	publishing := r.kind == message.KindSubscribe
+	if fromResponder {
+		publishing = r.kind == message.KindPublish
+	}
+	if k == message.KindPublishStateNotify && publishing {
+		return r.s.violation(message.CodeRoleViolation, "PUBLISH_STATE_NOTIFY sent to a publisher")
+	}
+	return r.s.violation(message.CodeUnexpectedMessage, fmt.Sprintf("%s not allowed on %s", k, r.kind))
+}
+
+func (r *Request) answeredPrefixLocked() {
+	// a new prefix applies from its answer on; a namespace it no longer covers is withdrawn with the answer (-23),
+	// and one an earlier draft never withdrew can no longer be named by a suffix
+	if len(r.prefixesOut) == 0 {
+		return
+	}
+	prefix := r.prefixesOut[0]
+	r.prefixesOut = r.prefixesOut[1:]
+	if prefix == nil {
+		return
+	}
+	r.nsPrefix = *prefix
+	var arr [namespaceKeyBuf]byte
+	pk := appendNamespaceKey(arr[:0], r.nsPrefix)
+	for key := range r.suffixes {
+		if len(key) < len(pk) || key[:len(pk)] != string(pk) {
+			delete(r.suffixes, key)
+		}
+	}
+}
+
+func appendNamespaceKey(b []byte, ns wire.Namespace) []byte {
+	// a key is its namespace's length-prefixed fields with no count ahead, so a key starts with its prefix's key
+	for _, f := range ns {
+		b = wire.AppendBytes(b, f)
+	}
+	return b
+}
+
 func (r *Request) trackSuffix(m message.Message) error {
-	// NAMESPACE_DONE must follow the NAMESPACE it withdraws
+	// NAMESPACE_DONE must follow the NAMESPACE it withdraws; both name a suffix of the prefix in force, so each is
+	// kept by its whole namespace
 	var suffix wire.Namespace
 	done := false
 	switch v := m.(type) {
@@ -559,18 +674,19 @@ func (r *Request) trackSuffix(m message.Message) error {
 	case *message.NamespaceDone:
 		suffix, done = v.Suffix, true
 	}
-	key := string(wire.AppendNamespace(nil, suffix))
+	var arr [namespaceKeyBuf]byte
+	key := appendNamespaceKey(appendNamespaceKey(arr[:0], r.nsPrefix), suffix)
 	if r.suffixes == nil {
 		r.suffixes = make(map[string]struct{})
 	}
 	if !done {
-		r.suffixes[key] = struct{}{}
+		r.suffixes[string(key)] = struct{}{}
 		return nil
 	}
-	if _, ok := r.suffixes[key]; !ok {
-		return message.Violation("NAMESPACE_DONE before its NAMESPACE")
+	if _, ok := r.suffixes[string(key)]; !ok {
+		return r.s.violation(message.CodeUnexpectedMessage, "NAMESPACE_DONE before its NAMESPACE")
 	}
-	delete(r.suffixes, key)
+	delete(r.suffixes, string(key))
 	return nil
 }
 
@@ -755,8 +871,15 @@ func (r *Request) fillOrder(fill *message.Params) message.GroupOrder {
 	if fill != nil && fill.Has(message.ParamGroupOrder) {
 		return fill.GroupOrder
 	}
-	if sub, ok := r.msg.(*message.Subscribe); ok && sub.Params.Has(message.ParamGroupOrder) {
-		return sub.Params.GroupOrder
+	var p *message.Params
+	switch v := r.msg.(type) {
+	case *message.Subscribe:
+		p = &v.Params
+	case *message.Publish:
+		p = &v.Params
+	}
+	if p != nil && p.Has(message.ParamGroupOrder) {
+		return p.GroupOrder
 	}
 	return message.GroupOrderAscending
 }

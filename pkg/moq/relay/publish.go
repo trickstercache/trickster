@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
@@ -38,6 +39,7 @@ const (
 	reasonMandatory     = "unsupported mandatory track property"
 	reasonPrefixOverlap = "prefix overlaps an active request"
 	reasonNotSupported  = "not supported by this relay"
+	reasonRelativeFetch = "a fetch range is absolute"
 )
 
 func (d *downstream) refuse(req *session.Request, kind string, code message.RequestCode, reason string) {
@@ -125,7 +127,13 @@ func (r *Relay) attachPublisher(scope Scope, req *session.Request, m *message.Pu
 	if _, mandatory := m.TrackProperties.Mandatory(); mandatory {
 		// §3.7: a track with a required property the relay does not understand is neither processed nor forwarded
 		req.SetHandlers(nopRequestHandler{}, nil)
-		_ = req.Reject(message.RequestUnsupportedExtension, reasonMandatory, 0)
+		reject(req, refusal(unsupported(m.TrackProperties)))
+		r.m.request(kindPublish, resultRefused)
+		return
+	}
+	if malformedProps(req.Session(), m.TrackProperties, true) {
+		req.SetHandlers(nopRequestHandler{}, nil)
+		reject(req, &message.RequestError{Code: message.RequestMalformedTrack, Reason: "malformed track"})
 		r.m.request(kindPublish, resultRefused)
 		return
 	}
@@ -133,8 +141,7 @@ func (r *Relay) attachPublisher(scope Scope, req *session.Request, m *message.Pu
 	u := &upstreamSub{t: t, pushed: true, req: req, up: true}
 	req.SetHandlers(u, u)
 	if err := t.addPublisher(u, m); err != nil {
-		code, reason := refusalFor(err)
-		_ = req.Reject(code, reason, 0)
+		reject(req, refusal(err))
 		r.m.request(kindPublish, resultRefused)
 		r.tracks.release(t)
 		return
@@ -232,8 +239,12 @@ func (w *withdrawal) HandleClose(*session.Request, error) {
 	w.done()
 }
 
-func (d *downstream) claim(prefixes *[]wire.Namespace, prefix wire.Namespace) bool {
-	// two requests of one kind in a session may not overlap: neither prefix may be a prefix of the other (§4.2)
+func (d *downstream) claim(req *session.Request, prefixes *[]wire.Namespace, prefix wire.Namespace) bool {
+	// through -22 two requests of one kind in a session may not overlap: neither prefix may be a prefix of the
+	// other (§4.2); from -23 they may, and each is answered on its own
+	if req.Session().Codec().Has(codec.CapOverlappingPrefixes) {
+		return true
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, p := range *prefixes {
@@ -259,7 +270,7 @@ func (d *downstream) subscribeNamespace(req *session.Request, m *message.Subscri
 		return
 	}
 	prefix := m.Prefix.Clone()
-	if !d.claim(&d.nsPrefixes, prefix) {
+	if !d.claim(req, &d.nsPrefixes, prefix) {
 		d.refuse(req, kindSubscribeNamespace, message.RequestPrefixOverlap, reasonPrefixOverlap)
 		return
 	}
@@ -269,45 +280,21 @@ func (d *downstream) subscribeNamespace(req *session.Request, m *message.Subscri
 		namespaces = m.Options != message.SubscribeOptionPublish
 		tracks = m.Options != message.SubscribeOptionNamespace
 	}
-	var l *nsListener
-	var tl *trackListener
+	h := &prefixHandler{
+		d: d, kind: kindSubscribeNamespace, slots: &d.nsPrefixes, prefix: prefix, tokens: m.Params.AuthTokens,
+		active: make(chan struct{}),
+	}
 	if namespaces {
-		l = &nsListener{scope: d.scope, prefix: prefix, req: req}
+		h.ns = &nsListener{scope: d.scope, prefix: prefix, req: req}
 	}
 	if tracks {
-		tl = &trackListener{
+		h.tl = &trackListener{
 			r: d.r, scope: d.scope, prefix: prefix, req: req, params: m.Params,
 			offered: make(map[string]struct{}),
 		}
-		tl.params.AuthTokens = nil
+		h.tl.params.AuthTokens = nil
 	}
-	req.SetHandlers(&trackListenerHandler{l: tl, done: func() {
-		if l != nil {
-			d.r.removeNamespaceListener(l)
-		}
-		if tl != nil {
-			d.r.removeTrackListener(tl)
-		}
-		d.unclaim(&d.nsPrefixes, prefix)
-	}}, nil)
-	if err := req.Send(&message.RequestOK{}); err != nil {
-		return
-	}
-	d.r.m.request(kindSubscribeNamespace, resultOK)
-	if l != nil {
-		d.r.addNamespaceListener(l)
-	}
-	if tl != nil {
-		d.r.addTrackListener(tl)
-	}
-	if req.Context().Err() != nil {
-		if l != nil {
-			d.r.removeNamespaceListener(l)
-		}
-		if tl != nil {
-			d.r.removeTrackListener(tl)
-		}
-	}
+	h.start(req)
 }
 
 func (d *downstream) subscribeTracks(req *session.Request, m *message.SubscribeTracks) {
@@ -316,50 +303,143 @@ func (d *downstream) subscribeTracks(req *session.Request, m *message.SubscribeT
 		return
 	}
 	prefix := m.Prefix.Clone()
-	if !d.claim(&d.trPrefixes, prefix) {
+	if !d.claim(req, &d.trPrefixes, prefix) {
 		d.refuse(req, kindSubscribeTracks, message.RequestPrefixOverlap, reasonPrefixOverlap)
 		return
 	}
-	l := &trackListener{
-		r: d.r, scope: d.scope, prefix: prefix, req: req, params: m.Params,
-		offered: make(map[string]struct{}),
+	h := &prefixHandler{
+		d: d, kind: kindSubscribeTracks, slots: &d.trPrefixes, prefix: prefix, tokens: m.Params.AuthTokens,
+		active: make(chan struct{}),
+		tl: &trackListener{
+			r: d.r, scope: d.scope, prefix: prefix, req: req, params: m.Params, offered: make(map[string]struct{}),
+		},
 	}
-	l.params.AuthTokens = nil
-	req.SetHandlers(&trackListenerHandler{l: l, done: func() {
-		d.r.removeTrackListener(l)
-		d.unclaim(&d.trPrefixes, prefix)
-	}}, nil)
+	h.tl.params.AuthTokens = nil
+	h.start(req)
+}
+
+type prefixHandler struct {
+	// a SUBSCRIBE_NAMESPACE or SUBSCRIBE_TRACKS: its namespaces, its PUBLISHes, or both (draft -17), and the
+	// updates that change its prefix or its subscriptions' initial FORWARD
+	d      *downstream
+	kind   string
+	slots  *[]wire.Namespace
+	tokens []wire.Token
+	ns     *nsListener
+	tl     *trackListener
+	// active closes once the listeners are registered, which updates wait for
+	active chan struct{}
+
+	mu     sync.Mutex
+	prefix wire.Namespace
+}
+
+func (h *prefixHandler) start(req *session.Request) {
+	d := h.d
+	req.SetHandlers(h, nil)
+	defer close(h.active)
 	if err := req.Send(&message.RequestOK{}); err != nil {
 		return
 	}
-	d.r.m.request(kindSubscribeTracks, resultOK)
-	d.r.addTrackListener(l)
+	d.r.m.request(h.kind, resultOK)
+	if h.ns != nil {
+		d.r.addNamespaceListener(h.ns)
+	}
+	if h.tl != nil {
+		d.r.addTrackListener(h.tl)
+	}
 	if req.Context().Err() != nil {
-		d.r.removeTrackListener(l)
+		h.remove()
 	}
 }
 
-type trackListenerHandler struct {
-	l    *trackListener
-	done func()
+func (h *prefixHandler) remove() {
+	if h.ns != nil {
+		h.d.r.removeNamespaceListener(h.ns)
+	}
+	if h.tl != nil {
+		h.d.r.removeTrackListener(h.tl)
+	}
 }
 
-func (h *trackListenerHandler) HandleMessage(r *session.Request, m message.Message) {
-	// an update changes the initial parameters of the subscriptions the request causes from now on (§9.20.18)
+func (h *prefixHandler) HandleMessage(r *session.Request, m message.Message) {
+	// an update changes the initial parameters of the subscriptions the request causes from now on (§9.20.18),
+	// or the prefix, and is answered in order with what the request sends
 	u, ok := m.(*message.RequestUpdate)
 	if !ok {
 		return
 	}
-	if h.l != nil && u.Params.Has(message.ParamForward) {
-		h.l.mu.Lock()
-		h.l.params.SetForward(u.Params.Forward)
-		h.l.mu.Unlock()
+	select {
+	case <-h.active:
+	case <-r.Context().Done():
+		return
 	}
-	_ = r.Send(&message.RequestOK{})
+	if h.tl != nil && u.Params.Has(message.ParamForward) {
+		h.tl.mu.Lock()
+		h.tl.params.SetForward(u.Params.Forward)
+		h.tl.mu.Unlock()
+	}
+	if u.Params.Has(message.ParamTrackNamespacePrefix) {
+		h.updatePrefix(r, &u.Params)
+		return
+	}
+	h.answer(r, &message.RequestOK{}, false)
 }
 
-func (h *trackListenerHandler) HandleClose(*session.Request, error) {
-	h.done()
+func (h *prefixHandler) answer(r *session.Request, m message.Message, fin bool) {
+	// namespaces are reported in order with the answers, whose prefix they are relative to
+	if h.ns != nil {
+		h.ns.push(nsEvent{msg: m, fin: fin})
+		return
+	}
+	if r.Send(m) == nil && fin {
+		_ = r.CloseSend()
+	}
+}
+
+func (h *prefixHandler) fail(r *session.Request, code message.RequestCode, reason string) {
+	// a refused update closes this side of the request's stream, which ends the request
+	h.answer(r, &message.RequestError{Code: code, Reason: reason}, true)
+}
+
+func (h *prefixHandler) updatePrefix(r *session.Request, p *message.Params) {
+	d := h.d
+	prefix := p.TrackNamespacePrefix.Clone()
+	tokens := p.AuthTokens
+	if len(tokens) == 0 {
+		tokens = h.tokens
+	}
+	if !d.r.access().authorized(r, OpSubscribe, prefix, tokens) {
+		h.fail(r, message.RequestUnauthorized, reasonUnauthorized)
+		return
+	}
+	h.mu.Lock()
+	old := h.prefix
+	d.unclaim(h.slots, old)
+	if !d.claim(r, h.slots, prefix) {
+		d.claim(r, h.slots, old)
+		h.mu.Unlock()
+		h.fail(r, message.RequestPrefixOverlap, reasonPrefixOverlap)
+		return
+	}
+	h.prefix = prefix
+	h.mu.Unlock()
+	if h.ns != nil {
+		d.r.reprefixNamespaces(h.ns, prefix, &message.RequestOK{})
+	} else {
+		_ = r.Send(&message.RequestOK{})
+	}
+	if h.tl != nil {
+		d.r.reprefixTracks(h.tl, prefix)
+	}
+}
+
+func (h *prefixHandler) HandleClose(*session.Request, error) {
+	h.remove()
+	h.mu.Lock()
+	prefix := h.prefix
+	h.mu.Unlock()
+	h.d.unclaim(h.slots, prefix)
 }
 
 func publishParams(from *message.Params, largest *wire.Location) message.Params {
@@ -397,50 +477,59 @@ func (r *Relay) publishTo(l *trackListener, name message.FullTrackName) {
 	params := l.params
 	l.mu.Unlock()
 	s := newSubscriber(t, nil, &params)
-	t.mu.Lock()
-	live := t.liveSourceLocked()
-	t.mu.Unlock()
-	if !live {
-		// a track offered from another scope has no source here yet, so it is pulled from the origin first
-		ctx, cancel := context.WithTimeout(r.ctx, publishPullTimeout)
-		t.hold(s)
-		err := t.ensureUpstream(ctx, s.forward.Load())
-		cancel()
-		if err != nil {
-			t.mu.Lock()
-			t.unholdLocked(s)
-			t.mu.Unlock()
-			t.lingerIdle()
-			s.releaseTrack()
-			l.skipped(name)
-			r.m.request(kindPublish, resultRefused)
-			return
-		}
-	}
-	t.mu.Lock()
-	largest, props, malformed := t.largestLocked(), t.props, t.malformed
-	t.mu.Unlock()
-	if malformed {
+	skip := func() {
+		// §3.6.3: a subscription that cannot be created is reported, and never offered again
 		t.lingerIdle()
-		s.releaseTrack()
+		s.end(message.ResetCancelled)
+		s.stop()
+		l.skipped(name)
+		r.m.request(kindPublish, resultRefused)
+	}
+	// a forwarding offer counts as forwarding until it registers, so the upstream forwards before the PUBLISH's
+	// Largest Object is taken and stays so; a track offered from another scope is pulled from the origin first
+	t.hold(s)
+	ctx, cancel := context.WithTimeout(r.ctx, publishPullTimeout)
+	err := t.ensureUpstream(ctx, s.forward.Load())
+	cancel()
+	if err != nil {
+		skip()
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.ctx, publishOpenTimeout)
+	if _, err = t.currentLargest(r.ctx, sess.Codec().Has(codec.CapFreshLargest)); err != nil {
+		skip()
+		return
+	}
+	// the subscription registers at the Largest Object the PUBLISH advertises, so its filter starts there and what
+	// arrives after it is forwarded once the PUBLISH is sent, the fill covering what came before
+	largest, props, code, _ := s.register()
+	if code != 0 || !s.answer() {
+		skip()
+		return
+	}
+	pp := publishParams(&params, largest)
+	if sess.Codec().Has(codec.CapParams23) && l.req.Kind() == message.KindSubscribeTracks {
+		// from -23 a PUBLISH names the SUBSCRIBE_TRACKS it answers, since several may match the track, and carries
+		// its fill, which the relay serves under the PUBLISH's Request ID
+		pp.SetSubscribeTracksID(l.req.RequestID())
+		if params.Fill != nil {
+			pp.SetFill(params.Fill)
+		}
+	}
+	ctx, cancel = context.WithTimeout(r.ctx, publishOpenTimeout)
 	req, err := sess.Open(ctx, &message.Publish{
-		Track: name, TrackAlias: sess.NewTrackAlias(), Params: publishParams(&params, largest), TrackProperties: props,
+		Track: name, TrackAlias: sess.NewTrackAlias(), Params: pp, TrackProperties: props,
 	}, s, nil)
 	cancel()
 	if err != nil {
-		// §3.6.3: a subscription that cannot be created is reported, and never offered again
-		t.lingerIdle()
-		s.releaseTrack()
-		l.skipped(name)
-		r.m.request(kindPublish, resultRefused)
+		skip()
 		return
 	}
 	// objects may lead the subscriber's answer (§3.1), so the subscription forwards from the PUBLISH on
 	s.bind(req)
 	s.activatePublished()
+	if pp.Fill != nil && s.forward.Load() {
+		s.startFill(req.RequestID(), pp.Fill, largest)
+	}
 	resp, err := req.Response(req.Context())
 	if err != nil {
 		s.end(message.ResetCancelled)

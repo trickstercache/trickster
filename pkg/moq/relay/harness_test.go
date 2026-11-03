@@ -135,6 +135,9 @@ type origin struct {
 	nsExpires     uint64
 	nsRenewals    atomic.Int32
 	subExpires    uint64
+	endGroups     bool
+	fetchProps    message.Properties
+	statusRefuse  message.RequestCode
 	plainForward  atomic.Bool
 	endOnUpdate   atomic.Bool
 	subscribeAsks chan *message.Subscribe
@@ -413,21 +416,26 @@ func (o *origin) fetch(r *session.Request, m *message.Fetch) {
 		g      uint64
 		ob     pubObj
 		marker bool
+		end    bool
 	}
 	var entries []entry
 	if o.markGaps && len(groups) > 0 && groups[0] > start.Group && order == message.GroupOrderAscending {
 		entries = append(entries, entry{g: groups[0] - 1, ob: pubObj{id: math.MaxUint64}, marker: true})
 	}
 	for _, g := range groups {
+		n := len(entries)
 		for _, ob := range pt.groups[g] {
 			l := wire.Location{Group: g, Object: ob.id}
 			if !l.Less(start) && !end.Less(l) && ob.status == message.StatusNormal {
 				entries = append(entries, entry{g: g, ob: ob})
 			}
 		}
+		if o.endGroups && len(entries) > n {
+			entries = append(entries, entry{g: g, end: true})
+		}
 	}
 	o.mu.Unlock()
-	if r.Send(&message.FetchOK{EndLocation: end}) != nil {
+	if r.Send(&message.FetchOK{EndLocation: end, TrackProperties: o.fetchProps}) != nil {
 		return
 	}
 	out, err := r.OpenFetch(context.Background(), r.RequestID(), order, 3)
@@ -435,6 +443,12 @@ func (o *origin) fetch(r *session.Request, m *message.Fetch) {
 		return
 	}
 	for _, e := range entries {
+		if e.end {
+			if out.WriteObject(&message.FetchObject{EndOfRange: message.RangeEndGroup}) != nil {
+				return
+			}
+			continue
+		}
 		if e.marker {
 			if out.WriteObject(&message.FetchObject{EndOfRange: message.RangeEndNonExistent, Group: e.g, Object: e.ob.id}) != nil {
 				return
@@ -461,6 +475,10 @@ func (o *origin) status(r *session.Request, m *message.TrackStatus) {
 	o.mu.Unlock()
 	if !known || !pt.has {
 		_ = r.Reject(message.RequestDoesNotExist, "no such track", 0)
+		return
+	}
+	if o.statusRefuse != 0 {
+		_ = r.Reject(o.statusRefuse, "", 0)
 		return
 	}
 	ok := &message.RequestOK{TrackProperties: o.props}
@@ -497,6 +515,11 @@ func (h *originReq) HandleMessage(r *session.Request, m message.Message) {
 	if h.o.subExpires > 0 && (!h.o.plainForward.Load() || !u.Params.Has(message.ParamForward)) {
 		answer.Params.SetExpires(h.o.subExpires)
 	}
+	h.o.mu.Lock()
+	if pt := h.o.trackLocked(h.name); pt.has {
+		answer.Params.SetLargestObject(pt.largest)
+	}
+	h.o.mu.Unlock()
 	_ = r.Send(answer)
 }
 
@@ -750,6 +773,7 @@ type rec struct {
 	closes    chan error
 	fetchOpen chan struct{}
 	fetchDone chan struct{}
+	fetchErr  error
 	datagrams chan got
 }
 
@@ -808,6 +832,11 @@ func (r *rec) HandleFetch(_ *session.Request, in *session.IncomingFetch) {
 	for {
 		fo, err := in.Next()
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				r.mu.Lock()
+				r.fetchErr = err
+				r.mu.Unlock()
+			}
 			return
 		}
 		b, _ := io.ReadAll(in)
@@ -889,7 +918,14 @@ func fetched(t testing.TB, req *session.Request, r *rec) (*message.FetchOK, []st
 	recv(t, r.fetchDone, "the fetch stream")
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return ok, slices.Clone(r.payloads)
+	// the payloads of the objects, leaving out markers
+	out := make([]string, 0, len(r.payloads))
+	for i, fo := range r.fetched {
+		if fo.EndOfRange == message.RangeEndNone {
+			out = append(out, r.payloads[i])
+		}
+	}
+	return ok, out
 }
 
 func fetchRange(sg, so, eg, eo uint64) message.Params {

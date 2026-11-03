@@ -35,8 +35,10 @@ const (
 var (
 	// ErrEmptyNamespaceField is returned for a Track Namespace Field of zero length
 	ErrEmptyNamespaceField = errors.New("moq: empty track namespace field")
-	// ErrNamespaceTooLong is returned for a namespace or full track name over its limits
+	// ErrNamespaceTooLong is returned for a namespace or full track name over its length limit
 	ErrNamespaceTooLong = errors.New("moq: track namespace or name too long")
+	// ErrNamespaceFields is returned for a Track Namespace of more than MaxNamespaceFields fields
+	ErrNamespaceFields = errors.New("moq: track namespace has too many fields")
 )
 
 // Location identifies an Object by its Group and Object IDs
@@ -131,7 +133,7 @@ func (ns Namespace) Clone() Namespace {
 // and total length limits a receiver enforces
 func (ns Namespace) Validate(name []byte) error {
 	if len(ns) > MaxNamespaceFields {
-		return ErrNamespaceTooLong
+		return ErrNamespaceFields
 	}
 	n := len(name)
 	for _, f := range ns {
@@ -162,7 +164,7 @@ func (r *Reader) Namespace() Namespace {
 		return nil
 	}
 	if n > MaxNamespaceFields {
-		r.Fail(ErrNamespaceTooLong)
+		r.Fail(ErrNamespaceFields)
 		return nil
 	}
 	if n == 0 {

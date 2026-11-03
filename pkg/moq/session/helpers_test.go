@@ -223,7 +223,7 @@ func (r *raw) write(w io.Writer, m message.Message) {
 
 func (r *raw) read(rd *bufio.Reader) message.Message {
 	r.t.Helper()
-	typ, body, err := wire.ReadMessage(rd, nil)
+	typ, body, err := r.c.ReadMessage(rd, nil)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -244,12 +244,8 @@ func (r *raw) acceptControl() *message.Setup {
 	if typ, err := wire.ReadVarintFrom(br); err != nil || typ != codec.StreamTypeControl {
 		r.t.Fatalf("control stream type %#x %v", typ, err)
 	}
-	var lb [2]byte
-	if _, err := io.ReadFull(br, lb[:]); err != nil {
-		r.t.Fatal(err)
-	}
-	body := make([]byte, int(lb[0])<<8|int(lb[1]))
-	if _, err := io.ReadFull(br, body); err != nil {
+	body, err := r.c.ReadMessageBody(br, nil)
+	if err != nil {
 		r.t.Fatal(err)
 	}
 	m, err := r.c.ParseMessage(codec.StreamTypeControl, body)

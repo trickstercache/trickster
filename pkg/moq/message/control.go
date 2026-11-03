@@ -49,6 +49,9 @@ const (
 	KindPublishSkipped
 )
 
+// KindLimit is one past the largest Kind, sizing tables indexed by kind
+const KindLimit = int(KindPublishSkipped) + 1
+
 var kindNames = [...]string{
 	KindSetup: "SETUP", KindGoAway: "GOAWAY", KindRequestOK: "REQUEST_OK", KindRequestError: "REQUEST_ERROR",
 	KindRequestUpdate: "REQUEST_UPDATE", KindSubscribe: "SUBSCRIBE", KindSubscribeOK: "SUBSCRIBE_OK",
@@ -108,6 +111,8 @@ type Setup struct {
 	Implementation        string
 	MaxFilterRanges       uint64
 	MaxRequestUpdates     uint64
+	// MaxControlMessageSize is MAX_CONTROL_MESSAGE_SIZE (from draft -23); 0 sends none, leaving the default
+	MaxControlMessageSize uint64
 	// Unknown holds Setup Options this implementation does not interpret; they are ignored as the draft requires
 	Unknown []wire.KV
 }
@@ -133,12 +138,14 @@ type Redirect struct {
 	Track      FullTrackName
 }
 
-// RequestError rejects a request
+// RequestError rejects a request. Redirect accompanies REDIRECT and UnsupportedProperties UNSUPPORTED_EXTENSION;
+// draft -23 carries both as Error Details, and earlier drafts carry only the Redirect.
 type RequestError struct {
-	Code          RequestCode
-	RetryInterval uint64
-	Reason        string
-	Redirect      *Redirect
+	Code                  RequestCode
+	RetryInterval         uint64
+	Reason                string
+	Redirect              *Redirect
+	UnsupportedProperties []uint64
 }
 
 // RequestUpdate modifies an earlier request on the same stream
@@ -208,7 +215,8 @@ type JoiningFetch struct {
 	Relative  bool
 }
 
-// FetchOK accepts a fetch
+// FetchOK accepts a fetch; EndLocation is the inclusive end of the response. Draft -23 sends it as REQUEST_OK, which
+// conveys the end only as LARGEST_OBJECT when the response ends there, and never End of Track.
 type FetchOK struct {
 	EndOfTrack      bool
 	EndLocation     wire.Location
@@ -253,9 +261,11 @@ type SubscribeNamespace struct {
 	RequiredRequestID uint64
 }
 
-// Namespace reports a namespace matching a SUBSCRIBE_NAMESPACE, as the suffix after its prefix
+// Namespace reports a namespace matching a SUBSCRIBE_NAMESPACE, as the suffix after its prefix; Params are carried
+// from draft -23
 type Namespace struct {
 	Suffix wire.Namespace
+	Params Params
 }
 
 // NamespaceDone withdraws a namespace reported by NAMESPACE

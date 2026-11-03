@@ -19,7 +19,6 @@ package session
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -55,6 +54,10 @@ const (
 	requiredRequestWait     = 2 * time.Second
 	retryExcessiveLoad      = 1000
 )
+
+// MaxControlMessageSize bounds the MAX_CONTROL_MESSAGE_SIZE a session may advertise, and so the control message
+// body it buffers
+const MaxControlMessageSize = 1 << 24
 
 var (
 	// ErrHandshakeTimeout is returned when the peer's SETUP does not arrive in time
@@ -102,6 +105,8 @@ type Session struct {
 	conn  Conn
 	codec *codec.Codec
 	opts  Options
+	// recvLimit bounds a received control message: the MAX_CONTROL_MESSAGE_SIZE this endpoint advertises
+	recvLimit uint64
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -126,6 +131,7 @@ type Session struct {
 	aliases    map[uint64]*Request
 	fetches    map[uint64]*Request
 	waiting    map[uint64][]chan *Request
+	fetchWait  map[uint64][]chan *Request
 	requires   map[uint64][]chan struct{}
 	parked     int
 	early      map[uint64][]earlyDatagram
@@ -147,6 +153,10 @@ func New(conn Conn, o Options) (*Session, error) {
 	if conn == nil || o.Codec == nil {
 		return nil, errors.New("moq: a session needs a connection and a codec")
 	}
+	if o.Setup.MaxControlMessageSize > MaxControlMessageSize {
+		return nil, fmt.Errorf("moq: MAX_CONTROL_MESSAGE_SIZE %d exceeds %d", o.Setup.MaxControlMessageSize,
+			MaxControlMessageSize)
+	}
 	if o.HandshakeTimeout <= 0 {
 		o.HandshakeTimeout = defaultHandshakeTimeout
 	}
@@ -162,6 +172,7 @@ func New(conn Conn, o Options) (*Session, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Session{
 		conn: conn, codec: o.Codec, opts: o, ctx: ctx, cancel: cancel, done: make(chan struct{}),
+		recvLimit: max(o.Setup.MaxControlMessageSize, wire.MaxMessageLen),
 		setupDone: make(chan struct{}), aliases: make(map[uint64]*Request), fetches: make(map[uint64]*Request),
 		waiting: make(map[uint64][]chan *Request), early: make(map[uint64][]earlyDatagram),
 		tombstones: make(map[uint64]time.Time),
@@ -242,10 +253,15 @@ func (s *Session) Err() error {
 	return nil
 }
 
-// Close ends the session with a session termination code
+// Close ends the session with a session termination code, which a draft lacking it replaces with its nearest
 func (s *Session) Close(code message.SessionCode, reason string) error {
+	code = s.codec.SessionCode(code)
 	s.end(&CloseError{Code: uint64(code), Reason: reason})
 	return s.conn.CloseWithError(uint64(code), reason)
+}
+
+func (s *Session) violation(code message.SessionCode, reason string) error {
+	return s.codec.SessionError(code, reason)
 }
 
 func (s *Session) closedErr() error {
@@ -291,6 +307,12 @@ func (s *Session) end(err error) {
 			}
 		}
 		s.waiting = map[uint64][]chan *Request{}
+		for _, chans := range s.fetchWait {
+			for _, ch := range chans {
+				close(ch)
+			}
+		}
+		s.fetchWait = nil
 		s.mu.Unlock()
 		for _, r := range reqs {
 			r.finish(err)
@@ -417,20 +439,19 @@ func (s *Session) handleUni(rs ReceiveStream) {
 	case codec.StreamPadding:
 		rs.CancelRead(uint64(message.ResetCancelled))
 	default:
-		s.fail(message.Violation(fmt.Sprintf("unknown stream type %#x", t)))
+		s.fail(s.violation(message.CodeInvalidStreamHeader, fmt.Sprintf("unknown stream type %#x", t)))
 	}
 }
 
 func (s *Session) serveControl(br *bufio.Reader) {
 	// the stream type was SETUP's message type, so the SETUP's length and body come next
-	var lb [2]byte
-	if _, err := io.ReadFull(br, lb[:]); err != nil {
+	body, err := s.codec.ReadMessageBodyLimit(br, nil, s.recvLimit)
+	if err != nil {
+		if _, ok := errors.AsType[*message.SessionError](err); ok {
+			s.fail(err)
+			return
+		}
 		s.controlEnded(err, "control stream ended before SETUP")
-		return
-	}
-	body := make([]byte, binary.BigEndian.Uint16(lb[:]))
-	if _, err := io.ReadFull(br, body); err != nil {
-		s.controlEnded(err, "control stream ended within SETUP")
 		return
 	}
 	m, err := s.codec.ParseMessage(codec.StreamTypeControl, body)
@@ -446,14 +467,18 @@ func (s *Session) serveControl(br *bufio.Reader) {
 	s.peerSetup.Store(setup)
 	s.maybeReady()
 	for {
-		typ, body, err := wire.ReadMessage(br, nil)
+		typ, body, err := s.codec.ReadMessageLimit(br, nil, s.recvLimit)
 		if err != nil {
+			if _, ok := errors.AsType[*message.SessionError](err); ok {
+				s.fail(err)
+				return
+			}
 			s.controlEnded(err, "control stream closed")
 			return
 		}
 		k, ok := s.codec.MessageKind(typ)
 		if !ok || k != message.KindGoAway {
-			s.fail(message.Violation("unexpected message on the control stream"))
+			s.fail(s.violation(message.CodeUnexpectedMessage, "unexpected message on the control stream"))
 			return
 		}
 		m, err := s.codec.ParseMessage(typ, body)
@@ -479,7 +504,7 @@ func (s *Session) controlEnded(err error, what string) {
 		return
 	}
 	if s.ctx.Err() == nil {
-		s.fail(message.Violation(what))
+		s.fail(s.violation(message.CodeClosedControlStream, what))
 	}
 }
 
@@ -493,7 +518,7 @@ func (s *Session) checkPeerSetup(m *message.Setup) error {
 	for i := range m.AuthTokens {
 		tok := m.AuthTokens[i]
 		if s.opts.Role == RoleServer && (tok.AliasType == wire.TokenDelete || tok.AliasType == wire.TokenUseAlias) {
-			return message.Violation("SETUP may only register or use token values")
+			return s.violation(message.CodeRoleViolation, "SETUP may only register or use token values")
 		}
 		resolved, err := s.tokens.apply(tok, true)
 		if err != nil {
@@ -513,10 +538,10 @@ func (s *Session) receiveGoAway(m *message.GoAway) error {
 	s.gotGoAway = true
 	s.mu.Unlock()
 	if dup {
-		return message.Violation("a second GOAWAY on the control stream")
+		return s.violation(message.CodeUnexpectedMessage, "a second GOAWAY on the control stream")
 	}
 	if s.opts.Role == RoleServer && m.NewSessionURI != "" {
-		return message.Violation("a client's GOAWAY may not name a URI")
+		return s.violation(message.CodeRoleViolation, "a client's GOAWAY may not name a URI")
 	}
 	if s.opts.Handler != nil {
 		s.opts.Handler.HandleGoAway(s, m)
@@ -681,9 +706,13 @@ func (s *Session) handleBidi(st Stream) {
 		return
 	}
 	br := getReader(st)
-	typ, body, err := wire.ReadMessage(br, nil)
+	typ, body, err := s.codec.ReadMessageLimit(br, nil, s.recvLimit)
 	if err != nil {
 		putReader(br)
+		if _, ok := errors.AsType[*message.SessionError](err); ok {
+			s.fail(err)
+			return
+		}
 		st.CancelRead(uint64(message.ResetCancelled))
 		st.CancelWrite(uint64(message.ResetCancelled))
 		return
@@ -691,7 +720,7 @@ func (s *Session) handleBidi(st Stream) {
 	k, ok := s.codec.MessageKind(typ)
 	if !ok || !k.IsRequest() {
 		putReader(br)
-		s.fail(message.Violation("a request stream must begin with a request"))
+		s.fail(s.violation(message.CodeUnexpectedMessage, "a request stream must begin with a request"))
 		return
 	}
 	m, err := s.codec.ParseMessage(typ, body)
@@ -748,6 +777,10 @@ func (s *Session) handleBidi(st Stream) {
 			r.release()
 			s.fail(err)
 			return
+		}
+		if p.Params.Has(message.ParamFillParameters) {
+			// from -23 a PUBLISH can carry a fill, which its publisher opens under the PUBLISH's Request ID
+			s.routeFetch(id, r, r.fillOrder(p.Params.Fill))
 		}
 	}
 	if !s.track(r) {

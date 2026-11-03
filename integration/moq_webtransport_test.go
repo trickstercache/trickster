@@ -120,8 +120,9 @@ func TestMoQWebTransport(t *testing.T) {
 	}))
 	t.Cleanup(site.Close)
 	h := moqWebTransportHarness(t, origin, site.URL, false)
-	const sessionSeries = `backend_name="moqweb",draft="22",listener_name="default",result="ok",role="downstream",` +
-		`transport="webtransport"`
+	// a client offering every draft is served the newest
+	sessionSeries := fmt.Sprintf(`backend_name="moqweb",draft="%d",listener_name="default",result="ok",`+
+		`role="downstream",transport="webtransport"`, codec.ServerPreference[0])
 	// the counter outlives the daemon in this process, so only its change is this test's
 	before, _ := metricValue(t, h.MetricsAddr, "trickster_moq_sessions_total", sessionSeries)
 

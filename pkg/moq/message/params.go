@@ -25,8 +25,8 @@ import (
 // ParamType identifies a Message Parameter
 type ParamType uint64
 
-// Message Parameter types. Each has a fixed value encoding, and an unknown type ends the session,
-// since unknown parameters cannot be skipped.
+// Message Parameter types, each with a fixed value encoding; an unknown type ends the session, since it cannot be skipped.
+// Draft -23's PAUSED (0x11) is ParamForward with its value inverted by the codec, so Forward means forwarding in every draft.
 const (
 	ParamObjectDeliveryTimeout   ParamType = 0x02
 	ParamAuthorizationToken      ParamType = 0x03
@@ -48,6 +48,7 @@ const (
 	ParamNewGroupRequest         ParamType = 0x32
 	ParamTrackNamespacePrefix    ParamType = 0x34
 	ParamIncludeProperties       ParamType = 0x35
+	ParamSubscribeTracksID       ParamType = 0x36
 )
 
 // ParamTypes lists every known parameter type in ascending order, the order parameters are written in
@@ -56,7 +57,7 @@ var ParamTypes = []ParamType{
 	ParamExpires, ParamLargestObject, ParamFillTimeout, ParamForward, ParamSubscriberPriority,
 	ParamLocationFilter, ParamGroupOrder, ParamFillParameters, ParamSubgroupFilter, ParamObjectIDFilter,
 	ParamPriorityFilter, ParamObjectPropertyFilter, ParamTrackPropertyFilter, ParamNewGroupRequest,
-	ParamTrackNamespacePrefix, ParamIncludeProperties,
+	ParamTrackNamespacePrefix, ParamIncludeProperties, ParamSubscribeTracksID,
 }
 
 // ParamSet is a set of parameter types
@@ -105,6 +106,8 @@ func Bit(t ParamType) ParamSet {
 		return 1 << 18
 	case ParamIncludeProperties:
 		return 1 << 19
+	case ParamSubscribeTracksID:
+		return 1 << 20
 	}
 	return 0
 }
@@ -256,6 +259,7 @@ type Params struct {
 	NewGroupRequest         uint64
 	TrackNamespacePrefix    wire.Namespace
 	IncludeProperties       bool
+	SubscribeTracksID       uint64
 	AuthTokens              []wire.Token
 	RangeFilters            []RangeFilter
 	// Invalid holds a problem found while decoding that fails the request rather than the session, such as a
@@ -375,6 +379,12 @@ func (p *Params) SetIncludeProperties(v bool) {
 	p.Mark(ParamIncludeProperties)
 }
 
+// SetSubscribeTracksID sets SUBSCRIBE_TRACKS_ID, which names the SUBSCRIBE_TRACKS a PUBLISH answers
+func (p *Params) SetSubscribeTracksID(id uint64) {
+	p.SubscribeTracksID = id
+	p.Mark(ParamSubscribeTracksID)
+}
+
 // SetFill sets FILL_PARAMETERS to the given scope, whose presence requests a fill fetch stream
 func (p *Params) SetFill(fill *Params) {
 	p.Fill = fill
@@ -422,13 +432,13 @@ var (
 		rangeFilterParams
 )
 
-// AllowedParams returns the parameters that may appear in a message of kind k. REQUEST_OK and REQUEST_UPDATE
-// allow the union over the requests they can answer or update; the session checks each request's own subset.
+// AllowedParams returns the parameters that may appear in a message of kind k in any draft; a codec narrows them to
+// its own. REQUEST_OK and REQUEST_UPDATE allow the union over the requests they can answer or update.
 func AllowedParams(k Kind) ParamSet {
 	switch k {
 	case KindSubscribe:
 		return subscribeParams
-	case KindSubscribeOK, KindRequestOK:
+	case KindSubscribeOK, KindRequestOK, KindFetchOK:
 		return Of(ParamExpires, ParamLargestObject)
 	case KindPublishOK:
 		// draft -17's PUBLISH_OK carries the subscriber's choices for the subscription
@@ -436,7 +446,7 @@ func AllowedParams(k Kind) ParamSet {
 	case KindPublish:
 		return Of(ParamObjectDeliveryTimeout, ParamAuthorizationToken, ParamSubgroupDeliveryTimeout,
 			ParamExpires, ParamLargestObject, ParamForward, ParamSubscriberPriority, ParamLocationFilter,
-			ParamGroupOrder)
+			ParamGroupOrder, ParamFillParameters, ParamSubscribeTracksID)
 	case KindRequestUpdate:
 		return subscriptionUpdateParams | Of(ParamTrackPropertyFilter, ParamTrackNamespacePrefix)
 	case KindPublishStateNotify:
@@ -449,7 +459,7 @@ func AllowedParams(k Kind) ParamSet {
 	case KindPublishNamespace, KindSubscribeNamespace:
 		return Of(ParamAuthorizationToken)
 	case KindSubscribeTracks:
-		// the draft lists a narrower set, but also lets SUBSCRIBE_TRACKS carry any subscription parameter
+		// drafts through -22 list a narrower set but let SUBSCRIBE_TRACKS carry any subscription parameter
 		return subscribeParams | Of(ParamTrackPropertyFilter)
 	}
 	return 0

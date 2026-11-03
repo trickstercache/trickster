@@ -169,16 +169,31 @@ func TestParamsHelpers(t *testing.T) {
 	}
 	kinds := []Kind{
 		KindSubscribe, KindSubscribeOK, KindPublish, KindRequestOK, KindPublishOK, KindRequestUpdate,
-		KindPublishStateNotify, KindFetch, KindTrackStatus, KindPublishNamespace, KindSubscribeNamespace,
-		KindSubscribeTracks,
+		KindPublishStateNotify, KindFetch, KindFetchOK, KindTrackStatus, KindPublishNamespace,
+		KindSubscribeNamespace, KindSubscribeTracks,
 	}
 	for _, k := range kinds {
 		if AllowedParams(k) == 0 {
 			t.Errorf("%s allows no parameters", k)
 		}
 	}
-	if AllowedParams(KindNamespace) != 0 || AllowedParams(KindFetchOK) != 0 {
+	if AllowedParams(KindNamespace) != 0 || AllowedParams(KindNamespaceDone) != 0 {
 		t.Error("messages without parameters allow none")
+	}
+	if !AllowedParams(KindPublish).Has(ParamSubscribeTracksID) || Bit(ParamSubscribeTracksID) == 0 {
+		t.Error("PUBLISH names the SUBSCRIBE_TRACKS it answers")
+	}
+	for e, ends := range map[RangeEnd]bool{
+		RangeEndGroup: true, RangeEndTrack: true, RangeEndGone: false, RangeEndUnknown: false, RangeEndNone: false,
+	} {
+		if e.EndsGroup() != ends {
+			t.Errorf("RangeEnd %d ends its group: %t", e, !ends)
+		}
+	}
+	var st Params
+	st.SetSubscribeTracksID(5)
+	if !st.Has(ParamSubscribeTracksID) || st.SubscribeTracksID != 5 {
+		t.Error("SUBSCRIBE_TRACKS_ID setter")
 	}
 	if !AllowedParams(KindSubscribeTracks).Has(ParamTrackPropertyFilter) || AllowedParams(KindSubscribe).Has(ParamExpires) {
 		t.Error("per-message parameter sets")
@@ -228,6 +243,60 @@ func TestProperties(t *testing.T) {
 	immMand, _ := wire.AppendKVs(nil, []wire.KV{{Type: PropImmutable, Bytes: mand}})
 	if _, ok := Properties(immMand).Mandatory(); !ok {
 		t.Error("a mandatory property inside Immutable Properties is reported")
+	}
+	// 0x401d is 0x7f * 128 + 0x9d, a grease value in the mandatory range
+	greased := mustKVs(t, wire.KV{Type: PropImmutable, Bytes: mand}, wire.KV{Type: 0x401d, Uint: 1},
+		wire.KV{Type: PropMandatoryMax - 1, Uint: 0})
+	if got := Properties(greased).MandatoryTypes(); len(got) != 2 || got[0] != PropMandatoryMin+2 ||
+		got[1] != PropMandatoryMax-1 {
+		t.Errorf("mandatory types %#x", got)
+	}
+	if !IsGrease(0x9d) || !IsGrease(0x11c) || IsGrease(0x9c) || IsGrease(0x11b) || IsGrease(0x401e) {
+		t.Error("grease values")
+	}
+	scopes := []struct {
+		name  string
+		p     Properties
+		track bool
+		want  error
+	}{
+		{"track properties", mustKVs(t, wire.KV{Type: PropMaxCacheDuration, Uint: 1},
+			wire.KV{Type: PropDefaultPublisherPriority, Uint: 2}), true, nil},
+		{"object gap properties", mustKVs(t, wire.KV{Type: PropPriorGroupIDGap, Uint: 1}), false, nil},
+		{"either scope", mustKVs(t, wire.KV{Type: PropObjectDeliveryTimeout, Uint: 1}), false, nil},
+		{"unknown properties repeat", mustKVs(t, wire.KV{Type: 0x10, Uint: 1}, wire.KV{Type: 0x10, Uint: 2}), false, nil},
+		{"a gap on a track", mustKVs(t, wire.KV{Type: PropPriorObjectIDGap, Uint: 1}), true, ErrPropertyScope},
+		{"a cache duration on an object", mustKVs(t, wire.KV{Type: PropMaxCacheDuration, Uint: 1}), false, ErrPropertyScope},
+		{"a mandatory property on an object", mustKVs(t, wire.KV{Type: PropMandatoryMin, Uint: 1}), false, ErrPropertyScope},
+		{
+			"repeated", mustKVs(t, wire.KV{Type: PropDynamicGroups, Uint: 1}, wire.KV{Type: PropDynamicGroups, Uint: 1}),
+			true, ErrPropertyRepeated,
+		},
+		{"repeated inside Immutable", mustKVs(t, wire.KV{
+			Type:  PropImmutable,
+			Bytes: mustKVs(t, wire.KV{Type: PropMaxCacheDuration, Uint: 1}),
+		}), true, nil},
+		{"mutable and immutable", mustKVs(t, wire.KV{Type: PropMaxCacheDuration, Uint: 1}, wire.KV{
+			Type:  PropImmutable,
+			Bytes: mustKVs(t, wire.KV{Type: PropMaxCacheDuration, Uint: 1}),
+		}), true, ErrPropertyRepeated},
+		{"a track property inside an object's Immutable", mustKVs(t, wire.KV{
+			Type:  PropImmutable,
+			Bytes: mustKVs(t, wire.KV{Type: PropDynamicGroups, Uint: 1}),
+		}), false, ErrPropertyScope},
+		{"none", nil, true, nil},
+	}
+	for _, tc := range scopes {
+		if err := tc.p.CheckScope(tc.track); !errors.Is(err, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.name, err, tc.want)
+		}
+	}
+	if Properties(nil).CheckObject() != nil || mustKVs(t, wire.KV{Type: PropPriorGroupIDGap, Uint: 1}).CheckObject() != nil ||
+		!errors.Is(mustKVs(t, wire.KV{Type: PropMandatoryMin, Uint: 1}).CheckObject(), ErrPropertyScope) {
+		t.Error("CheckObject")
+	}
+	if _, ok := mustKVs(t, wire.KV{Type: 0x401d, Uint: 1}).Mandatory(); ok {
+		t.Error("a grease value is not a Mandatory Track Property")
 	}
 
 	nested, _ := wire.AppendKVs(nil, []wire.KV{{Type: PropImmutable, Bytes: immMand}})
