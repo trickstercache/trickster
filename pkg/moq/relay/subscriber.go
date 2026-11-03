@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
@@ -32,11 +33,13 @@ type subState uint32
 
 const (
 	subPending subState = iota
+	// its SUBSCRIBE_OK or PUBLISH is being sent; an end meanwhile is the sender's to deliver
+	subAnswering
 	subActive
 	subDone
 )
 
-// at most this many live datagrams wait for a subscription while its SUBSCRIBE_OK is being sent
+// at most this many live datagrams wait for a subscription while its SUBSCRIBE_OK or PUBLISH is being sent
 const maxHeldDatagrams = 256
 
 type heldDatagram struct {
@@ -49,6 +52,8 @@ type subscriber struct {
 	t      *track
 	req    *session.Request
 	ctx    context.Context
+	stop   context.CancelFunc
+	offer  bool
 	filter message.LocationFilter
 	ready  chan struct{}
 	state  atomic.Uint32
@@ -73,6 +78,7 @@ type subscriber struct {
 	release sync.Once
 	forget  func()
 	joining *wire.Location
+	early   *publishDone
 }
 
 func newSubscriber(t *track, req *session.Request, p *message.Params) *subscriber {
@@ -84,8 +90,12 @@ func newSubscriber(t *track, req *session.Request, p *message.Params) *subscribe
 		sgTimeout:  millis(p.SubgroupDeliveryTimeout),
 		writers:    make(map[*writer]struct{}),
 	}
+	// the relay ends the subscription's lifetime itself when it ends unanswered, not only when the request ends
 	if req != nil {
-		s.ctx = req.Context()
+		s.ctx, s.stop = context.WithCancel(req.Context())
+	} else {
+		s.ctx, s.stop = context.WithCancel(t.r.ctx)
+		s.offer = true
 	}
 	if p.Has(message.ParamGroupOrder) {
 		s.order = p.GroupOrder
@@ -95,8 +105,12 @@ func newSubscriber(t *track, req *session.Request, p *message.Params) *subscribe
 }
 
 func (s *subscriber) bind(req *session.Request) {
-	// set before the subscription activates, after which writers and updates read it without a lock
-	s.req, s.ctx = req, req.Context()
+	// set before the subscription activates, after which writers and updates read it without a lock; the context
+	// its writers already wait on ends with the request
+	s.mu.Lock()
+	s.req = req
+	s.mu.Unlock()
+	context.AfterFunc(req.Context(), s.stop)
 }
 
 type subFilters struct {
@@ -126,12 +140,16 @@ func (s *subscriber) joiningLocation() (*wire.Location, bool) {
 }
 
 func (s *subscriber) refuse(code message.RequestCode, reason string) {
+	s.refuseWith(&message.RequestError{Code: code, Reason: reason})
+}
+
+func (s *subscriber) refuseWith(re *message.RequestError) {
 	s.t.mu.Lock()
 	s.t.unholdLocked(s)
 	s.t.mu.Unlock()
 	go s.t.syncForward()
 	s.state.Store(uint32(subDone))
-	_ = s.req.Reject(code, reason, 0)
+	reject(s.req, re)
 	s.t.r.m.request(kindSubscribe, resultRefused)
 	s.releaseTrack()
 }
@@ -163,10 +181,24 @@ func (s *subscriber) register() (*wire.Location, message.Properties, message.Req
 	return largest, props, 0, ""
 }
 
-func (s *subscriber) markActive() []*message.RequestUpdate {
-	// returns the updates that arrived while the subscription was pending, for the caller to apply
+func (s *subscriber) answer() bool {
+	// the subscription's answer is about to be sent; false if it ended first, unanswered
+	return s.state.CompareAndSwap(uint32(subPending), uint32(subAnswering))
+}
+
+func (s *subscriber) unanswered() bool {
+	st := subState(s.state.Load())
+	return st == subPending || st == subAnswering
+}
+
+func (s *subscriber) markActive() ([]*message.RequestUpdate, bool) {
+	// returns the updates that arrived while the subscription was answered, for the caller to apply; false if it
+	// ended first, after which endAnswered ends the request
 	s.mu.Lock()
-	s.state.Store(uint32(subActive))
+	if !s.state.CompareAndSwap(uint32(subAnswering), uint32(subActive)) {
+		s.mu.Unlock()
+		return nil, false
+	}
 	pending := s.pending
 	s.pending = nil
 	held := s.dgHeld
@@ -181,27 +213,31 @@ func (s *subscriber) markActive() []*message.RequestUpdate {
 			}
 		})
 	}
-	return pending
+	return pending, true
 }
 
 func (s *subscriber) activatePublished() {
-	// a subscription the relay opened with PUBLISH, which carried what a SUBSCRIBE_OK would (§9.8)
-	if subState(s.state.Load()) == subDone {
-		return
-	}
-	if _, _, code, _ := s.register(); code != 0 {
-		s.end(message.ResetCancelled)
+	// a subscription the relay opened with PUBLISH, which carried what a SUBSCRIBE_OK would (§9.8), registered
+	// when its Largest Object was taken; one the relay ended meanwhile is ended once the request exists
+	pending, ok := s.markActive()
+	if !ok {
+		s.endAnswered()
 		return
 	}
 	go s.t.syncForward()
-	for _, u := range s.markActive() {
+	for _, u := range pending {
 		s.applyUpdate(u)
 	}
 }
 
 func (s *subscriber) activate() {
-	// the track's upstream is established; the subscriber registers and its SUBSCRIBE is answered
+	// the track's upstream is established; the subscriber registers and its SUBSCRIBE is answered with a Largest
+	// Object refreshed first if every source is paused
 	t := s.t
+	if _, err := t.currentLargest(s.ctx, s.strictLargest()); err != nil {
+		s.refuseWith(refusal(err))
+		return
+	}
 	largest, props, code, reason := s.register()
 	if code != 0 {
 		s.refuse(code, reason)
@@ -221,11 +257,18 @@ func (s *subscriber) activate() {
 	if includeProperties(s.req.Message()) {
 		ok2.TrackProperties = props
 	}
+	if !s.answer() {
+		return
+	}
 	if err := s.req.Send(ok2); err != nil {
 		s.end(message.ResetCancelled)
 		return
 	}
-	pending := s.markActive()
+	pending, ok := s.markActive()
+	if !ok {
+		s.endAnswered()
+		return
+	}
 	t.r.m.request(kindSubscribe, resultOK)
 	if largest != nil && s.forward.Load() {
 		if m, isSub := s.req.Message().(*message.Subscribe); isSub && m.Params.Fill != nil {
@@ -307,7 +350,7 @@ func (s *subscriber) holdDatagram(o *object, props message.Properties, defaultPr
 	// a datagram arriving while the subscription is answered waits for the answer, as its streams do
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if subState(s.state.Load()) != subPending {
+	if !s.unanswered() {
 		return false
 	}
 	if s.dgLive >= maxHeldDatagrams {
@@ -404,7 +447,7 @@ func minNonzero(a, b time.Duration) time.Duration {
 }
 
 func (s *subscriber) sendDatagram(o *object, props message.Properties, defaultPrio uint8) {
-	if subState(s.state.Load()) == subPending && s.holdDatagram(o, props, defaultPrio) {
+	if s.unanswered() && s.holdDatagram(o, props, defaultPrio) {
 		return
 	}
 	if subState(s.state.Load()) != subActive || !s.forward.Load() || !s.passes(o, defaultPrio) {
@@ -448,7 +491,7 @@ func (s *subscriber) HandleMessage(_ *session.Request, m message.Message) {
 		return
 	}
 	s.mu.Lock()
-	if subState(s.state.Load()) == subPending {
+	if s.unanswered() {
 		s.pending = append(s.pending, u)
 		s.mu.Unlock()
 		return
@@ -468,9 +511,24 @@ func (s *subscriber) applyUpdate(u *message.RequestUpdate) {
 		return
 	}
 	t := s.t
-	t.mu.Lock()
-	largest := t.largestLocked()
-	t.mu.Unlock()
+	// a resume has the upstream forward before Largest Object is taken; that snapshot resolves the filter and answers
+	// the update, and forwarding begins under the same lock, so nothing arriving around it is missed or misfiltered
+	resumed := p.Has(message.ParamForward) && p.Forward && !s.forward.Load()
+	var largest *wire.Location
+	var err error
+	if resumed {
+		err = s.resumeUpstream()
+	} else {
+		largest, err = t.currentLargest(s.ctx, s.strictLargest())
+	}
+	if err != nil {
+		s.failUpdate(err)
+		return
+	}
+	if resumed {
+		t.mu.Lock()
+		largest = t.largestLocked()
+	}
 	s.mu.Lock()
 	if p.Has(message.ParamLocationFilter) {
 		s.filter = p.LocationFilter
@@ -491,19 +549,21 @@ func (s *subscriber) applyUpdate(u *message.RequestUpdate) {
 	if p.Has(message.ParamSubgroupDeliveryTimeout) {
 		s.sgTimeout = millis(p.SubgroupDeliveryTimeout)
 	}
+	if resumed && largest != nil {
+		s.joining = largest
+	}
 	s.mu.Unlock()
-	resumed := p.Has(message.ParamForward) && p.Forward && !s.forward.Load()
-	if p.Has(message.ParamForward) {
+	switch {
+	case resumed:
+		t.startForwardingLocked(s)
+		t.mu.Unlock()
+		go t.syncForward()
+	case p.Has(message.ParamForward):
 		s.setForward(p.Forward)
 	}
 	ok := &message.RequestOK{}
 	if largest != nil {
 		ok.Params.SetLargestObject(*largest)
-		if resumed {
-			s.mu.Lock()
-			s.joining = largest
-			s.mu.Unlock()
-		}
 	}
 	if err := s.req.Send(ok); err != nil {
 		return
@@ -514,6 +574,46 @@ func (s *subscriber) applyUpdate(u *message.RequestUpdate) {
 	if p.Fill != nil && s.forward.Load() {
 		s.startFill(u.RequestID, p.Fill, largest)
 	}
+}
+
+func (s *subscriber) resumeUpstream() error {
+	// the subscription counts as forwarding while the upstream resumes, so a probe's cleanup never pauses it
+	t := s.t
+	t.mu.Lock()
+	t.holdLocked(s)
+	t.mu.Unlock()
+	t.resume(s.ctx)
+	if _, err := t.currentLargest(s.ctx, s.strictLargest()); err != nil {
+		t.mu.Lock()
+		t.unholdLocked(s)
+		t.mu.Unlock()
+		go t.syncForward()
+		return err
+	}
+	return nil
+}
+
+func (s *subscriber) strictLargest() bool {
+	return s.req.Session().Codec().Has(codec.CapFreshLargest)
+}
+
+func (s *subscriber) failUpdate(err error) {
+	// an update that fails ends its subscription (§9.5.1)
+	re := refusal(err)
+	_ = s.req.Send(re)
+	go s.finish(message.DoneUpdateFailed, re.Reason)
+}
+
+func (s *subscriber) endAnswered() {
+	// the subscription ended while its answer was sent, which the relay's own end follows with PUBLISH_DONE
+	s.mu.Lock()
+	d := s.early
+	s.mu.Unlock()
+	if d != nil {
+		_ = s.req.Send(&message.PublishDone{Code: d.code, StreamCount: s.req.StreamCount(), Reason: d.reason})
+		_ = s.req.CloseSend()
+	}
+	s.stop()
 }
 
 func (s *subscriber) startFill(requestID uint64, fill *message.Params, largest *wire.Location) {
@@ -570,17 +670,29 @@ func (s *subscriber) end(code message.ResetCode) {
 }
 
 func (s *subscriber) finish(code message.DoneCode, reason string) {
-	// the relay ends the subscription: once its streams are closed, PUBLISH_DONE ends the request
+	// the relay ends the subscription: once its streams are closed, PUBLISH_DONE ends the request. One not yet
+	// answered is refused, or for an offer skipped by its sender; one being answered is ended by its answer's sender
+	s.mu.Lock()
 	prev := subState(s.state.Swap(uint32(subDone)))
-	if prev == subDone {
-		return
+	if prev == subAnswering {
+		s.early = &publishDone{code: code, reason: reason}
 	}
-	s.t.removeSubscriber(s)
-	if prev == subPending {
-		_ = s.req.Reject(message.RequestInternalError, reason, 0)
+	s.mu.Unlock()
+	switch prev {
+	case subDone:
+		return
+	case subPending, subAnswering:
+		s.t.removeSubscriber(s)
+		if prev == subPending {
+			if !s.offer {
+				_ = s.req.Reject(message.RequestInternalError, reason, 0)
+			}
+			s.stop()
+		}
 		s.releaseTrack()
 		return
 	}
+	s.t.removeSubscriber(s)
 	if code == message.DoneMalformedTrack {
 		s.resetWriters(message.ResetMalformedTrack)
 	}

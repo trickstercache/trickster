@@ -21,10 +21,12 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"slices"
 	"sync"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
@@ -44,12 +46,22 @@ var (
 	errUpstream          = &requestError{code: message.RequestInternalError, reason: "upstream unavailable"}
 	errTooManyPublishers = &requestError{code: message.RequestExcessiveLoad, reason: "too many publishers"}
 	errRendezvous        = &requestError{code: message.RequestTimeout, reason: "no publisher arrived"}
-	errMandatory         = &requestError{code: message.RequestUnsupportedExtension, reason: reasonMandatory}
+	errStaleLargest      = &requestError{code: message.RequestTimeout, reason: "the track's largest object is unknown"}
 )
 
 type requestError struct {
 	code   message.RequestCode
 	reason string
+	// props are the Mandatory Track Properties an UNSUPPORTED_EXTENSION refusal names
+	props []uint64
+}
+
+func unsupported(p message.Properties) *requestError {
+	return &requestError{code: message.RequestUnsupportedExtension, reason: reasonMandatory, props: p.MandatoryTypes()}
+}
+
+func upstreamRefusal(v *message.RequestError) *requestError {
+	return &requestError{code: v.Code, reason: v.Reason, props: v.UnsupportedProperties}
 }
 
 func (e *requestError) Error() string {
@@ -101,6 +113,8 @@ type track struct {
 	awaiting   map[*session.Session]int
 	newGroup   newGroupState
 	fromOrigin bool
+	refresh    *statusRefresh
+	probes     int
 
 	ctrlMu sync.Mutex
 }
@@ -130,18 +144,29 @@ func (t *track) raiseLargest(l wire.Location) {
 }
 
 func (t *track) wantForwardLocked() bool {
-	return t.forwarders > 0 || t.held > 0 || t.r.opts.Prewarm
+	return t.probes > 0 || t.held > 0 || t.keepForwardLocked()
+}
+
+func (t *track) keepForwardLocked() bool {
+	// wanted by a registered subscription, not only by a probe or a request still pending
+	return t.forwarders > 0 || t.r.opts.Prewarm
 }
 
 func (t *track) hold(s *subscriber) {
 	// a subscriber awaiting the upstream subscription counts as forwarding, so the upstream never pauses for
 	// the moment between its establishment and the subscriber's registration
 	t.mu.Lock()
-	if s.forward.Load() && !s.held {
+	if s.forward.Load() {
+		t.holdLocked(s)
+	}
+	t.mu.Unlock()
+}
+
+func (t *track) holdLocked(s *subscriber) {
+	if !s.held {
 		s.held = true
 		t.held++
 	}
-	t.mu.Unlock()
 }
 
 func (t *track) unholdLocked(s *subscriber) {
@@ -197,6 +222,34 @@ func refusalFor(err error) (message.RequestCode, string) {
 	return message.RequestInternalError, "upstream unavailable"
 }
 
+func malformedProps(sess *session.Session, p message.Properties, track bool) bool {
+	// a Mandatory Track Property on an object is malformed in every draft; -23 adds the scope and repetition rules,
+	// whose single walk also covers the mandatory check
+	if len(p) == 0 {
+		return false
+	}
+	if sess != nil && sess.Codec().Has(codec.CapPropertyRules) {
+		return p.CheckScope(track) != nil
+	}
+	return !track && p.CheckObject() != nil
+}
+
+func refusal(err error) *message.RequestError {
+	// the REQUEST_ERROR answering a request err fails, naming the mandatory properties behind UNSUPPORTED_EXTENSION
+	code, reason := refusalFor(err)
+	out := &message.RequestError{Code: code, Reason: reason}
+	if re, ok := errors.AsType[*requestError](err); ok && code == message.RequestUnsupportedExtension {
+		out.UnsupportedProperties = re.props
+	}
+	return out
+}
+
+func reject(req *session.Request, re *message.RequestError) {
+	if req.Send(re) == nil {
+		_ = req.CloseSend()
+	}
+}
+
 func (t *track) addSubscriber(s *subscriber) {
 	// the caller holds t.mu; the list is copied on write, so a snapshot taken under the lock stays valid after it
 	t.unholdLocked(s)
@@ -242,6 +295,16 @@ func (t *track) setForward(s *subscriber, forward bool) {
 	s.forward.Store(forward)
 	t.mu.Unlock()
 	go t.syncForward()
+}
+
+func (t *track) startForwardingLocked(s *subscriber) {
+	// a resumed subscription forwards from each open run's next object, its hold now its forwarding
+	if !s.forward.Load() && slices.Contains(t.subs, s) {
+		t.forwarders++
+	}
+	s.forward.Store(true)
+	t.unholdLocked(s)
+	t.startOpenRunsLocked(s)
 }
 
 func (t *track) resume(ctx context.Context) bool {
@@ -443,7 +506,7 @@ func (t *track) runEnded(rn *run, st runState) {
 	}
 }
 
-func (t *track) ingestSubgroup(u *upstreamSub, in *session.IncomingSubgroup) {
+func (t *track) ingestSubgroup(u *upstreamSub, sess *session.Session, in *session.IncomingSubgroup) {
 	// one upstream subgroup stream is read into the live edge, forwarded as it arrives
 	first, err := in.Next()
 	if err != nil {
@@ -456,6 +519,12 @@ func (t *track) ingestSubgroup(u *upstreamSub, in *session.IncomingSubgroup) {
 	}
 	h := *in.Header()
 	for o := first; ; {
+		if malformedProps(sess, o.Properties, false) {
+			in.Cancel(message.ResetMalformedTrack)
+			t.markMalformed()
+			t.runEnded(rn, runReset)
+			return
+		}
 		if !t.ingestObject(rn, h, o, in) {
 			t.runEnded(rn, runReset)
 			return
@@ -525,7 +594,11 @@ func (t *track) ingestObject(rn *run, h message.SubgroupHeader, so message.Subgr
 	return true
 }
 
-func (t *track) ingestDatagram(u *upstreamSub, d *message.Datagram) {
+func (t *track) ingestDatagram(u *upstreamSub, sess *session.Session, d *message.Datagram) {
+	if malformedProps(sess, d.Properties, false) {
+		t.markMalformed()
+		return
+	}
 	o := &object{
 		group: d.Group, id: d.Object, priority: d.Priority, defaultPrio: d.DefaultPriority, datagram: true,
 		endOfGroup: d.EndOfGroup, props: bytes.Clone(d.Properties), payload: bytes.Clone(d.Payload),
@@ -563,14 +636,26 @@ func (t *track) ingestDatagram(u *upstreamSub, d *message.Datagram) {
 	}
 }
 
-func (t *track) status(ctx context.Context) (*wire.Location, message.Properties, error) {
-	// the track's Largest Object and properties, from upstream with TRACK_STATUS when the relay has not seen it
+func (t *track) status(ctx context.Context, strict bool) (*wire.Location, message.Properties, error) {
+	// the track's Largest Object and properties, from upstream with TRACK_STATUS when the relay has not seen it, or
+	// when no source is current; with strict a value that could not be refreshed is refused rather than used
 	t.mu.Lock()
 	if t.malformed {
 		t.mu.Unlock()
 		return nil, nil, errMalformed
 	}
-	if t.upState == upEstablished || t.hasLargest {
+	switch {
+	case t.upState == upEstablished && !t.forwardingLocked():
+		t.mu.Unlock()
+		l, err := t.currentLargest(ctx, strict)
+		if err != nil {
+			return nil, nil, err
+		}
+		t.mu.Lock()
+		p := t.props
+		t.mu.Unlock()
+		return l, p, nil
+	case t.upState == upEstablished || t.hasLargest:
 		l, p := t.largestLocked(), t.props
 		t.mu.Unlock()
 		return l, p, nil
@@ -579,6 +664,10 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 	if err := t.r.negs.refusal(t); err != nil && len(t.r.publishersFor(t.scope, t.name.Namespace)) == 0 {
 		return nil, nil, err
 	}
+	return t.statusUpstream(ctx)
+}
+
+func (t *track) statusUpstream(ctx context.Context) (*wire.Location, message.Properties, error) {
 	sess, release, origin, err := t.upstreamSession(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -595,6 +684,13 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 	}
 	switch v := resp.(type) {
 	case *message.RequestOK:
+		if _, mandatory := v.TrackProperties.Mandatory(); mandatory {
+			// the track is neither processed nor forwarded, as for a SUBSCRIBE_OK naming such a property
+			return nil, nil, unsupported(v.TrackProperties)
+		}
+		if malformedProps(sess, v.TrackProperties, true) {
+			return nil, nil, errMalformed
+		}
 		props := bytes.Clone(v.TrackProperties)
 		t.mu.Lock()
 		if v.Params.Has(message.ParamLargestObject) {
@@ -607,13 +703,134 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 		t.mu.Unlock()
 		return l, props, nil
 	case *message.RequestError:
-		err = &requestError{code: v.Code, reason: v.Reason}
+		err = upstreamRefusal(v)
 		if origin {
 			t.r.negs.record(t, err)
 		}
 		return nil, nil, err
 	}
 	return nil, nil, errUpstream
+}
+
+func (t *track) forwardingLocked() bool {
+	// a source is current once its upstream acknowledged that it forwards, while its filter delivers everything
+	// past the relay's Largest Object: one starting further on misses what lies between, and one with an end stops
+	for _, u := range t.ups {
+		if u.live && u.fwd && u.fwdKnown && !u.bounded && t.coversLocked(u.from) &&
+			!slices.Contains(u.updates, updateForward) {
+			return true
+		}
+	}
+	return false
+}
+
+func (t *track) coversLocked(from wire.Location) bool {
+	if from == (wire.Location{}) {
+		return true
+	}
+	if !t.hasLargest {
+		return false
+	}
+	next := wire.Location{Group: t.largest.Group, Object: t.largest.Object + 1}
+	if t.largest.Object == math.MaxUint64 {
+		next = wire.Location{Group: t.largest.Group + 1}
+	}
+	return !next.Less(from)
+}
+
+func sourceFilter(p *message.Params, largest *wire.Location) (wire.Location, bool) {
+	// where a source's Location Filter starts, relative filters resolved against the publisher's Largest Object
+	// (else the relay's), and whether it ends
+	if !p.Has(message.ParamLocationFilter) {
+		return wire.Location{}, false
+	}
+	if p.Has(message.ParamLargestObject) {
+		largest = &p.LargestObject
+	}
+	from, _, unbounded, ok := p.LocationFilter.Bounds(largest, false)
+	return from, !ok || !unbounded
+}
+
+type statusRefresh struct {
+	// done closes when a non-current track's Largest Object is refreshed, err holding why it could not be, for
+	// every caller waiting on it
+	done chan struct{}
+	err  error
+}
+
+func fatalRefresh(err error) bool {
+	// a track the relay may not process, whose refusal every caller passes on
+	re, ok := errors.AsType[*requestError](err)
+	return errors.Is(err, errMalformed) || (ok && re.code == message.RequestUnsupportedExtension)
+}
+
+func (t *track) freshLargest(ctx context.Context) (*wire.Location, error) {
+	// with no current source the relay's Largest Object may be stale, so it is refreshed once for every caller;
+	// on failure the caller gets the relay's own value and why it could not be refreshed
+	t.mu.Lock()
+	if t.upState != upEstablished || t.malformed || t.forwardingLocked() {
+		defer t.mu.Unlock()
+		return t.largestLocked(), nil
+	}
+	c := t.refresh
+	if c == nil {
+		c = &statusRefresh{done: make(chan struct{})}
+		t.refresh = c
+		go t.refreshStatus(c)
+	}
+	t.mu.Unlock()
+	var err error
+	select {
+	case <-c.done:
+		err = c.err
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.largestLocked(), err
+}
+
+func (t *track) refreshStatus(c *statusRefresh) {
+	ctx, cancel := context.WithTimeout(t.r.ctx, statusRefreshWait)
+	_, _, err := t.statusUpstream(ctx)
+	cancel()
+	t.mu.Lock()
+	t.refresh, c.err = nil, err
+	t.mu.Unlock()
+	close(c.done)
+}
+
+func (t *track) currentLargest(ctx context.Context, strict bool) (*wire.Location, error) {
+	// a refresh that fails fatally always fails the caller; otherwise with strict an upstream that cannot answer
+	// TRACK_STATUS is unpaused for its answer's Largest Object instead, and without strict the relay's own value stands
+	l, err := t.freshLargest(ctx)
+	switch {
+	case err == nil || fatalRefresh(err):
+		return l, err
+	case strict:
+		return t.probe(ctx)
+	}
+	return l, nil
+}
+
+func (t *track) probe(ctx context.Context) (*wire.Location, error) {
+	// the sources forward until their answer to that arrives, then pause again unless a subscriber wants them
+	ctx, cancel := context.WithTimeout(ctx, statusRefreshWait)
+	defer cancel()
+	t.mu.Lock()
+	t.probes++
+	t.mu.Unlock()
+	t.resume(ctx)
+	t.mu.Lock()
+	t.probes--
+	current, l := t.forwardingLocked(), t.largestLocked()
+	t.mu.Unlock()
+	go t.syncForward()
+	if !current {
+		return nil, errStaleLargest
+	}
+	return l, nil
 }
 
 type nopRequestHandler struct{}
@@ -626,10 +843,14 @@ type upstreamSub struct {
 	target *session.Session
 	pushed bool
 
-	live    bool
-	fwd     bool
-	updates []updateKind
-	sentNG  uint64
+	live        bool
+	fwd         bool
+	fwdKnown    bool
+	provisional bool
+	bounded     bool
+	from        wire.Location
+	updates     []updateKind
+	sentNG      uint64
 
 	updMu sync.Mutex
 	renew renewer
@@ -654,7 +875,7 @@ func (u *upstreamSub) request() *session.Request {
 
 func (u *upstreamSub) session() *session.Session {
 	// a pushed source is a publisher's PUBLISH; a pulled one subscribes to target, or to the origin when it is nil.
-	// live, fwd and updates are guarded by the track's lock
+	// the fields from live through updates are guarded by the track's lock
 	if u.pushed {
 		if req := u.request(); req != nil {
 			return req.Session()
@@ -710,7 +931,12 @@ func (u *upstreamSub) open(forward bool) {
 		if _, mandatory := v.TrackProperties.Mandatory(); mandatory {
 			// §3.7: the track is neither processed nor forwarded, and its subscribers are refused
 			req.Cancel(message.ResetCancelled)
-			t.upstreamEnded(u, errMandatory)
+			t.upstreamEnded(u, unsupported(v.TrackProperties))
+			return
+		}
+		if malformedProps(sess, v.TrackProperties, true) {
+			req.Cancel(message.ResetMalformedTrack)
+			t.upstreamEnded(u, errMalformed)
 			return
 		}
 		if !t.established(u, v, forward) {
@@ -726,7 +952,7 @@ func (u *upstreamSub) open(forward bool) {
 			t.upstreamEnded(u, cause)
 		}
 	case *message.RequestError:
-		err := &requestError{code: v.Code, reason: v.Reason}
+		err := upstreamRefusal(v)
 		if u.target == nil {
 			t.r.negs.record(t, err)
 		}
@@ -779,11 +1005,20 @@ func (u *upstreamSub) HandleMessage(_ *session.Request, m message.Message) {
 			t.raiseLargest(v.Params.LargestObject)
 		}
 		if v.Params.Has(message.ParamForward) && u.live {
-			u.fwd = v.Params.Forward
+			u.fwd, u.fwdKnown, u.provisional = v.Params.Forward, true, false
+		}
+		if v.Params.Has(message.ParamLocationFilter) {
+			u.from, u.bounded = sourceFilter(&v.Params, t.largestLocked())
 		}
 		t.mu.Unlock()
 	case *message.RequestOK:
-		// answers come in the order the updates were sent; one carrying EXPIRES schedules the next renewal
+		// answers come in the order the updates were sent; one carrying EXPIRES schedules the next renewal, and
+		// LARGEST_OBJECT is in place before a resume waiting on the answer goes on
+		if v.Params.Has(message.ParamLargestObject) {
+			u.t.mu.Lock()
+			u.t.raiseLargest(v.Params.LargestObject)
+			u.t.mu.Unlock()
+		}
 		if u.t.answered(u, false) == updateForward {
 			go u.t.syncForward()
 		}
@@ -816,12 +1051,12 @@ func (u *upstreamSub) causeLocked() error {
 	return &publishDone{code: message.DoneInternalError, reason: "upstream subscription closed"}
 }
 
-func (u *upstreamSub) HandleSubgroup(_ *session.Request, in *session.IncomingSubgroup) {
-	u.t.ingestSubgroup(u, in)
+func (u *upstreamSub) HandleSubgroup(r *session.Request, in *session.IncomingSubgroup) {
+	u.t.ingestSubgroup(u, r.Session(), in)
 }
 
-func (u *upstreamSub) HandleDatagram(_ *session.Request, d *message.Datagram) {
-	u.t.ingestDatagram(u, d)
+func (u *upstreamSub) HandleDatagram(r *session.Request, d *message.Datagram) {
+	u.t.ingestDatagram(u, r.Session(), d)
 }
 
 func (u *upstreamSub) HandleFetch(_ *session.Request, in *session.IncomingFetch) {

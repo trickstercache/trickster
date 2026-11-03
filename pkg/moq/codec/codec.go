@@ -26,7 +26,7 @@ import (
 )
 
 // Caps are the wire features one draft has
-type Caps uint32
+type Caps uint64
 
 // Capabilities that differ among the supported drafts
 const (
@@ -75,13 +75,49 @@ const (
 	CapParams18
 	// CapRequestUpdateLimit has MAX_REQUEST_UPDATES and TOO_MANY_REQUEST_UPDATES (from -19)
 	CapRequestUpdateLimit
+	// CapVarintMessageLength codes a control message's Length as a varint bounded by MAX_CONTROL_MESSAGE_SIZE,
+	// rather than in 16 bits (from -23)
+	CapVarintMessageLength
+	// CapFetchRequestOK answers FETCH with REQUEST_OK, reserving FETCH_OK's code, and refuses a relative
+	// Location Filter in FETCH (from -23)
+	CapFetchRequestOK
+	// CapParams23 has PAUSED for FORWARD, SUBSCRIBE_TRACKS_ID, FILL_PARAMETERS as a count of parameters with no
+	// length and in PUBLISH and SUBSCRIBE_TRACKS, and SUBSCRIBE_TRACKS's own parameter list (from -23)
+	CapParams23
+	// CapNamespaceParams gives NAMESPACE a parameter list (from -23)
+	CapNamespaceParams
+	// CapErrorDetails ends REQUEST_ERROR with Error Details rather than a Redirect structure (from -23)
+	CapErrorDetails
+	// CapDeltaRangeMarkers delta codes End of Range markers and adds 2 to an Object ID Delta within a group on a
+	// fetch stream (from -23)
+	CapDeltaRangeMarkers
+	// CapFetchEndMarkers has the End of Gone Range, End of Group and End of Track fetch markers (from -23)
+	CapFetchEndMarkers
+	// CapOverlappingPrefixes lets SUBSCRIBE_NAMESPACE and SUBSCRIBE_TRACKS prefixes in a session overlap, with
+	// no PREFIX_OVERLAP (from -23)
+	CapOverlappingPrefixes
+	// CapSpecificSessionCodes closes sessions with the codes from 0x200 rather than PROTOCOL_VIOLATION, and has
+	// UNAVAILABLE and PUBLISH_DONE's EXPIRED_AUTH_TOKEN (from -23)
+	CapSpecificSessionCodes
+	// CapNonEmptyTrackNames requires every Track Name to hold at least one byte (from -23)
+	CapNonEmptyTrackNames
+	// CapResponderGoAway lets only the receiver of a request send GOAWAY on its stream (from -23)
+	CapResponderGoAway
+	// CapPropertyRules makes a track malformed when a known property appears outside its scope or repeats
+	// (from -23)
+	CapPropertyRules
+	// CapFreshLargest has a relay take Largest Object only from an unpaused source whose filters cover the
+	// request, or from TRACK_STATUS (from -23)
+	CapFreshLargest
 )
 
 // Codec encodes and decodes one draft's wire format; it holds no per-session state and is safe to share
 type Codec struct {
-	draft int
-	alpn  string
-	caps  Caps
+	draft   int
+	alpn    string
+	caps    Caps
+	known   message.ParamSet
+	allowed [message.KindLimit]message.ParamSet
 }
 
 const alpnPrefix = "moqt-"
@@ -92,7 +128,13 @@ func ALPNFor(draft int) string {
 }
 
 func newCodec(draft int, caps Caps) *Codec {
-	return &Codec{draft: draft, alpn: ALPNFor(draft), caps: caps}
+	c := &Codec{draft: draft, alpn: ALPNFor(draft), caps: caps}
+	// the parameter sets depend only on the draft, so each message reads them rather than deriving them
+	c.known = c.knownParams()
+	for k := range c.allowed {
+		c.allowed[k] = c.draftParams(message.Kind(k)) // #nosec G115 -- k is below KindLimit
+	}
+	return c
 }
 
 const (
@@ -104,9 +146,13 @@ const (
 	capsFrom20 = CapSubscribeTracks | CapRedirect | CapTrackPropertiesInRequestOK | CapFirstObjectBit |
 		CapPadding | CapSevenByteVarint | CapRangeFilters | CapFillFetch | CapTypeFlagBitfields |
 		CapPublishStateNotify | CapEndOfTimedOutRange | CapParams18 | CapRequestUpdateLimit
+	caps23 = capsFrom20 | CapTypedLocationFilter | CapVarintMessageLength | CapFetchRequestOK | CapParams23 |
+		CapNamespaceParams | CapErrorDetails | CapDeltaRangeMarkers | CapFetchEndMarkers | CapOverlappingPrefixes |
+		CapSpecificSessionCodes | CapNonEmptyTrackNames | CapResponderGoAway | CapPropertyRules | CapFreshLargest
 )
 
 var codecs = []*Codec{
+	newCodec(23, caps23),
 	newCodec(22, capsFrom20|CapTypedLocationFilter),
 	newCodec(21, capsFrom20|CapLengthInferredLocationFilter),
 	newCodec(20, capsFrom20|CapLengthInferredLocationFilter),
@@ -165,7 +211,7 @@ func Drafts() []int {
 }
 
 // ServerPreference orders the drafts a server picks from, newest first
-var ServerPreference = []int{22, 21, 20, 19, 18, 17}
+var ServerPreference = []int{23, 22, 21, 20, 19, 18, 17}
 
 // ClientOffer is the default list a client offers, newest first, the same as ServerPreference
 var ClientOffer = slices.Clone(ServerPreference)
@@ -236,6 +282,11 @@ func (c *Codec) MessageType(k message.Kind) (uint64, bool) {
 		}
 	case message.KindPublishOK:
 		return typePublishOK17, c.Has(CapPublishOK)
+	case message.KindFetchOK:
+		// draft -23 reserves FETCH_OK's code and answers FETCH with REQUEST_OK
+		if c.Has(CapFetchRequestOK) {
+			return messageTypes[message.KindRequestOK], true
+		}
 	}
 	t, ok := messageTypes[k]
 	return t, ok

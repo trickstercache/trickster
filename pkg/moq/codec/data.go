@@ -59,6 +59,9 @@ const (
 	fetchEndNonExistent       = 0x8c
 	fetchEndUnknown           = 0x10c
 	fetchEndTimedOut          = 0x20c
+	fetchEndGone              = 0x40c
+	fetchEndOfGroup           = 0x80
+	fetchEndOfTrack           = 0x81
 	fetchSubgroupZero         = 0
 	fetchSubgroupPrior        = 1
 	fetchSubgroupPriorPlusOne = 2
@@ -135,6 +138,7 @@ func (c *Codec) AppendSubgroupHeader(b []byte, h *message.SubgroupHeader) []byte
 
 // SubgroupReader reads the objects of one subgroup stream
 type SubgroupReader struct {
+	c       *Codec
 	r       wire.StreamReader
 	header  message.SubgroupHeader
 	prev    uint64
@@ -145,7 +149,7 @@ type SubgroupReader struct {
 // the stream's objects
 func (c *Codec) ReadSubgroupHeader(t uint64, r wire.StreamReader) (*SubgroupReader, error) {
 	if !c.validSubgroupType(t) {
-		return nil, message.Violation("invalid subgroup header type")
+		return nil, c.SessionError(message.CodeInvalidStreamHeader, "invalid subgroup header type")
 	}
 	h := message.SubgroupHeader{
 		Mode:            message.SubgroupIDMode((t & subgroupMaskIDMode) >> 1),
@@ -171,7 +175,7 @@ func (c *Codec) ReadSubgroupHeader(t uint64, r wire.StreamReader) (*SubgroupRead
 			return nil, unexpectedEOF(err)
 		}
 	}
-	return &SubgroupReader{r: r, header: h}, nil
+	return &SubgroupReader{c: c, r: r, header: h}, nil
 }
 
 // Header returns the stream's header; with SubgroupIDFirstObject its Subgroup is set once the first object is read
@@ -195,13 +199,13 @@ func (s *SubgroupReader) Next() (message.SubgroupObject, error) {
 		}
 	} else {
 		if d == math.MaxUint64 || s.prev > math.MaxUint64-d-1 {
-			return o, message.Violation("object ID overflows")
+			return o, s.c.SessionError(message.CodeDeltaEncodingOverflow, "object ID overflows")
 		}
 		o.ID = s.prev + d + 1
 	}
 	s.prev = o.ID
 	if s.header.HasProperties {
-		if o.Properties, err = readProperties(s.r); err != nil {
+		if o.Properties, err = s.c.readProperties(s.r); err != nil {
 			return o, err
 		}
 	}
@@ -214,14 +218,21 @@ func (s *SubgroupReader) Next() (message.SubgroupObject, error) {
 			return o, err
 		}
 		o.Status = message.ObjectStatus(st)
-		if !o.Status.Valid() {
-			return o, message.Violation("unknown object status")
-		}
-		if o.Status != message.StatusNormal && len(o.Properties) > 0 {
-			return o, message.Violation("properties on an object that is not normal")
+		if err = s.c.checkStatus(o.Status, o.Properties); err != nil {
+			return o, err
 		}
 	}
 	return o, nil
+}
+
+func (c *Codec) checkStatus(st message.ObjectStatus, props message.Properties) error {
+	if !st.Valid() {
+		return c.SessionError(message.CodeInvalidObjectStatus, "unknown object status")
+	}
+	if st != message.StatusNormal && len(props) > 0 {
+		return c.SessionError(message.CodeInvalidObjectStatus, "properties on an object that is not normal")
+	}
+	return nil
 }
 
 func readStreamVarint(r io.ByteReader) (uint64, error) {
@@ -229,13 +240,13 @@ func readStreamVarint(r io.ByteReader) (uint64, error) {
 	return v, unexpectedEOF(err)
 }
 
-func readProperties(r wire.StreamReader) (message.Properties, error) {
+func (c *Codec) readProperties(r wire.StreamReader) (message.Properties, error) {
 	n, err := readStreamVarint(r)
 	if err != nil || n == 0 {
 		return nil, err
 	}
 	if n > MaxObjectPropertyLen {
-		return nil, message.Violation("object properties too long")
+		return nil, c.SessionError(message.CodeFieldLengthExceeded, "object properties too long")
 	}
 	p := make(message.Properties, n)
 	if _, err = io.ReadFull(r, p); err != nil {
@@ -350,11 +361,11 @@ func (c *Codec) ParseDatagram(b []byte) (message.Datagram, error) {
 	r := wire.NewReader(b)
 	t := r.Varint()
 	if r.Err() != nil {
-		return d, wireViolation(r.Err())
+		return d, c.objectError(r.Err())
 	}
 	if t >= fetchFlagLimit || t&datagramBitReserved != 0 || t&^0x3f != 0 ||
 		(t&datagramBitStatus != 0 && t&datagramBitEndOfGroup != 0) {
-		return d, message.Violation("invalid datagram type")
+		return d, c.SessionError(message.CodeInvalidStreamHeader, "invalid datagram type")
 	}
 	d.EndOfGroup = t&datagramBitEndOfGroup != 0
 	d.DefaultPriority = t&datagramBitDefaultPrio != 0
@@ -370,25 +381,19 @@ func (c *Codec) ParseDatagram(b []byte) (message.Datagram, error) {
 	if t&datagramBitProperties != 0 {
 		d.Properties = message.Properties(r.LenBytes(MaxObjectPropertyLen))
 		if r.Err() == nil && len(d.Properties) == 0 {
-			return d, message.Violation("datagram declares empty properties")
+			return d, c.SessionError(message.CodeMalformedObject, "datagram declares empty properties")
 		}
 	}
 	if d.HasStatus {
 		d.Status = message.ObjectStatus(r.Varint())
 		if err := r.Done(); err != nil {
-			return d, wireViolation(err)
+			return d, c.objectError(err)
 		}
-		if !d.Status.Valid() {
-			return d, message.Violation("unknown object status")
-		}
-		if d.Status != message.StatusNormal && len(d.Properties) > 0 {
-			return d, message.Violation("properties on an object that is not normal")
-		}
-		return d, nil
+		return d, c.checkStatus(d.Status, d.Properties)
 	}
 	d.Payload = r.Rest()
 	if err := r.Err(); err != nil {
-		return d, wireViolation(err)
+		return d, c.objectError(err)
 	}
 	return d, nil
 }
@@ -412,6 +417,14 @@ type fetchState struct {
 	hasSubgroup bool
 	subgroup    uint64
 	priority    uint8
+}
+
+func (s *fetchState) markerGroup(gd uint64) (uint64, bool) {
+	// an End of Range group is the prior group moved by the delta in the stream's order, with no added one
+	if s.order == message.GroupOrderDescending {
+		return s.group - gd, gd <= s.group
+	}
+	return s.group + gd, gd <= math.MaxUint64-s.group
 }
 
 func (s *fetchState) nextGroup(gd uint64) (uint64, bool) {
@@ -450,32 +463,14 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 	if err != nil {
 		return o, err
 	}
-	s := &f.s
+	c, s := f.c, &f.s
 	if flags >= fetchFlagLimit {
-		switch {
-		case flags == fetchEndNonExistent:
-			o.EndOfRange = message.RangeEndNonExistent
-		case flags == fetchEndUnknown:
-			o.EndOfRange = message.RangeEndUnknown
-		case flags == fetchEndTimedOut && f.c.Has(CapEndOfTimedOutRange):
-			o.EndOfRange = message.RangeEndTimedOut
-		default:
-			return o, message.Violation("invalid fetch serialization flags")
-		}
-		// a marker names the absolute Location that ends its span
-		if o.Group, err = readStreamVarint(f.r); err != nil {
-			return o, err
-		}
-		if o.Object, err = readStreamVarint(f.r); err != nil {
-			return o, err
-		}
-		s.started, s.group, s.object = true, o.Group, o.Object
-		return o, nil
+		return f.marker(flags)
 	}
 	subMode := flags & fetchMaskSubgroup
 	o.Datagram = flags&fetchBitDatagram != 0
 	if !s.started && (flags&fetchBitGroupID == 0 || flags&fetchBitObjectID == 0) {
-		return o, message.Violation("first fetch object refers to a prior object")
+		return o, c.SessionError(message.CodeMalformedObject, "first fetch object refers to a prior object")
 	}
 	hasGroup := flags&fetchBitGroupID != 0
 	o.Group = s.group
@@ -485,10 +480,10 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 			return o, err
 		}
 		o.Group = gd
-		if s.started && !f.c.Has(CapAbsoluteFetchIDs) {
+		if s.started && !c.Has(CapAbsoluteFetchIDs) {
 			var ok bool
 			if o.Group, ok = s.nextGroup(gd); !ok {
-				return o, message.Violation("fetch group ID out of range")
+				return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch group ID out of range")
 			}
 		}
 	}
@@ -497,12 +492,12 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 		case fetchSubgroupZero:
 		case fetchSubgroupPrior, fetchSubgroupPriorPlusOne:
 			if !s.hasSubgroup {
-				return o, message.Violation("fetch object refers to a missing prior subgroup")
+				return o, c.SessionError(message.CodeMalformedObject, "fetch object refers to a missing prior subgroup")
 			}
 			o.Subgroup = s.subgroup
 			if subMode == fetchSubgroupPriorPlusOne {
 				if o.Subgroup == math.MaxUint64 {
-					return o, message.Violation("fetch subgroup ID overflows")
+					return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch subgroup ID overflows")
 				}
 				o.Subgroup++
 			}
@@ -517,17 +512,22 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 		if err != nil {
 			return o, err
 		}
+		// from -23 a delta within a group counts from 2, the smallest gap that needs one
+		var skip uint64
+		if c.Has(CapDeltaRangeMarkers) {
+			skip = 2
+		}
 		switch {
-		case hasGroup || !s.started || f.c.Has(CapAbsoluteFetchIDs):
+		case hasGroup || !s.started || c.Has(CapAbsoluteFetchIDs):
 			o.Object = od
-		case od > math.MaxUint64-s.object:
-			return o, message.Violation("fetch object ID overflows")
+		case od > math.MaxUint64-s.object || skip > math.MaxUint64-s.object-od:
+			return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch object ID overflows")
 		default:
-			o.Object = s.object + od
+			o.Object = s.object + od + skip
 		}
 	} else {
 		if s.object == math.MaxUint64 {
-			return o, message.Violation("fetch object ID overflows")
+			return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch object ID overflows")
 		}
 		o.Object = s.object + 1
 	}
@@ -537,12 +537,12 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 		}
 	} else {
 		if !s.hasObject {
-			return o, message.Violation("fetch object refers to a missing prior priority")
+			return o, c.SessionError(message.CodeMalformedObject, "fetch object refers to a missing prior priority")
 		}
 		o.Priority = s.priority
 	}
 	if flags&fetchBitProperties != 0 {
-		if o.Properties, err = readProperties(f.r); err != nil {
+		if o.Properties, err = c.readProperties(f.r); err != nil {
 			return o, err
 		}
 	}
@@ -553,6 +553,67 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 	if !o.Datagram {
 		s.hasSubgroup, s.subgroup = true, o.Subgroup
 	}
+	return o, nil
+}
+
+func (c *Codec) rangeEnd(flags uint64) (message.RangeEnd, bool) {
+	switch {
+	case flags == fetchEndNonExistent:
+		return message.RangeEndNonExistent, true
+	case flags == fetchEndUnknown:
+		return message.RangeEndUnknown, true
+	case flags == fetchEndTimedOut && c.Has(CapEndOfTimedOutRange):
+		return message.RangeEndTimedOut, true
+	case !c.Has(CapFetchEndMarkers):
+	case flags == fetchEndGone:
+		return message.RangeEndGone, true
+	case flags == fetchEndOfGroup:
+		return message.RangeEndGroup, true
+	case flags == fetchEndOfTrack:
+		return message.RangeEndTrack, true
+	}
+	return message.RangeEndNone, false
+}
+
+func (f *FetchReader) marker(flags uint64) (message.FetchObject, error) {
+	var o message.FetchObject
+	c, s := f.c, &f.s
+	kind, ok := c.rangeEnd(flags)
+	if !ok {
+		return o, c.SessionError(message.CodeMalformedObject, "invalid fetch serialization flags")
+	}
+	o.EndOfRange = kind
+	if kind.EndsGroup() {
+		// End of Group and End of Track carry no fields: the prior object was its group's last
+		if !s.started {
+			return o, c.SessionError(message.CodeMalformedObject, "fetch group end with no prior object")
+		}
+		o.Group, o.Object = s.group, math.MaxUint64
+		s.object = math.MaxUint64
+		return o, nil
+	}
+	gd, err := readStreamVarint(f.r)
+	if err != nil {
+		return o, err
+	}
+	od, err := readStreamVarint(f.r)
+	if err != nil {
+		return o, err
+	}
+	o.Group, o.Object = gd, od
+	if s.started && c.Has(CapDeltaRangeMarkers) {
+		// from -23 a marker after the first entry is a delta from the prior entry, its Object absolute in a new group
+		if o.Group, ok = s.markerGroup(gd); !ok {
+			return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch range end group out of range")
+		}
+		if gd == 0 {
+			if s.object == math.MaxUint64 || od > math.MaxUint64-s.object-1 {
+				return o, c.SessionError(message.CodeDeltaEncodingOverflow, "fetch range end object overflows")
+			}
+			o.Object = s.object + od + 1
+		}
+	}
+	s.started, s.group, s.object = true, o.Group, o.Object
 	return o, nil
 }
 
@@ -574,25 +635,7 @@ func (c *Codec) NewFetchWriter(order message.GroupOrder) *FetchWriter {
 func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, error) {
 	c, s := w.c, &w.s
 	if o.EndOfRange != message.RangeEndNone {
-		var flags uint64
-		switch o.EndOfRange {
-		case message.RangeEndNonExistent:
-			flags = fetchEndNonExistent
-		case message.RangeEndUnknown:
-			flags = fetchEndUnknown
-		case message.RangeEndTimedOut:
-			// a draft without the timed-out marker learns only that the span's objects are unknown
-			flags = fetchEndTimedOut
-			if !c.Has(CapEndOfTimedOutRange) {
-				flags = fetchEndUnknown
-			}
-		default:
-			return b, ErrObjectFields
-		}
-		b = c.putVarint(b, flags)
-		b = c.putLocation(b, wire.Location{Group: o.Group, Object: o.Object})
-		s.started, s.group, s.object = true, o.Group, o.Object
-		return b, nil
+		return w.appendMarker(b, o)
 	}
 	var flags uint64
 	var gd, od uint64
@@ -608,8 +651,12 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 		if o.Object != s.object+1 {
 			flags |= fetchBitObjectID
 			od = o.Object - s.object
-			if absolute {
+			switch {
+			case absolute:
 				od = o.Object
+			case c.Has(CapDeltaRangeMarkers):
+				// from -23 a delta within a group counts from 2, the smallest gap that needs one
+				od -= 2
 			}
 		}
 	default:
@@ -671,5 +718,72 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 	if !o.Datagram {
 		s.hasSubgroup, s.subgroup = true, o.Subgroup
 	}
+	return b, nil
+}
+
+func (c *Codec) markerFlags(kind message.RangeEnd) (uint64, bool) {
+	// a draft without a marker gets the nearest it has: Unknown for timed out and gone, nothing for a group end
+	switch kind {
+	case message.RangeEndNonExistent:
+		return fetchEndNonExistent, true
+	case message.RangeEndUnknown:
+		return fetchEndUnknown, true
+	case message.RangeEndTimedOut:
+		if c.Has(CapEndOfTimedOutRange) {
+			return fetchEndTimedOut, true
+		}
+		return fetchEndUnknown, true
+	case message.RangeEndGone:
+		if c.Has(CapFetchEndMarkers) {
+			return fetchEndGone, true
+		}
+		return fetchEndUnknown, true
+	case message.RangeEndGroup, message.RangeEndTrack:
+		if !c.Has(CapFetchEndMarkers) {
+			return 0, true
+		}
+		if kind == message.RangeEndTrack {
+			return fetchEndOfTrack, true
+		}
+		return fetchEndOfGroup, true
+	}
+	return 0, false
+}
+
+func (w *FetchWriter) appendMarker(b []byte, o *message.FetchObject) ([]byte, error) {
+	c, s := w.c, &w.s
+	flags, ok := c.markerFlags(o.EndOfRange)
+	switch {
+	case !ok:
+		return b, ErrObjectFields
+	case flags == 0:
+		return b, nil
+	case o.EndOfRange.EndsGroup():
+		if !s.started {
+			return b, ErrObjectOrder
+		}
+		s.object = math.MaxUint64
+		return c.putVarint(b, flags), nil
+	}
+	gd, od := o.Group, o.Object
+	if s.started && c.Has(CapDeltaRangeMarkers) {
+		ascending := s.order != message.GroupOrderDescending
+		switch {
+		case o.Group == s.group:
+			if o.Object <= s.object {
+				return b, ErrObjectOrder
+			}
+			gd, od = 0, o.Object-s.object-1
+		case ascending && o.Group > s.group:
+			gd = o.Group - s.group
+		case !ascending && o.Group < s.group:
+			gd = s.group - o.Group
+		default:
+			return b, ErrObjectOrder
+		}
+	}
+	b = c.putVarint(b, flags)
+	b = c.putVarint(c.putVarint(b, gd), od)
+	s.started, s.group, s.object = true, o.Group, o.Object
 	return b, nil
 }

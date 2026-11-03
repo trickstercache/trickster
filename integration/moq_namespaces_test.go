@@ -70,14 +70,15 @@ func TestMoQNamespaceDiscovery(t *testing.T) {
 	// a broadcast published into moq-relay is reported to a SUBSCRIBE_NAMESPACE sent to Trickster in front of it,
 	// and withdrawn when its publisher leaves: the discovery a moq-dev player depends on
 	requireMoQRelay(t)
-	drafts := codec.Drafts()
-	_, addr := moqInteropHarness(t, drafts)
+	_, addr := moqInteropHarness(t, moqDevDrafts())
 	run := strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	for _, d := range drafts {
+	for _, d := range codec.Drafts() {
 		t.Run(strconv.Itoa(d), func(t *testing.T) {
+			// a draft moq-relay lacks is bridged from the newest it speaks
+			up := min(d, moqDevNewestDraft)
 			prefix := wire.Namespace{[]byte(moqDiscoveryRoot), []byte(run)}
-			sub, err := dialMoQWith(t, addr, fmt.Sprintf(moqInteropHost, d), codec.ALPNFor(d))
+			sub, err := dialMoQWith(t, addr, fmt.Sprintf(moqInteropHost, up), codec.ALPNFor(d))
 			require.NoError(t, err)
 			w := &namespaceEvents{got: make(chan message.Message, 16)}
 			req, err := sub.Open(context.Background(), &message.SubscribeNamespace{
@@ -89,7 +90,7 @@ func TestMoQNamespaceDiscovery(t *testing.T) {
 			// the publisher leaves when its subtest ends, which withdraws its namespace
 			name := []byte(strconv.Itoa(d))
 			t.Run("announced", func(t *testing.T) {
-				publishTo(t, moqRelayAddr, d, append(prefix, name))
+				publishTo(t, moqRelayAddr, up, append(prefix, name))
 				n, ok := w.next(t, "NAMESPACE").(*message.Namespace)
 				require.True(t, ok, "a NAMESPACE reports the broadcast")
 				require.Equal(t, wire.Namespace{name}, n.Suffix)

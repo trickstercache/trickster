@@ -37,12 +37,23 @@ func (h *harness) clientDraft(draft int) *session.Session {
 
 func (h *harness) clientDraftWith(draft int, handler session.Handler) *session.Session {
 	h.t.Helper()
+	return h.clientDraftConn(draft, handler, nil)
+}
+
+func (h *harness) clientDraftConn(draft int, handler session.Handler,
+	wrapServer func(*memconn.Conn) session.Conn,
+) *session.Session {
+	h.t.Helper()
 	c, ok := codec.ForDraft(draft)
 	if !ok {
 		h.t.Fatalf("draft %d", draft)
 	}
 	cc, sc := memconn.Pair()
-	server, err := session.New(sc, session.Options{Role: session.RoleServer, Codec: c, Handler: h.relay.Handler(h.scope)})
+	var sconn session.Conn = sc
+	if wrapServer != nil {
+		sconn = wrapServer(sc)
+	}
+	server, err := session.New(sconn, session.Options{Role: session.RoleServer, Codec: c, Handler: h.relay.Handler(h.scope)})
 	if err != nil {
 		h.t.Fatal(err)
 	}

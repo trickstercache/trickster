@@ -45,6 +45,7 @@ const (
 	reconnectAttempts       = 5
 	spillQueueLen           = 256
 	finishWait              = 2 * time.Second
+	statusRefreshWait       = 2 * time.Second
 )
 
 // Scope is the authority and path a downstream session connected to, which select the origin of its tracks

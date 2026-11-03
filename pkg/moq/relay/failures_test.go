@@ -254,7 +254,7 @@ func TestGapObjectTooLarge(t *testing.T) {
 	h := newHarness(t, relay.Options{MaxObjectSize: 4}, nil)
 	h.o.store("video", 0, objs("far too large")...)
 	freq, fr := fetch(t, h.client(), "video", fetchRange(0, 0, 0, 0))
-	if _, got := fetched(t, freq, fr); len(got) != 1 || got[0] != "" {
+	if _, got := fetched(t, freq, fr); len(got) != 0 {
 		t.Errorf("fetched %v", got)
 	}
 	fr.mu.Lock()

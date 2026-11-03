@@ -57,7 +57,7 @@ func roundTrip(t *testing.T, c *Codec, m message.Message) message.Message {
 	if err != nil {
 		t.Fatalf("%s: encode: %v", m.Kind(), err)
 	}
-	typ, body, err := wire.ReadMessage(bufio.NewReader(bytes.NewReader(b)), nil)
+	typ, body, err := c.ReadMessage(bufio.NewReader(bytes.NewReader(b)), nil)
 	if err != nil {
 		t.Fatalf("%s: frame: %v", m.Kind(), err)
 	}
@@ -65,8 +65,13 @@ func roundTrip(t *testing.T, c *Codec, m message.Message) message.Message {
 	if err != nil {
 		t.Fatalf("%s: decode: %v", m.Kind(), err)
 	}
-	if got.Kind() != m.Kind() {
-		t.Fatalf("decoded %s, want %s", got.Kind(), m.Kind())
+	want := m.Kind()
+	if want == message.KindFetchOK && c.Has(CapFetchRequestOK) {
+		// from -23 FETCH_OK is a REQUEST_OK, which only the request stream it answers tells apart
+		want = message.KindRequestOK
+	}
+	if got.Kind() != want {
+		t.Fatalf("decoded %s, want %s", got.Kind(), want)
 	}
 	again, err := c.AppendMessage(nil, got)
 	if err != nil {
@@ -177,7 +182,7 @@ func TestRoundTripEveryMessage(t *testing.T) {
 					Path: "/live?k=v", HasPath: true, Authority: "relay.example.com:443", HasAuthority: true,
 					AuthTokens:            []wire.Token{{AliasType: wire.TokenUseValue, Type: 2, Value: []byte("jwt")}},
 					MaxAuthTokenCacheSize: 4096, Implementation: "trickster/test", MaxFilterRanges: 16,
-					MaxRequestUpdates: 8, Unknown: []wire.KV{{Type: 0x9d, Uint: 1}},
+					MaxRequestUpdates: 8, MaxControlMessageSize: 1 << 20, Unknown: []wire.KV{{Type: 0x9d, Uint: 1}},
 				},
 				&message.GoAway{NewSessionURI: "moqt://other.example.com/live", Timeout: 30000},
 				&message.RequestOK{Params: ok, TrackProperties: props},
@@ -185,6 +190,10 @@ func TestRoundTripEveryMessage(t *testing.T) {
 				&message.RequestError{
 					Code: message.RequestRedirect, Reason: "moved",
 					Redirect: &message.Redirect{ConnectURI: "moqt://b.example.com", Track: track("v2", "live")},
+				},
+				&message.RequestError{
+					Code: message.RequestUnsupportedExtension, Reason: "mandatory",
+					UnsupportedProperties: []uint64{0x4000, 0x4002},
 				},
 				&message.RequestUpdate{RequestID: 4, Params: upd},
 				&message.Subscribe{RequestID: 2, Track: track("video", "live", "sports"), Params: sub},
@@ -201,6 +210,7 @@ func TestRoundTripEveryMessage(t *testing.T) {
 					EndOfTrack: true, EndLocation: wire.Location{Group: 9, Object: 4},
 					TrackProperties: props,
 				},
+				&message.FetchOK{EndLocation: wire.Location{Group: 7, Object: 99}, Params: ok},
 				&message.TrackStatus{RequestID: 8, Track: track("video", "live")},
 				&message.PublishNamespace{RequestID: 10, Prefix: ns("live")},
 				&message.SubscribeNamespace{RequestID: 12, Prefix: ns(), Options: options},
@@ -511,7 +521,7 @@ func TestLocationFilterSpellings(t *testing.T) {
 }
 
 func TestCodecRegistry(t *testing.T) {
-	if len(Supported()) != len(Drafts()) || Drafts()[0] != 22 || Drafts()[len(Drafts())-1] != 17 {
+	if len(Supported()) != len(Drafts()) || Drafts()[0] != 23 || Drafts()[len(Drafts())-1] != 17 {
 		t.Errorf("drafts %v", Drafts())
 	}
 	c, ok := ForALPN("moqt-21")
@@ -527,7 +537,7 @@ func TestCodecRegistry(t *testing.T) {
 	if got := ALPNs([]int{22, 99, 20}); len(got) != 2 || got[0] != "moqt-22" || got[1] != "moqt-20" {
 		t.Errorf("ALPNs %v", got)
 	}
-	if ServerPreference[0] != 22 || ClientOffer[0] != 22 {
+	if ServerPreference[0] != 23 || ClientOffer[0] != 23 {
 		t.Error("preference defaults")
 	}
 	if _, ok := c.MessageType(message.KindPublishOK); ok {
@@ -679,7 +689,7 @@ func TestEncodeRefusals(t *testing.T) {
 		&message.RequestError{Code: message.RequestRedirect, Redirect: &message.Redirect{Track: track("t", deep...)}},
 	} {
 		if _, err := c.AppendMessage(nil, m); !errors.Is(err, wire.ErrNamespaceTooLong) &&
-			!errors.Is(err, wire.ErrEmptyNamespaceField) {
+			!errors.Is(err, wire.ErrEmptyNamespaceField) && !errors.Is(err, wire.ErrNamespaceFields) {
 			t.Errorf("%s with a malformed name encoded: %v", m.Kind(), err)
 		}
 	}

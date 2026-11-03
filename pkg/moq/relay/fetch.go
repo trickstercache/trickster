@@ -51,6 +51,9 @@ type fetchJob struct {
 	deadline time.Time
 	gaps     int
 	defPrio  uint8
+	// lastObj is the object last written while hasLastObj, which a marker clears
+	lastObj    wire.Location
+	hasLastObj bool
 }
 
 type gapRange struct {
@@ -65,7 +68,11 @@ func (j *fetchJob) run(ctx context.Context) error {
 	j.out, j.deadline = out, time.Now().Add(j.budget)
 	j.defPrio = j.t.properties().PublisherPriority()
 	if err = j.serve(ctx); err != nil {
-		out.Reset(message.ResetInternalError)
+		code := message.ResetInternalError
+		if errors.Is(err, errMalformed) {
+			code = message.ResetMalformedTrack
+		}
+		out.Reset(code)
 		return err
 	}
 	return out.Close()
@@ -143,7 +150,7 @@ func (j *fetchJob) serve(ctx context.Context) error {
 		if !done && cursor <= j.end.Group {
 			addGap(cursor, j.end.Group)
 		}
-		return flush()
+		return j.closeLast(flush())
 	}
 	cursor, done := j.end.Group, false
 	for _, k := range slices.Backward(known) {
@@ -162,7 +169,28 @@ func (j *fetchJob) serve(ctx context.Context) error {
 	if !done && cursor >= j.start.Group {
 		addGap(j.start.Group, cursor)
 	}
-	return flush()
+	return j.closeLast(flush())
+}
+
+func (j *fetchJob) closeLast(err error) error {
+	// the response's last object is followed by End of Group when it is known to end its group
+	if err != nil || !j.hasLastObj {
+		return err
+	}
+	if last, known := j.t.lastObject(j.lastObj.Group); known && last == j.lastObj.Object {
+		return j.endGroup(j.lastObj.Group, last)
+	}
+	return nil
+}
+
+func (j *fetchJob) endGroup(group, end uint64) error {
+	// the group ends at end, and the track with it when that is the track's end
+	kind := message.RangeEndGroup
+	if j.t.endsBy(wire.Location{Group: group, Object: end}) {
+		kind = message.RangeEndTrack
+	}
+	j.hasLastObj = false
+	return j.out.WriteObject(&message.FetchObject{EndOfRange: kind, Group: group, Object: math.MaxUint64})
 }
 
 func (j *fetchJob) local(g uint64) ([]*object, bool) {
@@ -180,15 +208,23 @@ func (j *fetchJob) local(g uint64) ([]*object, bool) {
 }
 
 func (j *fetchJob) writeGroup(ctx context.Context, objs []*object, g uint64) error {
+	// objs hold the group in full over [lo, hi], so when no object follows the last one written and the group's
+	// end lies in range, that object ends its group
 	lo, hi := j.lo(g), j.hi(g)
+	var last *object
 	for _, o := range objs {
-		if o.id < lo || o.id > hi || o.status != message.StatusNormal || !j.rng.pass(o, j.defPrio) {
+		if o.id < lo || o.id > hi || o.status != message.StatusNormal {
+			continue
+		}
+		if !j.rng.pass(o, j.defPrio) {
+			last = nil
 			continue
 		}
 		if !waitComplete(ctx, o) {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			last = nil
 			if err := j.marker(message.RangeEndUnknown, o.loc()); err != nil {
 				return err
 			}
@@ -197,6 +233,13 @@ func (j *fetchJob) writeGroup(ctx context.Context, objs []*object, g uint64) err
 		if err := j.writeObject(o); err != nil {
 			return err
 		}
+		last = o
+	}
+	if last == nil {
+		return nil
+	}
+	if end, known := j.t.lastObject(g); known && end >= last.id && end <= hi {
+		return j.endGroup(g, end)
 	}
 	return nil
 }
@@ -235,10 +278,12 @@ func (j *fetchJob) writeObject(o *object) error {
 		return err
 	}
 	j.t.r.m.object(directionOut, deliveryFetch, o.size())
+	j.lastObj, j.hasLastObj = o.loc(), true
 	return nil
 }
 
 func (j *fetchJob) marker(kind message.RangeEnd, at wire.Location) error {
+	j.hasLastObj = false
 	return j.out.WriteObject(&message.FetchObject{EndOfRange: kind, Group: at.Group, Object: at.Object})
 }
 
@@ -274,8 +319,16 @@ func (j *fetchJob) fetchGap(ctx context.Context, g gapRange) error {
 	if err != nil {
 		return j.gapFailed(ctx, end)
 	}
-	if _, ok := resp.(*message.FetchOK); !ok {
+	sess := req.Session()
+	fok, ok := resp.(*message.FetchOK)
+	switch {
+	case !ok:
 		return j.marker(message.RangeEndUnknown, end)
+	case hasMandatory(fok.TrackProperties):
+		// a track the relay cannot process ends the fetch, which FETCH_OK has already started downstream (§3.7)
+		return unsupported(fok.TrackProperties)
+	case malformedProps(sess, fok.TrackProperties, true):
+		return errMalformed
 	}
 	var in *session.IncomingFetch
 	select {
@@ -283,7 +336,7 @@ func (j *fetchJob) fetchGap(ctx context.Context, g gapRange) error {
 	case <-gctx.Done():
 		return j.gapFailed(ctx, end)
 	}
-	return j.copyGap(ctx, in, g, end)
+	return j.copyGap(ctx, in, sess, g, end)
 }
 
 func (j *fetchJob) gapFailed(ctx context.Context, end wire.Location) error {
@@ -321,11 +374,14 @@ func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*se
 	return req, release, nil
 }
 
-func (j *fetchJob) copyGap(ctx context.Context, in *session.IncomingFetch, g gapRange, end wire.Location) error {
+func (j *fetchJob) copyGap(ctx context.Context, in *session.IncomingFetch, sess *session.Session, g gapRange,
+	end wire.Location,
+) error {
 	// the upstream fetch stream is forwarded as it arrives, and each group it delivers in full is cached
 	b := &groupBuilder{j: j, g: g}
 	var last wire.Location
-	wrote := false
+	// inSync says the entry last forwarded is the upstream's last, which an End of Group or Track refers to
+	wrote, inSync := false, false
 	for {
 		fo, err := in.Next()
 		if err != nil {
@@ -345,11 +401,24 @@ func (j *fetchJob) copyGap(ctx context.Context, in *session.IncomingFetch, g gap
 		loc := wire.Location{Group: fo.Group, Object: fo.Object}
 		if fo.EndOfRange != message.RangeEndNone {
 			b.marker(fo)
+			if fo.EndOfRange.EndsGroup() && !inSync {
+				// it ends an object the filters kept from the subscriber, which the last one forwarded is not
+				continue
+			}
+			inSync = true
 			if err = j.out.WriteObject(&fo); err != nil {
 				return err
 			}
+			j.hasLastObj = false
 			last, wrote = loc, true
 			continue
+		}
+		if malformedProps(sess, fo.Properties, false) {
+			// nothing of a malformed track is cached or forwarded, and the fetch is reset for it
+			in.Cancel(message.ResetMalformedTrack)
+			b.flush(false)
+			j.t.markMalformed()
+			return errMalformed
 		}
 		if fo.PayloadLen > j.t.r.maxObject {
 			in.Cancel(message.ResetExcessiveLoad)
@@ -367,12 +436,13 @@ func (j *fetchJob) copyGap(ctx context.Context, in *session.IncomingFetch, g gap
 		b.add(o)
 		j.t.r.m.fetched(sourceUpstream, 1)
 		if !j.rng.pass(o, j.defPrio) {
+			inSync = false
 			continue
 		}
 		if err = j.writeObject(o); err != nil {
 			return err
 		}
-		last, wrote = loc, true
+		last, wrote, inSync = loc, true, true
 	}
 }
 
@@ -420,8 +490,9 @@ func (b *groupBuilder) add(o *object) {
 }
 
 func (b *groupBuilder) marker(fo message.FetchObject) {
+	// a span that does not exist, or the group's end, leaves the group whole
 	b.begin(fo.Group)
-	if fo.EndOfRange != message.RangeEndNonExistent {
+	if fo.EndOfRange != message.RangeEndNonExistent && !fo.EndOfRange.EndsGroup() {
 		b.tainted = true
 	}
 }
@@ -441,4 +512,9 @@ func (b *groupBuilder) flush(complete bool) {
 	if job, ok := j.t.spillJob(cg); ok {
 		j.t.r.queueSpill(job)
 	}
+}
+
+func hasMandatory(p message.Properties) bool {
+	_, ok := p.Mandatory()
+	return ok
 }

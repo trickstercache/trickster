@@ -42,12 +42,103 @@ const (
 // DefaultPublisherPriority applies when a track sets no DEFAULT_PUBLISHER_PRIORITY
 const DefaultPublisherPriority = 128
 
+const (
+	greaseBase = 0x9d
+	greaseStep = 0x7f
+)
+
 var (
 	// ErrNestedImmutable is returned when Immutable Properties contain Immutable Properties
 	ErrNestedImmutable = errors.New("moq: immutable properties nest")
 	// ErrPropertyValue is returned when a known property's value is outside its allowed range
 	ErrPropertyValue = errors.New("moq: property value out of range")
+	// ErrPropertyScope is returned for a known property outside its scope, such as a track property on an object
+	ErrPropertyScope = errors.New("moq: property outside its scope")
+	// ErrPropertyRepeated is returned for a known property that appears more than once
+	ErrPropertyRepeated = errors.New("moq: property repeated")
 )
+
+// propertyScope is where a property this implementation understands may appear, and its bit for repetition checks
+type propertyScope struct {
+	track, object bool
+	bit           uint16
+}
+
+func scopeOf(t uint64) (propertyScope, bool) {
+	switch t {
+	case PropObjectDeliveryTimeout:
+		return propertyScope{true, true, 1 << 0}, true
+	case PropMaxCacheDuration:
+		return propertyScope{true, false, 1 << 1}, true
+	case PropSubgroupDeliveryTimeout:
+		return propertyScope{true, true, 1 << 2}, true
+	case PropImmutable:
+		return propertyScope{true, true, 1 << 3}, true
+	case PropDefaultPublisherPriority:
+		return propertyScope{true, false, 1 << 4}, true
+	case PropDefaultGroupOrder:
+		return propertyScope{true, false, 1 << 5}, true
+	case PropDynamicGroups:
+		return propertyScope{true, false, 1 << 6}, true
+	case PropPriorGroupIDGap:
+		return propertyScope{false, true, 1 << 7}, true
+	case PropPriorObjectIDGap:
+		return propertyScope{false, true, 1 << 8}, true
+	}
+	return propertyScope{}, false
+}
+
+// CheckObject reports a Mandatory Track Property among an object's properties, which makes its track malformed
+func (p Properties) CheckObject() error {
+	if len(p) == 0 {
+		return nil
+	}
+	if _, ok := p.Mandatory(); ok {
+		return ErrPropertyScope
+	}
+	return nil
+}
+
+// CheckScope reports a property this implementation understands that appears outside its scope, track or object,
+// or more than once counting Immutable Properties, either of which makes the track malformed (from draft -23)
+func (p Properties) CheckScope(track bool) error {
+	if len(p) == 0 {
+		return nil
+	}
+	var seen uint16
+	check := func(t uint64) error {
+		if !track && isMandatory(t) {
+			return ErrPropertyScope
+		}
+		sc, known := scopeOf(t)
+		switch {
+		case !known:
+			return nil
+		case track && !sc.track, !track && !sc.object:
+			return ErrPropertyScope
+		case seen&sc.bit != 0:
+			return ErrPropertyRepeated
+		}
+		seen |= sc.bit
+		return nil
+	}
+	it := wire.NewKVIter(p)
+	for kv, ok := it.Next(); ok; kv, ok = it.Next() {
+		if err := check(kv.Type); err != nil {
+			return err
+		}
+		if kv.Type != PropImmutable {
+			continue
+		}
+		inner := wire.NewKVIter(kv.Bytes)
+		for ikv, ok := inner.Next(); ok; ikv, ok = inner.Next() {
+			if err := check(ikv.Type); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // Properties is a block of Key-Value-Pair properties kept exactly as received, so a relay caches and forwards
 // them unchanged; lookups decode lazily and search inside Immutable Properties as well
@@ -123,21 +214,50 @@ func validateProperty(kv wire.KV, top bool) error {
 // Mandatory returns the first Mandatory Track Property type present, which this implementation does not
 // understand, so the track must be refused rather than processed or forwarded
 func (p Properties) Mandatory() (uint64, bool) {
+	var first uint64
+	found := false
+	p.eachMandatory(func(t uint64) bool {
+		first, found = t, true
+		return false
+	})
+	return first, found
+}
+
+// MandatoryTypes returns every Mandatory Track Property type present, for UNSUPPORTED_PROPERTY Error Details
+func (p Properties) MandatoryTypes() []uint64 {
+	var out []uint64
+	p.eachMandatory(func(t uint64) bool {
+		out = append(out, t)
+		return true
+	})
+	return out
+}
+
+func (p Properties) eachMandatory(fn func(uint64) bool) {
 	it := wire.NewKVIter(p)
 	for kv, ok := it.Next(); ok; kv, ok = it.Next() {
-		if kv.Type >= PropMandatoryMin && kv.Type <= PropMandatoryMax {
-			return kv.Type, true
+		if isMandatory(kv.Type) && !fn(kv.Type) {
+			return
 		}
 		if kv.Type == PropImmutable {
 			inner := wire.NewKVIter(kv.Bytes)
 			for ikv, ok := inner.Next(); ok; ikv, ok = inner.Next() {
-				if ikv.Type >= PropMandatoryMin && ikv.Type <= PropMandatoryMax {
-					return ikv.Type, true
+				if isMandatory(ikv.Type) && !fn(ikv.Type) {
+					return
 				}
 			}
 		}
 	}
-	return 0, false
+}
+
+func isMandatory(t uint64) bool {
+	// grease values in the range are not Mandatory Track Properties
+	return t >= PropMandatoryMin && t <= PropMandatoryMax && !IsGrease(t)
+}
+
+// IsGrease reports whether v is a value reserved for greasing, 0x7f * N + 0x9D
+func IsGrease(v uint64) bool {
+	return v >= greaseBase && (v-greaseBase)%greaseStep == 0
 }
 
 // PublisherPriority returns DEFAULT_PUBLISHER_PRIORITY, or the default of 128

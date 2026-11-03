@@ -32,12 +32,13 @@ Two variations each change one part of this picture, and combine with it and wit
 ## Compatibility
 
 MoQT is still an Internet-Draft, and implementations in the field speak different drafts.
-Trickster speaks drafts -17 through -22 and negotiates one per session; a session on one draft
+Trickster speaks drafts -17 through -23 and negotiates one per session; a session on one draft
 can relay a track whose origin speaks another.
 
 | Draft | ALPN | Notes |
 | --- | --- | --- |
-| -22 | `moqt-22` | the newest and the preferred draft; `LOCATION_FILTER` carries its type |
+| -23 | `moqt-23` | the newest and the preferred draft; varint message lengths, `FETCH` answered by `REQUEST_OK`, `PAUSED` for `FORWARD`, specific session error codes |
+| -22 | `moqt-22` | `LOCATION_FILTER` carries its type |
 | -21 | `moqt-21` | editorial changes only |
 | -20 | `moqt-20` | fill fetch streams replace Joining FETCH |
 | -19 | `moqt-19` | range filters, `MAX_REQUEST_UPDATES`, multiple subscriptions per track |
@@ -50,8 +51,9 @@ newest first. moq-dev's relay before 0.17.3 and CLI before 0.14.3 encode -22 as 
 with those releases, list -21 ahead of -22 in `drafts` and `upstream.drafts`. Drafts before -17
 are not supported.
 
-Interoperability is tested on every draft against [moq-dev](https://github.com/moq-dev/moq)'s
-relay (0.17.5) and `moq` CLI (0.14.5), including FETCH.
+Interoperability is tested on every draft through -22 against [moq-dev](https://github.com/moq-dev/moq)'s
+relay (0.17.5) and `moq` CLI (0.14.5), including FETCH. moq-dev does not speak -23 yet, so
+ALPN settles on -22 with it; the interop run bridges -23 subscribers to moq-dev on -22.
 
 ## How clients reach the relay
 
@@ -112,7 +114,7 @@ backends:
 | `moq.max_sessions` | `10000` | sessions served at once; past it, a new connection is closed ("session limit reached") |
 | `moq.max_requests_per_session` | `1024` | requests a client may have open at once; past it, a request is refused with `EXCESSIVE_LOAD` |
 | `moq.max_filter_ranges`, `moq.max_request_updates` | `16`, `64` | advertised to clients in SETUP |
-| `moq.drafts` | `[22, 21, 20, 19, 18, 17]` | accepted drafts, most preferred first |
+| `moq.drafts` | `[23, 22, 21, 20, 19, 18, 17]` | accepted drafts, most preferred first |
 | `moq.implementation` | `trickster/<version>` | the `MOQT_IMPLEMENTATION` setup option |
 | `moq.goaway_uri` | | the `moqt://` URI a GOAWAY names when the listener stops; see [Reloads and shutdown](#reloads-and-shutdown) |
 
@@ -166,7 +168,7 @@ since a native session carries no HTTP credentials; authorize its sessions with 
 | `negative_cache_name` | `default` | the [negative cache](./negative-caching.md) whose `404` TTL keeps an origin's `DOES_NOT_EXIST` refusal of a track; see [Caching](#caching) |
 | `tls` | | the certificate served to clients, and the origin's verification |
 | `moq.upstream.alb` | | an alb of `moq` backends to reach the origins through, in place of `origin_url`; see [Origin pools](#origin-pools) |
-| `moq.upstream.drafts` | `[22, 21, 20, 19, 18, 17]` | drafts offered to the origin, most preferred first |
+| `moq.upstream.drafts` | `[23, 22, 21, 20, 19, 18, 17]` | drafts offered to the origin, most preferred first |
 | `moq.upstream.prewarm` | `false` | keeps the upstream subscription forwarding while every subscriber is paused |
 | `moq.upstream.reconnect_backoff` | `1s` | the first wait before re-subscribing a lost upstream subscription |
 | `moq.upstream.linger` | `5s` | how long an upstream subscription stays after its last subscriber leaves |
@@ -210,7 +212,7 @@ all apply to it.
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `moq.webtransport.drafts` | `[22, 21, 20, 19, 18, 17]` | drafts accepted from WebTransport clients, most preferred first |
+| `moq.webtransport.drafts` | `[23, 22, 21, 20, 19, 18, 17]` | drafts accepted from WebTransport clients, most preferred first |
 | `moq.webtransport.default_draft` | `0` | the draft assumed for a client that offers no `WT-Available-Protocols`, and for a WebTransport origin that answers without `WT-Protocol`; `0` refuses both |
 | `moq.webtransport.allowed_origins` | | browser origins (`scheme://host[:port]`) that may open sessions, or `*`; empty allows only an origin naming the requested host, and a client that sends no `Origin` is always allowed |
 | `moq.webtransport.max_sessions` | `10000` | WebTransport sessions the backend serves at once |
@@ -294,7 +296,7 @@ leaves, so a returning viewer finds it warm.
 
 When the upstream gives an `EXPIRES`, the relay asks to extend the subscription before it
 elapses, with an empty `REQUEST_UPDATE` at three quarters of the time given. A new `EXPIRES` in
-the answer schedules the next renewal; an answer without one, such as to a `FORWARD` change,
+the answer schedules the next renewal; an answer without one, such as to a `FORWARD` (`PAUSED`) change,
 leaves the pending renewal as it was. The relay never ends a downstream subscription on a
 timer, so it sends no `EXPIRES` downstream.
 
@@ -345,7 +347,14 @@ ways, and announces a namespace once however many sources report it:
 - It accepts `PUBLISH_NAMESPACE` from the origin on its upstream session, as moq-dev's relay
   sends, and reports those namespaces until the origin withdraws them or the session ends.
 
-`SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay `PUBLISH`. A
+`SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay `PUBLISH`. Through
+draft -22 a session's `SUBSCRIBE_NAMESPACE` and `SUBSCRIBE_TRACKS` prefixes may not overlap, and
+one that does is refused with `PREFIX_OVERLAP`. From -23 they may: a track under several
+`SUBSCRIBE_TRACKS` is offered once for each, its `PUBLISH` naming the request with
+`SUBSCRIBE_TRACKS_ID` and carrying that request's `FILL_PARAMETERS`. A `REQUEST_UPDATE` naming a
+new `TRACK_NAMESPACE_PREFIX` moves either request: a `SUBSCRIBE_NAMESPACE` withdraws the
+namespaces the new prefix leaves out and reports those it brings in, and a `SUBSCRIBE_TRACKS`
+offers the tracks now under it, never one twice. A
 backend with an origin forwards it the same way, shared by prefix (as `SUBSCRIBE_NAMESPACE` with
 the PUBLISH option on draft -17). Each `PUBLISH` the origin sends in answer becomes a source of
 its track and is offered to every matching subscriber, in every scope. A subscriber in another

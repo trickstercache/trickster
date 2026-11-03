@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -146,7 +147,7 @@ func TestNamespace(t *testing.T) {
 		many[i] = []byte("f")
 	}
 	r = NewReader(AppendNamespace(nil, many))
-	if r.Namespace(); !errors.Is(r.Err(), ErrNamespaceTooLong) {
+	if r.Namespace(); !errors.Is(r.Err(), ErrNamespaceFields) {
 		t.Errorf("too many fields should fail, got %v", r.Err())
 	}
 	big := Namespace{bytes.Repeat([]byte("a"), 3000), bytes.Repeat([]byte("b"), 1200)}
@@ -171,7 +172,7 @@ func TestNamespace(t *testing.T) {
 		{ns, []byte("video"), nil},
 		{Namespace{}, nil, nil},
 		{Namespace{[]byte{}}, nil, ErrEmptyNamespaceField},
-		{many, nil, ErrNamespaceTooLong},
+		{many, nil, ErrNamespaceFields},
 		{big, nil, ErrNamespaceTooLong},
 		{near, bytes.Repeat([]byte("n"), 100), ErrNamespaceTooLong},
 	} {
@@ -389,5 +390,68 @@ func TestMessageFraming(t *testing.T) {
 	}
 	if v, err := ReadVarintFrom(bufio.NewReader(bytes.NewReader(AppendVarint(nil, 1<<50)))); err != nil || v != 1<<50 {
 		t.Errorf("ReadVarintFrom got %d %v", v, err)
+	}
+}
+
+func TestVarintMessageFraming(t *testing.T) {
+	// the length is the shortest varint at every width boundary, ahead of an unchanged body
+	for _, n := range []int{0, 1, maxVarint1, maxVarint1 + 1, maxVarint2, maxVarint2 + 1, MaxMessageLen} {
+		body := make([]byte, n)
+		for i := range body {
+			body[i] = byte(i)
+		}
+		b, at := BeginVarintMessage([]byte{0xee}, 0x2f00)
+		b, err := EndVarintMessage(append(b, body...), at)
+		if err != nil {
+			t.Fatalf("%d: %v", n, err)
+		}
+		want := append(AppendVarint([]byte{0xee}, 0x2f00), AppendVarint(nil, uint64(n))...)
+		if want = append(want, body...); !bytes.Equal(b, want) {
+			t.Fatalf("%d: framing differs from the minimal encoding", n)
+		}
+		r := bufio.NewReader(bytes.NewReader(b[1:]))
+		if typ, err := ReadVarintFrom(r); err != nil || typ != 0x2f00 {
+			t.Fatalf("%d: type %#x %v", n, typ, err)
+		}
+		if got, err := ReadVarintMessageBody(r, nil, MaxMessageLen); err != nil || !bytes.Equal(got, body) {
+			t.Fatalf("%d: body %v", n, err)
+		}
+	}
+	b, at := BeginVarintMessage(nil, 1)
+	if _, err := EndVarintMessage(append(b, make([]byte, MaxMessageLen+1)...), at); !errors.Is(err, ErrMessageTooLong) {
+		t.Error("a body past 65535 bytes should be refused")
+	}
+	if _, err := ReadVarintMessageBody(bufio.NewReader(bytes.NewReader(AppendVarint(nil, 10))), nil, 9); !errors.Is(err,
+		ErrMessageTooLong) {
+		t.Errorf("a length past the limit should be refused, got %v", err)
+	}
+}
+
+func TestVarintMessageBodyGrowsWithInput(t *testing.T) {
+	const limit = 1 << 24
+	// a stalled body declared at the limit holds about what arrived, not what was declared
+	stalled := append(AppendVarint(nil, limit), "abc"...)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := ReadVarintMessageBody(bufio.NewReader(bytes.NewReader(stalled)), nil, limit)
+	runtime.ReadMemStats(&after)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("a cut body should be io.ErrUnexpectedEOF, got %v", err)
+	}
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 4*bodyChunk {
+		t.Errorf("a stalled body allocated %d bytes", grew)
+	}
+	// a long body is still read whole, and a short one into the caller's buffer
+	long := bytes.Repeat([]byte("0123456789abcdef"), 5*bodyChunk/16+3)
+	in := append(AppendVarint(nil, uint64(len(long))), long...)
+	if got, err := ReadVarintMessageBody(bufio.NewReader(bytes.NewReader(in)), nil, limit); err != nil ||
+		!bytes.Equal(got, long) {
+		t.Fatalf("a long body was not read whole: %v", err)
+	}
+	buf := make([]byte, 0, 8)
+	got, err := ReadVarintMessageBody(bufio.NewReader(bytes.NewReader([]byte{3, 'a', 'b', 'c'})), buf, limit)
+	if err != nil || string(got) != "abc" || &got[0] != &buf[:1][0] {
+		t.Errorf("a short body should land in the caller's buffer: %q %v", got, err)
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -60,14 +61,21 @@ const (
 	moqCLIBackend        = "moqcli"
 	moqCLIWait           = time.Minute
 	moqCLIPullWait       = 5 * time.Minute
+	// moqDevNewestDraft is the newest draft the pinned moq-relay and moq CLI speak
+	moqDevNewestDraft = 22
 )
+
+// moqDevDrafts returns the supported drafts moq-dev's peers speak too, newest first
+func moqDevDrafts() []int {
+	return slices.DeleteFunc(codec.Drafts(), func(d int) bool { return d > moqDevNewestDraft })
+}
 
 func requireMoQRelay(t *testing.T) {
 	t.Helper()
 	try := func() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
-		conn, err := quicdial.DialAddr(ctx, moqRelayAddr, moqPeerTLS(codec.ALPNFor(codec.ClientOffer[0])), nil)
+		conn, err := quicdial.DialAddr(ctx, moqRelayAddr, moqPeerTLS(codec.ALPNs(codec.ClientOffer)...), nil)
 		if err != nil {
 			return err
 		}
@@ -221,15 +229,17 @@ func (lt *liveTrack) publish() []string {
 
 func TestMoQInterop(t *testing.T) {
 	requireMoQRelay(t)
-	drafts := codec.Drafts()
-	h, addr := moqInteropHarness(t, drafts)
+	ups := moqDevDrafts()
+	h, addr := moqInteropHarness(t, ups)
 	run := strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	for i, up := range drafts {
-		// each upstream draft is read by a subscriber on another, so Trickster bridges the two
-		down := drafts[(i+1)%len(drafts)]
+	for i, down := range codec.Drafts() {
+		// each downstream draft reads an upstream on the next older one moq-relay speaks, so Trickster bridges
+		// the two, and the newest wraps around to read the oldest's neighbor
+		up := ups[i%len(ups)]
 		t.Run(fmt.Sprintf("upstream-%d-downstream-%d", up, down), func(t *testing.T) {
-			ns := wire.Namespace{[]byte("interop"), []byte(run), []byte(strconv.Itoa(up))}
+			// both drafts name the track, since the newest downstream reuses an upstream an earlier pair used
+			ns := wire.Namespace{[]byte("interop"), []byte(run), []byte(fmt.Sprintf("%d-%d", up, down))}
 			ft := message.FullTrackName{Namespace: ns, Name: []byte(moqTrack)}
 			pub := publishTo(t, moqRelayAddr, up, ns)
 			sub, err := dialMoQWith(t, addr, fmt.Sprintf(moqInteropHost, up), codec.ALPNFor(down))
@@ -303,7 +313,7 @@ func TestMoQInteropCLI(t *testing.T) {
 	subscribes := fmt.Sprintf(`backend_name="%s",result="ok",type="subscribe"`, moqCLIBackend)
 	run := strconv.FormatInt(time.Now().UnixNano(), 36)
 
-	for _, d := range codec.Drafts() {
+	for _, d := range moqDevDrafts() {
 		t.Run(strconv.Itoa(d), func(t *testing.T) {
 			ns := wire.Namespace{[]byte("cli"), []byte(run), []byte(strconv.Itoa(d))}
 			pub := publishTo(t, addr, d, ns)

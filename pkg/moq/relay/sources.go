@@ -193,7 +193,7 @@ func (t *track) established(u *upstreamSub, ok *message.SubscribeOK, forward boo
 		t.mu.Unlock()
 		return false
 	}
-	u.live, u.fwd = true, forward
+	u.live, u.fwd, u.fwdKnown = true, forward, true
 	t.establishLocked()
 	if len(ok.TrackProperties) > 0 || t.props == nil {
 		t.props = bytes.Clone(ok.TrackProperties)
@@ -225,7 +225,8 @@ func (t *track) addPublisher(u *upstreamSub, m *message.Publish) error {
 	if limit := t.r.access().MaxPublishersPerTrack; limit > 0 && t.publisherCountLocked() >= limit {
 		return errTooManyPublishers
 	}
-	u.live, u.fwd = true, m.Params.ForwardOr(true)
+	u.live, u.fwd, u.fwdKnown = true, m.Params.ForwardOr(true), true
+	u.from, u.bounded = sourceFilter(&m.Params, t.largestLocked())
 	t.ups = append(slices.Clip(t.ups), u)
 	t.establishLocked()
 	if t.props == nil {
@@ -378,15 +379,18 @@ func (t *track) answered(u *upstreamSub, all bool) updateKind {
 	k := u.updates[0]
 	u.updates = u.updates[1:]
 	if k == updateForward {
+		u.fwdKnown = true
 		t.ackedLocked()
 	}
 	return k
 }
 
 func (t *track) forgetUpdatesLocked(u *upstreamSub) {
-	// a source that ended will answer none of its outstanding updates
+	// a source that ended, or refused an update, answers none of its outstanding updates, so whether it forwards
+	// is unknown after a FORWARD among them
 	for _, k := range u.updates {
 		if k == updateForward {
+			u.fwdKnown = false
 			t.ackedLocked()
 		}
 	}
@@ -410,21 +414,25 @@ type forwardUpdate struct {
 }
 
 func (t *track) syncForward() {
-	// each source's FORWARD state follows the downstream subscribers' (§7.2), except that the relay resumes a
-	// paused publisher it wants but never pauses one, so its cache keeps what is published
+	// each source's FORWARD state follows the downstream subscribers' (§7.2), except that the relay never pauses a
+	// publisher a registered subscription had it resume, so its cache keeps what is published
 	t.ctrlMu.Lock()
 	defer t.ctrlMu.Unlock()
 	t.mu.Lock()
-	want := t.wantForwardLocked()
+	want, keep := t.wantForwardLocked(), t.keepForwardLocked()
 	var todo []forwardUpdate
 	for _, u := range t.ups {
-		target := want || (u.pushed && u.fwd)
+		if keep {
+			u.provisional = false
+		}
+		target := want || (u.pushed && u.fwd && !u.provisional)
 		if !u.live || target == u.fwd {
 			continue
 		}
 		if u.request() != nil {
 			todo = append(todo, forwardUpdate{u: u, forward: target})
 			t.fwdPending++
+			u.provisional = u.pushed && target && !keep
 		}
 	}
 	if len(todo) > 0 && t.fwdAck == nil {

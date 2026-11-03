@@ -2,7 +2,7 @@
 
 Trickster's MoQ relay supports `draft-ietf-moq-transport` revisions -17 and later. The relay core is draft-neutral; one codec per draft family handles the wire differences. This document is the source of truth for those differences. When a new draft is published, add a column here first, then a codec, then a row in the interop matrix.
 
-The registry and layout tables below were extracted mechanically from the draft texts (`https://www.ietf.org/archive/id/draft-ietf-moq-transport-NN.txt`) on 2026-10-04. Field semantics that live in prose are summarized with their section numbers; confirm them against the text when implementing a codec.
+The registry and layout tables below were extracted mechanically from the draft texts (`https://www.ietf.org/archive/id/draft-ietf-moq-transport-NN.txt`) on 2026-10-04, and the -23 column from its diff against -22 on 2026-11-03. Field semantics that live in prose are summarized with their section numbers; confirm them against the text when implementing a codec.
 
 ## Supported drafts and negotiation
 
@@ -14,13 +14,14 @@ The registry and layout tables below were extracted mechanically from the draft 
 | -20 | 2026 | `moqt-20` | `v20` | fill fetch streams replace Joining FETCH, type-flag bitfields, `PUBLISH_STATE_NOTIFY`, `INCLUDE_PROPERTIES` |
 | -21 | 2026-09-08 | `moqt-21` | `v20` | editorial only |
 | -22 | 2026-10-01 | `moqt-22` | `v20` + typed `LOCATION_FILTER` | `LOCATION_FILTER` carries an explicit type; relay-to-relay declared out of scope |
+| -23 | 2026-11-02 | `moqt-23` | `v20` + typed `LOCATION_FILTER` + the -23 flags | varint control message Length and `MAX_CONTROL_MESSAGE_SIZE`; `FETCH` answered by `REQUEST_OK`; `PAUSED` replaces `FORWARD`; Error Details; delta-coded fetch markers with Gone, End of Group and End of Track; specific session error codes |
 
 Negotiation: ALPN on native QUIC (§6.2 in -22), `WT-Available-Protocols` / `WT-Protocol` on WebTransport (§6.2.1). The final RFC will use ALPN `moqt`. Drafts -15 and -16 also negotiated by ALPN but used a single bidirectional control stream with `CLIENT_SETUP`/`SERVER_SETUP`; -14 and earlier used ALPN `moq-00` with in-band version lists. None of those are supported.
 
 ## Common wire format (-17 and later)
 
 - **Variable-length integers** (`vi64`): the number of leading 1 bits in the first byte gives the length; 1, 2, 3, 4, 5, 6, 8 or 9 bytes in -17, with the 7-byte form (leading `1111110`) and non-minimal encodings allowed from -18. A decoder for -17 that accepts 7-byte values is harmless; an encoder must not emit them to a -17 peer.
-- **Control message framing**: `Type (vi64)`, `Length (16 bits)`, body. The body is called "Message Payload" in -17/-18 and "Message Body" from -19; the bytes are the same.
+- **Control message framing**: `Type (vi64)`, `Length`, body. The Length is 16 bits through -22 and a `vi64` from -23, where it may not exceed the receiver's `MAX_CONTROL_MESSAGE_SIZE` (default and minimum 65535, which also applies to `SETUP` itself). The body is called "Message Payload" in -17/-18 and "Message Body" from -19; the bytes are the same.
 - **Key-value pairs** (parameters, properties, setup options): `Delta Type (vi64)`, `[Length (vi64)]`, `Value`. Even types carry a varint value with no length; odd types carry a length-prefixed value. Types are delta-encoded against the previous pair in the same list.
 - **Location**: `Group (vi64)`, `Object (vi64)`.
 - **Reason Phrase**: `Length (vi64)`, bytes.
@@ -32,31 +33,31 @@ Negotiation: ALPN on native QUIC (§6.2 in -22), `WT-Available-Protocols` / `WT-
 
 Identical in every supported draft unless a column says otherwise.
 
-| Code | -17 | -18 | -19 | -20 | -21 | -22 |
-|---|---|---|---|---|---|---|
-| `0x2` | `REQUEST_UPDATE` | | | | | |
-| `0x3` | `SUBSCRIBE` | | | | | |
-| `0x4` | `SUBSCRIBE_OK` | | | | | |
-| `0x5` | `REQUEST_ERROR` | | | | | |
-| `0x6` | `PUBLISH_NAMESPACE` | | | | | |
-| `0x7` | `REQUEST_OK` | | | | | |
-| `0x8` | `NAMESPACE` | | | | | |
-| `0xB` | `PUBLISH_DONE` | | | | | |
-| `0xD` | `TRACK_STATUS` | | | | | |
-| `0xE` | `NAMESPACE_DONE` | | | | | |
-| `0xF` | `PUBLISH_BLOCKED` | `PUBLISH_BLOCKED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` |
-| `0x10` | `GOAWAY` | | | | | |
-| `0x11` | `SUBSCRIBE_NAMESPACE` | — | — | — | — | — |
-| `0x16` | `FETCH` | | | | | |
-| `0x18` | `FETCH_OK` | | | | | |
-| `0x1D` | `PUBLISH` | | | | | |
-| `0x1E` | `PUBLISH_OK` | `PUBLISH_OK` | reserved | reserved | reserved | reserved |
-| `0x22` | — | — | — | `PUBLISH_STATE_NOTIFY` | `PUBLISH_STATE_NOTIFY` | `PUBLISH_STATE_NOTIFY` |
-| `0x50` | — | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` |
-| `0x51` | — | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` |
-| `0x2F00` | `SETUP` | | | | | |
+| Code | -17 | -18 | -19 | -20 | -21 | -22 | -23 |
+|---|---|---|---|---|---|---|---|
+| `0x2` | `REQUEST_UPDATE` | | | | | | |
+| `0x3` | `SUBSCRIBE` | | | | | | |
+| `0x4` | `SUBSCRIBE_OK` | | | | | | |
+| `0x5` | `REQUEST_ERROR` | | | | | | |
+| `0x6` | `PUBLISH_NAMESPACE` | | | | | | |
+| `0x7` | `REQUEST_OK` | | | | | | |
+| `0x8` | `NAMESPACE` | | | | | | |
+| `0xB` | `PUBLISH_DONE` | | | | | | |
+| `0xD` | `TRACK_STATUS` | | | | | | |
+| `0xE` | `NAMESPACE_DONE` | | | | | | |
+| `0xF` | `PUBLISH_BLOCKED` | `PUBLISH_BLOCKED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` | `PUBLISH_SKIPPED` |
+| `0x10` | `GOAWAY` | | | | | | |
+| `0x11` | `SUBSCRIBE_NAMESPACE` | — | — | — | — | — | — |
+| `0x16` | `FETCH` | | | | | | |
+| `0x18` | `FETCH_OK` | `FETCH_OK` | `FETCH_OK` | `FETCH_OK` | `FETCH_OK` | `FETCH_OK` | reserved |
+| `0x1D` | `PUBLISH` | | | | | | |
+| `0x1E` | `PUBLISH_OK` | `PUBLISH_OK` | reserved | reserved | reserved | reserved | reserved |
+| `0x22` | — | — | — | `PUBLISH_STATE_NOTIFY` | `PUBLISH_STATE_NOTIFY` | `PUBLISH_STATE_NOTIFY` | `PUBLISH_STATE_NOTIFY` |
+| `0x50` | — | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` | `SUBSCRIBE_NAMESPACE` |
+| `0x51` | — | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` | `SUBSCRIBE_TRACKS` |
+| `0x2F00` | `SETUP` | | | | | | |
 
-`PUBLISH_BLOCKED` and `PUBLISH_SKIPPED` share a code and a layout (namespace suffix, track name); only the name changed. `TRACK_STATUS` has the same layout as `SUBSCRIBE` in every draft. The `*_OK` and `*_ERROR` names used in prose (`SUBSCRIBE_NAMESPACE_OK`, `TRACK_STATUS_ERROR`, ...) are all `REQUEST_OK` / `REQUEST_ERROR` on the wire, except `SUBSCRIBE_OK` and `FETCH_OK`, which carry extra fields.
+`PUBLISH_BLOCKED` and `PUBLISH_SKIPPED` share a code and a layout (namespace suffix, track name); only the name changed. `TRACK_STATUS` has the same layout as `SUBSCRIBE` in every draft. The `*_OK` and `*_ERROR` names used in prose (`SUBSCRIBE_NAMESPACE_OK`, `TRACK_STATUS_ERROR`, ...) are all `REQUEST_OK` / `REQUEST_ERROR` on the wire, except `SUBSCRIBE_OK` and, through -22, `FETCH_OK`, which carry extra fields. From -23 `FETCH_OK` is a `REQUEST_OK` too, so only the request stream it arrives on tells it apart. An unknown message type is `UNEXPECTED_MESSAGE` from -23.
 
 A request stream begins with one of `SUBSCRIBE`, `PUBLISH`, `FETCH`, `TRACK_STATUS`, `PUBLISH_NAMESPACE`, `SUBSCRIBE_NAMESPACE`, or (from -18) `SUBSCRIBE_TRACKS`. Request IDs are even from the client and odd from the server, incremented by 2.
 
@@ -64,17 +65,17 @@ A request stream begins with one of `SUBSCRIBE`, `PUBLISH`, `FETCH`, `TRACK_STAT
 
 - **Required Request ID** (-17 only): `SUBSCRIBE`, `REQUEST_UPDATE`, `PUBLISH`, `FETCH`, `PUBLISH_NAMESPACE` and `SUBSCRIBE_NAMESPACE` carry a `Required Request ID Delta (vi64)` after `Request ID`. Removed in -18 along with the `INVALID_REQUIRED_REQUEST_ID` session error.
 - **`SUBSCRIBE_NAMESPACE`** (-17): code `0x11`, and carries `Subscribe Options (vi64)` before the parameters. From -18 it is code `0x50` without that field, and the subscribe-to-everything behavior moved to `SUBSCRIBE_TRACKS` (`0x51`).
-- **`REQUEST_OK`**: -17 is parameters only; from -18 `Track Properties` follow the parameters.
-- **`REQUEST_ERROR`**: `Error Code`, `Retry Interval`, `Reason Phrase`; from -18 an optional `Redirect` (`Connect URI Length`, `Connect URI`, `Track Namespace`, `Track Name Length`, `Track Name`) follows when the code is `REDIRECT`.
+- **`REQUEST_OK`**: -17 is parameters only; from -18 `Track Properties` follow the parameters. From -23 `EXPIRES` may answer any request, and `TRACK_STATUS_OK` and `FETCH_OK` carry the Track Properties.
+- **`REQUEST_ERROR`**: `Error Code`, `Retry Interval`, `Reason Phrase`; -18 to -22 append a `Redirect` (`Connect URI Length`, `Connect URI`, `Track Namespace`, `Track Name Length`, `Track Name`) when the code is `REDIRECT`. From -23 Error Details, a Key-Value-Pair block, fill the rest of the message: `REDIRECT` (`0x01`, the same fields as the Redirect, required with code `REDIRECT`) and `UNSUPPORTED_PROPERTY` (`0x02`, a Mandatory Track Property type, repeatable, with code `UNSUPPORTED_EXTENSION`). Unknown details are ignored.
 - **`GOAWAY`**: `New Session URI Length`, `New Session URI`, `Timeout (vi64)`; -18 appends an optional `Request ID` (per-request migration), removed again in -19.
 - **`PUBLISH_OK`** (-17 only): parameters. From -18 the publisher's acknowledgement is a `REQUEST_OK`.
 - **`FETCH`**: -17 through -19 carry `Fetch Type (vi64)` followed by either a `Standalone Fetch` (`Track Namespace`, `Track Name`, `Start Location`, `End Location`) or a `Joining Fetch` (`Joining Request ID`, `Joining Start`), then parameters. From -20 `FETCH` carries only the full track name and parameters; the range lives in `LOCATION_FILTER`, and the joining case is a fill (`FILL_PARAMETERS` on the subscription, delivered on a fill fetch stream).
-- **`FETCH_OK`**: `End Of Track (8 bits)`, `End Location`, parameters, `Track Properties` in every draft.
+- **`FETCH_OK`**: `End Of Track (8 bits)`, `End Location`, parameters, `Track Properties` through -22. From -23 it is a `REQUEST_OK` (parameters and `Track Properties`): a response that ends at Largest Object says so with `LARGEST_OBJECT`, and one that does not ends at the requested End Location. End of Track moved to the fetch stream.
 - **`SUBSCRIBE_OK`**: `Track Alias`, parameters, `Track Properties` in every draft.
 - **`PUBLISH`**: `Request ID`, full track name, `Track Alias`, parameters, `Track Properties` (plus the Required Request ID in -17).
 - **`PUBLISH_DONE`**: `Status Code`, `Stream Count`, `Reason Phrase` in every draft; -19 raised the maximum stream count to 2^64-1.
 - **`PUBLISH_STATE_NOTIFY`** (-20+): parameters only.
-- **`NAMESPACE` / `NAMESPACE_DONE`**: `Track Namespace Suffix` in every draft.
+- **`NAMESPACE` / `NAMESPACE_DONE`**: `Track Namespace Suffix` in every draft; from -23 `NAMESPACE` adds `Number of Parameters` and the parameters, none of which is defined yet, and is sent again when they change.
 - **`PUBLISH_NAMESPACE`**: -22 renames the field `Track Namespace Prefix`; the encoding is unchanged.
 
 ## Unidirectional stream types
@@ -92,14 +93,14 @@ An unknown stream type closes the session.
 
 ### `SUBGROUP_HEADER`
 
-`Type Flags (vi64)`, `Track Alias (vi64)`, `Group ID (vi64)`, `[Subgroup ID (vi64)]`, `[Publisher Priority (8)]`. Bit meanings (identical across -17..-22, with `FIRST_OBJECT` from -18):
+`Type Flags (vi64)`, `Track Alias (vi64)`, `Group ID (vi64)`, `[Subgroup ID (vi64)]`, `[Publisher Priority (8)]`. Bit meanings (identical across -17..-23, with `FIRST_OBJECT` from -18):
 
 | Bit | Name | Meaning |
 |---|---|---|
 | `0x01` | `PROPERTIES` | every object in the subgroup carries a Properties field |
 | `0x06` | `SUBGROUP_ID_MODE` | `00` absent and 0; `01` absent and equal to the first object ID; `10` present; `11` invalid |
 | `0x08` | `END_OF_GROUP` | the subgroup contains the group's largest object |
-| `0x10` | always set | a header without it is a `PROTOCOL_VIOLATION` |
+| `0x10` | always set | a header without it is a `PROTOCOL_VIOLATION` (`INVALID_STREAM_HEADER` from -23) |
 | `0x20` | `DEFAULT_PRIORITY` | the Priority field is omitted and inherited from the subscription |
 | `0x40` | `FIRST_OBJECT` (-18+) | the first object on the stream is the first the original publisher put in the subgroup |
 
@@ -133,7 +134,14 @@ Objects on a subgroup stream: `Object ID Delta (vi64)`, `[Properties]`, `Object 
 | `0x20` | Properties present |
 | `0x40` | datagram object: ignore the subgroup bits |
 
-End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` End of Unknown Range, `0x20C` End of Timed-Out Range (-20+). -17 through -19 define only the first two, so Trickster sends them a timed-out range as an unknown one.
+End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` End of Unknown Range, `0x20C` End of Timed-Out Range (-20+), `0x40C` End of Gone Range (-23+). -17 through -19 define only the first two, so Trickster sends them a timed-out range as an unknown one, and every draft before -23 learns of a gone range as an unknown one. Through -22 a marker's Group and Object IDs are absolute.
+
+-23 changes the fetch stream in four ways:
+
+- Within a group, a present Object ID Delta is the gap less 2 (Object ID = prior + delta + 2), since a gap of one needs no delta. After a Group ID Delta the Object ID is still whole.
+- End of Range markers are delta coded except as the first entry: the Group is the prior Group plus (ascending) or minus (descending) the Group ID Delta, with no added one; when that delta is 0 the Object is the prior Object plus the Object ID Delta plus 1, and otherwise the Object ID Delta is the whole Object ID.
+- `0x80` End of Group and `0x81` End of Track carry no fields. The prior object was the last in its group (or track), and the prior Object ID becomes 2^64-1, so another object in that group overflows. The publisher must follow an object known to end the track with End of Track, and the response's last object with End of Group when it is known to end its group. Trickster writes End of Group after every group it serves from cache whose end it knows, and drops both markers for earlier drafts.
+- Any other value from 128 is `MALFORMED_OBJECT`, as are fields that refer to a prior object that does not exist.
 
 ### Object status
 
@@ -150,33 +158,38 @@ End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` E
 | `0x06` | `MAX_FILTER_RANGES` | -19+ |
 | `0x07` | `MOQT_IMPLEMENTATION` | all |
 | `0x08` | `MAX_REQUEST_UPDATES` | -19+ |
+| `0x09` | `MAX_CONTROL_MESSAGE_SIZE` | -23+ |
 
--17 defines these in prose (§9.4.1) rather than an IANA table; the codes match.
+-17 defines these in prose (§9.4.1) rather than an IANA table; the codes match. `MAX_CONTROL_MESSAGE_SIZE` has an odd type, so its varint value sits inside a length-prefixed pair. A session accepts control messages up to the value it advertises (`Setup.MaxControlMessageSize`, at most 16 MiB, 65535 when unset, as for the relay); it reads a peer's but never sends a control message over 65535 bytes, which every peer accepts.
 
 ## Message parameters
 
-| Type | -17 | -18 | -19 | -20..-22 |
-|---|---|---|---|---|
-| `0x02` | `DELIVERY_TIMEOUT` | `OBJECT_DELIVERY_TIMEOUT` | same | same |
-| `0x03` | `AUTHORIZATION_TOKEN` | | | |
-| `0x04` | `RENDEZVOUS_TIMEOUT` | | | |
-| `0x06` | — | `SUBGROUP_DELIVERY_TIMEOUT` | same | same |
-| `0x08` | `EXPIRES` | | | |
-| `0x09` | `LARGEST_OBJECT` | | | |
-| `0x0A` | — | `FILL_TIMEOUT` | same | same |
-| `0x10` | `FORWARD` | | | |
-| `0x20` | `SUBSCRIBER_PRIORITY` | | | |
-| `0x21` | `SUBSCRIPTION_FILTER` | `SUBSCRIPTION_FILTER` | `LOCATION_FILTER` | `LOCATION_FILTER` |
-| `0x22` | `GROUP_ORDER` | | | |
-| `0x23` | — | — | — | `FILL_PARAMETERS` |
-| `0x25` | — | — | `SUBGROUP_FILTER` | same |
-| `0x26` | — | — | `OBJECTID_FILTER` | same |
-| `0x27` | — | — | `PRIORITY_FILTER` | same |
-| `0x28` | — | — | `OBJECT_PROPERTY_FILTER` | same |
-| `0x29` | — | — | `TRACK_PROPERTY_FILTER` | same |
-| `0x32` | `NEW_GROUP_REQUEST` | | | |
-| `0x34` | — | `TRACK_NAMESPACE_PREFIX` | same | same |
-| `0x35` | — | — | — | `INCLUDE_PROPERTIES` |
+| Type | -17 | -18 | -19 | -20..-22 | -23 |
+|---|---|---|---|---|---|
+| `0x02` | `DELIVERY_TIMEOUT` | `OBJECT_DELIVERY_TIMEOUT` | same | same | same |
+| `0x03` | `AUTHORIZATION_TOKEN` | | | | |
+| `0x04` | `RENDEZVOUS_TIMEOUT` | | | | |
+| `0x06` | — | `SUBGROUP_DELIVERY_TIMEOUT` | same | same | same |
+| `0x08` | `EXPIRES` | | | | |
+| `0x09` | `LARGEST_OBJECT` | | | | |
+| `0x0A` | — | `FILL_TIMEOUT` | same | same | same |
+| `0x10` | `FORWARD` | | | | — |
+| `0x11` | — | — | — | — | `PAUSED` |
+| `0x20` | `SUBSCRIBER_PRIORITY` | | | | |
+| `0x21` | `SUBSCRIPTION_FILTER` | `SUBSCRIPTION_FILTER` | `LOCATION_FILTER` | `LOCATION_FILTER` | `LOCATION_FILTER` |
+| `0x22` | `GROUP_ORDER` | | | | |
+| `0x23` | — | — | — | `FILL_PARAMETERS` | `FILL_PARAMETERS` |
+| `0x25` | — | — | `SUBGROUP_FILTER` | same | same |
+| `0x26` | — | — | `OBJECTID_FILTER` | same | same |
+| `0x27` | — | — | `PRIORITY_FILTER` | same | same |
+| `0x28` | — | — | `OBJECT_PROPERTY_FILTER` | same | same |
+| `0x29` | — | — | `TRACK_PROPERTY_FILTER` | same | same |
+| `0x32` | `NEW_GROUP_REQUEST` | | | | |
+| `0x34` | — | `TRACK_NAMESPACE_PREFIX` | same | same | same |
+| `0x35` | — | — | — | `INCLUDE_PROPERTIES` | `INCLUDE_PROPERTIES` |
+| `0x36` | — | — | — | — | `SUBSCRIBE_TRACKS_ID` |
+
+`PAUSED` is `FORWARD` with the opposite sense: 1 pauses, and it defaults to 0. Trickster keeps one draft-neutral forwarding flag and inverts it on the -23 wire. `SUBSCRIBE_TRACKS_ID` names, in a `PUBLISH` a `SUBSCRIBE_TRACKS` caused, the `SUBSCRIBE_TRACKS` it answers. -23 also lets `PUBLISH` and `SUBSCRIBE_TRACKS` carry `FILL_PARAMETERS`, `FETCH_OK` carry `EXPIRES` and `LARGEST_OBJECT`, and narrows `SUBSCRIBE_TRACKS` to an explicit list without `RENDEZVOUS_TIMEOUT` or `NEW_GROUP_REQUEST`.
 
 ### Location filter encodings
 
@@ -184,7 +197,8 @@ End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` E
 - **-20 / -21 `LOCATION_FILTER`**: `Length (vi64)` followed by zero to four varints (`StartGroup`, `StartObject`, `EndGroupDelta`, `EndObject`); which fields are present is inferred from the length.
 - **-22 `LOCATION_FILTER`**: `Location Filter Type (vi64)` selects the fields: `0x00` none; `0x01` Relative Start, whose start is `{Largest.Group + 1 - StartGroup, 0}`; `0x02` Absolute Start (`StartGroup`, `StartObject`, open ended); `0x03` Absolute Start with Group End (adds `EndGroupDelta`, ending at the last object of that group); `0x04` Absolute Range (all four fields); `0x05` Next Object.
 - **Range filters (-19+)**: `Type`, `Length`, `[SetID (8)]`, `[Property Type]` (property filters only), then `Range` entries of `Start (vi64)`, `[End (vi64)]`, each Start a delta from the prior End and each End a delta from its Start. -19 (§5.1.3) and -20 share the layout.
-- **`FILL_PARAMETERS` (-20+)**: a nested parameter list that may contain `FILL_TIMEOUT`, `SUBSCRIBER_PRIORITY`, `LOCATION_FILTER`, `GROUP_ORDER` and the four object-level range filters.
+- **`FILL_PARAMETERS` (-20+)**: a nested parameter list that may contain `FILL_TIMEOUT`, `SUBSCRIBER_PRIORITY`, `LOCATION_FILTER`, `GROUP_ORDER` and the four object-level range filters. Through -22 Trickster frames it with a length around the count (see the note below); from -23 it is the count and the parameters with no length.
+- **-23 `FETCH` filters**: a relative filter (Relative Start or Next Object) is refused with `INVALID_RANGE`.
 
 ## Properties
 
@@ -214,7 +228,7 @@ Application properties (`TIMESTAMP 0x10`, `TIMESCALE 0x08`, `VIDEO_FRAME_MARKING
 | `0x3` | `PROTOCOL_VIOLATION` | all |
 | `0x4` | `INVALID_REQUEST_ID` | all |
 | `0x5` | `DUPLICATE_TRACK_ALIAS` | all |
-| `0x6` | `KEY_VALUE_FORMATTING_ERROR` | all |
+| `0x6` | `KEY_VALUE_FORMATTING_ERROR` (`MALFORMED_KEY_VALUE` from -23) | all |
 | `0x7` | `INVALID_REQUIRED_REQUEST_ID` | -17 |
 | `0x8` | `INVALID_PATH` | all |
 | `0x9` | `MALFORMED_PATH` | all |
@@ -230,6 +244,21 @@ Application properties (`TIMESTAMP 0x10`, `TIMESCALE 0x08`, `VIDEO_FRAME_MARKING
 | `0x19` | `INVALID_AUTHORITY` | all |
 | `0x1A` | `MALFORMED_AUTHORITY` | all |
 | `0x1B` | `TOO_MANY_REQUEST_UPDATES` | -19+ |
+| `0x200` | `INVALID_STREAM_HEADER` | -23+ |
+| `0x201` | `MALFORMED_OBJECT` | -23+ |
+| `0x202` | `INVALID_OBJECT_STATUS` | -23+ |
+| `0x203` | `TRUNCATED_OBJECT` | -23+ |
+| `0x300` | `MALFORMED_MESSAGE` | -23+ |
+| `0x301` | `INVALID_FIELD` | -23+ |
+| `0x302` | `INVALID_TRACK_NAMESPACE` | -23+ |
+| `0x303` | `UNEXPECTED_MESSAGE` | -23+ |
+| `0x304` | `ROLE_VIOLATION` | -23+ |
+| `0x305` | `INVALID_PARAMETER` | -23+ |
+| `0x306` | `CLOSED_CONTROL_STREAM` | -23+ |
+| `0x400` | `DELTA_ENCODING_OVERFLOW` | -23+ |
+| `0x401` | `FIELD_LENGTH_EXCEEDED` | -23+ |
+
+-23 replaces most uses of `PROTOCOL_VIOLATION` with the codes from `0x200`, preferring the `0x400` codes when several apply, and closes on an undecodable token with `MALFORMED_AUTH_TOKEN` rather than `KEY_VALUE_FORMATTING_ERROR`. Trickster chooses the code where the fault is found, through `Codec.SessionError`, which gives an earlier draft `PROTOCOL_VIOLATION` in place of any code from `0x200`. `Session.Close` makes the same substitution.
 
 ### `REQUEST_ERROR`
 
@@ -243,12 +272,13 @@ Application properties (`TIMESTAMP 0x10`, `TIMESCALE 0x08`, `VIDEO_FRAME_MARKING
 | `0x5` | `EXPIRED_AUTH_TOKEN` | all |
 | `0x6` | `GOING_AWAY` | all |
 | `0x9` | `EXCESSIVE_LOAD` | all |
+| `0xA` | `UNAVAILABLE` | -23+ (sent as `EXCESSIVE_LOAD` to earlier drafts) |
 | `0x10` | `DOES_NOT_EXIST` | all |
 | `0x11` | `INVALID_RANGE` | all |
 | `0x12` | `MALFORMED_TRACK` | all |
 | `0x19` | `DUPLICATE_SUBSCRIPTION` | -17, -18 |
 | `0x20` | `UNINTERESTED` | all |
-| `0x30` | `PREFIX_OVERLAP` | all |
+| `0x30` | `PREFIX_OVERLAP` | -17..-22 |
 | `0x31` | `NAMESPACE_TOO_LARGE` | all |
 | `0x32` | `INVALID_JOINING_REQUEST_ID` | -17..-19 |
 | `0x33` | `UNSUPPORTED_EXTENSION` | -18+ |
@@ -267,6 +297,7 @@ Application properties (`TIMESTAMP 0x10`, `TIMESCALE 0x08`, `VIDEO_FRAME_MARKING
 | `0x4` | `GOING_AWAY` | same |
 | `0x5` | `EXPIRED` | `TOO_FAR_BEHIND` |
 | `0x6` | `TOO_FAR_BEHIND` | `EXPIRED` |
+| `0x7` | — | `EXPIRED_AUTH_TOKEN` from -23 (sent as `UNAUTHORIZED` to earlier drafts) |
 | `0x8` | `UPDATE_FAILED` | same |
 | `0x9` | `EXCESSIVE_LOAD` | same |
 | `0x12` | `MALFORMED_TRACK` | same |
@@ -283,7 +314,7 @@ Note the `0x5`/`0x6` swap between -17 and -18.
 | `0x3` | `SESSION_CLOSED` | same |
 | `0x4` | `UNKNOWN_OBJECT_STATUS` | `GOING_AWAY` |
 | `0x5` | `TOO_FAR_BEHIND` | same |
-| `0x6` | — | `UNKNOWN_OBJECT_STATUS` |
+| `0x6` | — | `UNKNOWN_OBJECT_STATUS`, removed in -23 |
 | `0x7` | — | `EXPIRED_AUTH_TOKEN` |
 | `0x9` | `EXCESSIVE_LOAD` | same |
 | `0x12` | `MALFORMED_TRACK` | same |
@@ -316,6 +347,19 @@ The session and relay layers never compare draft numbers; they read these flags 
 | `LengthInferredLocationFilter` | -20, -21 | `LOCATION_FILTER` fields inferred from length |
 | `TypedLocationFilter` | -22+ | `LOCATION_FILTER` carries an explicit type |
 | `EndOfTimedOutRange` | -20+ | fetch marker `0x20C` |
+| `VarintMessageLength` | -23+ | control message Length is a varint bounded by `MAX_CONTROL_MESSAGE_SIZE` |
+| `FetchRequestOK` | -23+ | `FETCH` is answered by `REQUEST_OK` and `0x18` is reserved; a relative `FETCH` filter is refused with `INVALID_RANGE` |
+| `Params23` | -23+ | `PAUSED` for `FORWARD`, `SUBSCRIBE_TRACKS_ID`, `FILL_PARAMETERS` as a bare count and in `PUBLISH` and `SUBSCRIBE_TRACKS`, and `SUBSCRIBE_TRACKS`'s own parameter list |
+| `NamespaceParams` | -23+ | `NAMESPACE` carries parameters |
+| `ErrorDetails` | -23+ | `REQUEST_ERROR` ends with Error Details |
+| `DeltaRangeMarkers` | -23+ | fetch End of Range markers are delta coded, and an Object ID Delta within a group counts from 2 |
+| `FetchEndMarkers` | -23+ | fetch markers End of Gone Range `0x40C`, End of Group `0x80` and End of Track `0x81` |
+| `OverlappingPrefixes` | -23+ | a session's `SUBSCRIBE_NAMESPACE` and `SUBSCRIBE_TRACKS` prefixes may overlap; no `PREFIX_OVERLAP` |
+| `SpecificSessionCodes` | -23+ | session codes from `0x200`, `UNAVAILABLE` and `PUBLISH_DONE`'s `EXPIRED_AUTH_TOKEN` |
+| `NonEmptyTrackNames` | -23+ | an empty Track Name is a `PROTOCOL_VIOLATION`, and one is never sent |
+| `ResponderGoAway` | -23+ | only the receiver of a request sends `GOAWAY` on its stream; one from its sender is a `PROTOCOL_VIOLATION` |
+| `PropertyRules` | -23+ | a known property outside its scope, or repeated, makes the track malformed |
+| `FreshLargest` | -23+ | a `TRACK_STATUS`, `FETCH`, `SUBSCRIBE` or `REQUEST_UPDATE` the relay cannot give a current Largest Object is refused, and a `PUBLISH` skipped, rather than answered from the relay's own value |
 
 Every draft accepts more than one subscription to a track, so the relay never sends -17 and -18's `DUPLICATE_SUBSCRIPTION`.
 
@@ -329,6 +373,7 @@ Taken from the drafts' own change logs; issue numbers refer to the `moq-wg/moq-t
 - **-20 (since -19):** fill fetch streams replace Joining FETCH, `FILL_PARAMETERS` (#1673, #1868); `LOCATION_FILTER` restructured and the `FETCH` range moved into it (#1809); `PUBLISH_STATE_NOTIFY` (#1820); `INCLUDE_PROPERTIES` (#1813); `VERSION_NEGOTIATION_FAILED` removed (#1867); `SUBSCRIPTION_ENDED` removed (#1833); type-flag bitfields (#1774); End of Timed-Out Range (#1822); `OBJECT_DELIVERY_TIMEOUT` starts at the last header byte (#1844); a relay must send an upstream `FETCH` to at least one publisher (#1804).
 - **-21 (since -20):** editorial restructuring only.
 - **-22 (since -21):** `LOCATION_FILTER` carries an explicit Location Filter Type (#1913, #1953); "Forwarding Preference" renamed "Delivery Mode" (#1886); `FETCH_OK` End Location is inclusive (#1910); relay-to-relay communication declared out of scope (#1931).
+- **-23 (since -22):** varint control message Length and `MAX_CONTROL_MESSAGE_SIZE` (#2017); `FETCH_OK` becomes a `REQUEST_OK` without End Location or End Of Track (#2009); a relative `FETCH` filter is `INVALID_RANGE` (#1960); `FORWARD` renamed `PAUSED` with a new code and the opposite sense (#2002); `REQUEST_UPDATE`s processed and answered in order (#1938), and none with `FILL_PARAMETERS` coalesced (#2042); relay `LARGEST_OBJECT` rules (#1978); overlapping namespace subscriptions and `SUBSCRIBE_TRACKS_ID` (#2018); prefix-update effects (#2019); `SUBSCRIBE_TRACKS`'s explicit parameter list (#1995); duplicate `PUBLISH_NAMESPACE` allowed (#2021); `NAMESPACE` parameters (#1858); `FILL_PARAMETERS` as a count (#2015) and in `SUBSCRIBE_TRACKS` and `PUBLISH` (#2007); `EXPIRES` in every OK (#1994); specific session error codes (#1773); Error Details with `REDIRECT` (#2010) and `UNSUPPORTED_PROPERTY` (#2011); unknown Mandatory Track Properties in `TRACK_STATUS_OK` (#2016); `EXPIRED_AUTH_TOKEN` for `PUBLISH_DONE` (#1970); `UNAVAILABLE` (#2041); only a request's receiver sends `GOAWAY` on it (#1966); duplicate Request ID detection optional (#1993); non-empty Track Names (#1954); `NEW_GROUP_REQUEST` before `DYNAMIC_GROUPS` is known (#2008); the Gone object state and End of Gone Range (#2022); delta-coded End of Range markers (#2031); fetch Object ID Delta plus 2 within a group (#2006); End of Group in `FETCH` (#2013); `UNKNOWN_OBJECT_STATUS` reset code removed (#2004); property scope and repetition rules (#2039, #2044); grease values are not Mandatory Track Properties (#2037).
 
 ## Interpretation and interoperability notes
 
@@ -343,10 +388,21 @@ Where the text leaves a choice, or a peer implementation departs from it, Tricks
 - **Ended groups (moq-dev/moq, 2026-10-04).** When a subscription starts just past the last object of a group that has already ended, Trickster opens an empty subgroup stream for that group with End of Group set, as moq-relay does. moq-dev's subscriber completes the group its fill (-20+) or joining fetch (-17 to -19) delivered only once that stream arrives, so a client waiting for the newest group would otherwise wait for a tail that never comes.
 - **WebTransport origins (moq-dev/moq, 2026-10-04).** WebTransport over HTTP/3 requires both endpoints to send the `reset_stream_at` transport parameter. moq-relay's WebTransport endpoint does not, and webtransport-go's client refuses such a server, so Trickster reaches moq-relay with `moqt://` only. Clients reaching Trickster by WebTransport are unaffected, because webtransport-go's server checks only its own side.
 - **`SUBSCRIBE_NAMESPACE` to publishers (moq-dev/moq, 2026-10-04).** moq-relay sends every session, publishers included, a `SUBSCRIBE_NAMESPACE` with an empty prefix, and carries on when it is refused.
-- **`FILL_PARAMETERS` framing.** The value is "a sequence of Parameters ... encoded as if they were Parameters for a separate message". Trickster encodes it as a length prefix around a parameter count followed by the delta-typed parameters (a nested message parameter block), matching moq-dev/moq.
-- **End of Range markers.** The text says the marker's "Group ID and Object ID fields are present", without saying whether they are deltas. Trickster reads and writes them as absolute values. As deltas, a marker inside the current group could not be expressed, because a present Group ID Delta always advances the group. moq-dev/moq does not implement markers (as of 2026-10-04), so this has not been interop-tested.
+- **`FILL_PARAMETERS` framing (-20 to -22).** The value is "a sequence of Parameters ... encoded as if they were Parameters for a separate message". Trickster encodes it as a length prefix around a parameter count followed by the delta-typed parameters (a nested message parameter block), matching moq-dev/moq. -23 settles it as the count and parameters with no length (#2015).
+- **End of Range markers (-17 to -22).** The text says the marker's "Group ID and Object ID fields are present", without saying whether they are deltas. Trickster reads and writes them as absolute values. As deltas, a marker inside the current group could not be expressed, because a present Group ID Delta always advances the group. moq-dev/moq does not implement markers (as of 2026-10-04), so this has not been interop-tested. -23 defines them as deltas with no added one (#2031), which can express a marker inside the current group.
 - **`uint8` parameters.** `FORWARD`, `SUBSCRIBER_PRIORITY`, `GROUP_ORDER` and `INCLUDE_PROPERTIES` are a single raw byte, not a varint. The Range Filter parameters carry an explicit length even though `OBJECTID_FILTER` and `OBJECT_PROPERTY_FILTER` have even types.
-- **`SUBSCRIBE_TRACKS` parameters.** §9.18 lists a narrow set, while §3.6.2 allows any subscription parameter. Trickster accepts the union.
+- **`SUBSCRIBE_TRACKS` parameters (-18 to -22).** §9.18 lists a narrow set, while §3.6.2 allows any subscription parameter. Trickster accepts the union. -23 gives an explicit list, which Trickster holds -23 peers to.
+- **Draft -23 (2026-11-03).** No interop peer speaks -23 yet: moq-dev/moq's newest releases stop at -22. The interop runs bridge -23 subscribers to moq-relay 0.17.5 upstreams on -22 and earlier (passing on 2026-11-03, `FETCH` included), and the codec's -23 vectors come from the draft's figures. Trickster prefers and offers `moqt-23` by default; ALPN negotiation falls back to -22 with moq-dev. Choices where -23 leaves room:
+  - `MAX_CONTROL_MESSAGE_SIZE` (`0x09`) is an odd Setup Option type, so it travels as a length-prefixed pair around its varint, and a value below 65535 is read as 65535.
+  - A `FETCH` answered by `REQUEST_OK` carries `LARGEST_OBJECT` only when the response ends there, since a receiver takes it as the response's end; the requested end applies otherwise.
+  - The relay sends an `UNSUPPORTED_PROPERTY` detail for each unknown Mandatory Track Property it refuses, its own or an upstream's, and refuses `TRACK_STATUS` and `FETCH` for such a track as it does `SUBSCRIBE`. Grease values in `0x4000`–`0x7FFF` are no longer Mandatory Track Properties, in every draft.
+  - A `PUBLISH` the relay sends for a -23 `SUBSCRIBE_TRACKS` carries `SUBSCRIBE_TRACKS_ID` and the `SUBSCRIBE_TRACKS`'s `FILL_PARAMETERS`, whose fill the relay opens under the `PUBLISH`'s Request ID. A `PUBLISH` carrying a fill is routed the same way when Trickster receives one.
+  - A FIN within an object ends only that stream, by design, in every draft. -23 says the receiver SHOULD close the session with `TRUNCATED_OBJECT` (-22 said `PROTOCOL_VIOLATION`); a relay's upstream session carries many tracks, and one cut stream is no reason to end them all.
+  - Gone ranges are forwarded, never fetched upstream, and not cached (caching them is a MAY).
+  - A source is current once its upstream has acknowledged that it forwards, while its Location Filter has no end and starts no later than just past the relay's Largest Object; a source still awaiting the answer to a `FORWARD` update, one whose update was refused, or a `PUBLISH` or `PUBLISH_STATE_NOTIFY` naming a bounded filter or a later start, is not current, since it may miss what is published. Without a current source the relay refreshes its Largest Object with one `TRACK_STATUS` upstream, shared by every request waiting on it, before it answers `FETCH`, `TRACK_STATUS`, `SUBSCRIBE`, `REQUEST_UPDATE` or sends a `PUBLISH` (#1978). It takes `LARGEST_OBJECT` from an upstream `REQUEST_OK` too. A refresh that finds an unknown Mandatory Track Property, or malformed track properties, refuses every waiting request (§3.7), and a `PUBLISH` it prevents is reported with `PUBLISH_SKIPPED`. When the refresh otherwise fails, a -23 request has the sources unpaused until their answer arrives, and fails if no source is then current: `TRACK_STATUS`, `FETCH` and `SUBSCRIBE` with `TIMEOUT`, `REQUEST_UPDATE` with `TIMEOUT` and `UPDATE_FAILED`, and a `PUBLISH` is skipped. A resuming `REQUEST_UPDATE`, and a forwarding `PUBLISH` the relay offers, have the upstream forward before Largest Object is taken; a resume's relative filter is resolved against that same value, which answers the update and bounds its fill, and the subscription forwards from it. An offered subscription registers when its `PUBLISH`'s Largest Object is taken, so its filter starts there, what arrives while the `PUBLISH` opens is forwarded once it is sent, and its fill ends at that value. A subscription the relay ends while its `SUBSCRIBE_OK` or `PUBLISH` is being sent gets `PUBLISH_DONE` from the path sending it, after that message; one ended before it is refused with `REQUEST_ERROR`, or for an offer skipped. A publisher the relay resumed only for a probe, or for a request that then failed, is paused again; one a registered subscription wanted keeps forwarding. Earlier drafts' requests keep the relay's own value, which -22's rule allows.
+  - An upstream End of Group or End of Track in a gap fetch is forwarded only when the entry it follows was, so a subscriber's Range Filters never let one end the wrong object. A gap whose `FETCH_OK` names an unknown Mandatory Track Property, or malformed track properties, resets the downstream fetch stream, which has already been answered.
+  - A known property outside its scope, or repeated (counting Immutable Properties), makes a -23 upstream's track malformed (#2039, #2044); earlier drafts' tracks are forwarded as before. A Mandatory Track Property on an object is malformed in every draft, as -22 already said.
+- **Namespace prefix updates (`TRACK_NAMESPACE_PREFIX`, -18+).** The new prefix is authorized like the request's, and through -22 refused with `PREFIX_OVERLAP` when it overlaps another request of the same kind; a refused update ends the request. On `SUBSCRIBE_NAMESPACE` the relay sends `NAMESPACE_DONE` for each namespace the new prefix no longer covers before the `REQUEST_OK` (relative to the old prefix), then `NAMESPACE` for each it newly covers (relative to the new one); a namespace both cover stays reported. That satisfies -23, whose `REQUEST_OK` implies the withdrawals, and is explicit for earlier drafts, which say nothing of them. On `SUBSCRIBE_TRACKS` the tracks under the new prefix are offered and none is offered twice. As a requester, the session reads suffixes against the prefix in force and forgets namespaces an answered update no longer covers.
 - **Repeated known Setup Options.** The text forbids senders to repeat them but gives receivers no rule. Trickster keeps the first instance and ignores the rest; `AUTHORIZATION_TOKEN` may repeat.
 - **`FETCH` group order (moq-dev/moq, 2026-10-04).** A `FETCH` without `GROUP_ORDER` is served ascending, as every draft from -17 says, even when the track's `DEFAULT_PUBLISHER_GROUP_ORDER` is descending; a subscription without one follows the track's preference. moq-relay's tracks prefer descending, so the two rules differ in practice: a relay that served such a `FETCH` descending would have its receiver, reading ascending as the text says, decode every Group ID Delta after the first group in the wrong direction.
 - **Required Request ID delivery (-17).** "Deliver the referenced request to the application before delivering the dependent request" is read at the hand-off: a dependent request is released once the request it names has been given to the handler or refused. Each request is handled on its own goroutine, so the order of the two handlers' first actions is the application's.
