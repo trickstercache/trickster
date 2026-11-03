@@ -18,7 +18,7 @@
 #
 # Note(s): 
 # The CI/CD workflow is responsible for creating a release for the tag.
-# Recommend to run from the master branch of the upstream trickster repository.
+# Recommend to run from the main branch of the upstream trickster repository.
 
 TAG_VERSION ?= 
 .PHONY: create-tag
@@ -40,7 +40,7 @@ create-tag:
 		exit 1; \
 	fi
 	git tag $(TAG_VERSION)
-	git push origin $(TAG_VERSION)
+	git push upstream $(TAG_VERSION)
 
 # List out all tags in the repository
 .PHONY: get-tags
