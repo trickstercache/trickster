@@ -108,6 +108,10 @@ Trickster's Fast Forward feature ensures that even with step alignment, real-tim
 
 Check out our end-to-end [Docker Compose demo composition](./examples/docker-compose) for a zero-configuration running environment.
 
+## Monitoring Trickster
+
+Trickster exposes Prometheus [metrics](./docs/metrics.md) on port 8481 (configurable). The [Grafana dashboards](./deploy/grafana) in this repository chart them: an overview, plus dashboards for HTTP traffic, caching, time series acceleration, load balancing and Trickster's other subsystems. Import them into your own Grafana, or try them in the demo composition.
+
 ## Installing
 
 ### Docker

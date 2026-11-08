@@ -1,0 +1,17 @@
+# Grafana dashboard provider for the Trickster dashboards. Copy this file into
+# Grafana's provisioning/dashboards directory, and copy deploy/grafana/dashboards
+# to the path below. Grafana loads every dashboard there into a "Trickster" folder.
+apiVersion: 1
+
+providers:
+- name: 'trickster-dashboards'
+  orgId: 1
+  folder: 'Trickster'
+  folderUid: 'trickster'
+  type: file
+  disableDeletion: false
+  editable: true
+  updateIntervalSeconds: 60
+  allowUiUpdates: false
+  options:
+    path: /var/lib/grafana/dashboards/trickster

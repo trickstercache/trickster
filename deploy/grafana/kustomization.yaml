@@ -1,0 +1,42 @@
+# Loads the Trickster dashboards into Grafana through the dashboard sidecar
+# (Grafana Helm chart, kube-prometheus-stack). One ConfigMap per dashboard keeps
+# each one well under the ConfigMap size limit. Usage:
+#   kubectl apply --server-side -n monitoring -k 'https://github.com/trickstercache/trickster//deploy/grafana?ref=main'
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: trickster
+  annotations:
+    grafana_folder: Trickster
+
+configMapGenerator:
+- name: trickster-dashboard-overview
+  files: [dashboards/trickster-overview.json]
+- name: trickster-dashboard-http
+  files: [dashboards/trickster-http.json]
+- name: trickster-dashboard-caching
+  files: [dashboards/trickster-caching.json]
+- name: trickster-dashboard-timeseries
+  files: [dashboards/trickster-timeseries.json]
+- name: trickster-dashboard-alb
+  files: [dashboards/trickster-alb.json]
+- name: trickster-dashboard-tsm
+  files: [dashboards/trickster-tsm.json]
+- name: trickster-dashboard-l4
+  files: [dashboards/trickster-l4.json]
+- name: trickster-dashboard-sql-wire
+  files: [dashboards/trickster-sql-wire.json]
+- name: trickster-dashboard-moq
+  files: [dashboards/trickster-moq.json]
+- name: trickster-dashboard-access
+  files: [dashboards/trickster-access.json]
+- name: trickster-dashboard-tls
+  files: [dashboards/trickster-tls.json]
+- name: trickster-dashboard-kubernetes
+  files: [dashboards/trickster-kubernetes.json]
+- name: trickster-dashboard-runtime
+  files: [dashboards/trickster-runtime.json]

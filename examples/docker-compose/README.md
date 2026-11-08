@@ -12,7 +12,7 @@ The first start takes a minute or two longer than later ones: it generates the s
 
 You can then interact with each of the services on their exposed ports (as defined in [Compose file](./docker-compose.yml)), or by running `docker logs $container_name`, `docker attach $container_name`, etc.
 
-Once the composition is running, a great place to start exploring is Grafana, which will be running at <http://127.0.0.1:3000/> if the composition came up without issue. Grafana is pre-configured with datasources and sample dashboard that are ready-to-use for the demo.
+Once the composition is running, a great place to start exploring is Grafana, which will be running at <http://127.0.0.1:3000/> if the composition came up without issue. Grafana is pre-configured with datasources and dashboards that are ready-to-use for the demo. The `Trickster` folder has Trickster's [published dashboards](../../deploy/grafana), which chart Trickster's own metrics; start with **Trickster / Overview**.
 
 Also, take a look at Jaeger UI, available at <http://127.0.0.1:16686>, which provides visualization of traces shipped by Trickster and Grafana. The more you use trickster-based data sources in Grafana, the more traces you will see in Jaeger. This composition runs Jaeger v2 in its all-in-one configuration. Trickster sends traces to Jaeger's OTLP/HTTP endpoint on port 4318, while Grafana uses Jaeger's compact Thrift receiver on UDP port 6831. The Trickster config determines which upstream origins produce traces.
 
@@ -24,13 +24,13 @@ The `Trips (Prometheus)` dashboard has data as soon as the environment is up. Pr
 
 The `sim-*` datasources are backed by devorigin's Prometheus API simulator, which generates on-the-fly simulation data for any query and any possible timerange, so you can immediately use them after starting up the environment. Note, however, that the simulated data is not representative of reality in any way.
 
-The non-sim Prometheus container that backs the `prom-*` datasources polls the newly-running environment to generate metrics that will then populate the dashboard. Since the Prometheus container only collects and stores metrics while the environment is running, you'll need to wait a minute or two for those datasources to show any data on the dashoard in real-time.
+The non-sim Prometheus container that backs the `prom-*` datasources also scrapes Trickster's own metrics. Since it only collects and stores metrics while the environment is running, you'll need to wait a minute or two for the `Trickster` dashboards to show any data.
 
 ## Getting Real Dashboard Data
 
-Using datasources backed by the real Prometheus and Trickster (the `prom-trickster-*` datasources), rather than the simulator, to explore the dashboard is more desirable for the demo. It better conveys the shape and nature of the Trickster-specific metrics that might be unfamiliar. However, since there is no historical data in the demo composition, that creates an upfront barrier.
+The `Trickster` dashboards chart what Trickster is doing, so they come alive once Trickster is handling traffic. The quickest way to produce some is to keep the `Trips (Prometheus)` dashboard open and auto-refreshing against a `prom-trickster-*` datasource, which sends every query through Trickster.
 
-Keeping the dashboard open and auto-refreshing against any `trickster`-labeled datasource will help to generate real metrics in Trickster, such as request rates, cache hit rates, etc. Prometheus will collect and store those metrics, and the Grafana dashboard will query and render those metrics. So by keeping the demo dashboard open and refreshing, you are helping to generate the very metrics that the dashboard presents, making the demo much more visually useful while being very meta.
+The `Trickster` dashboards have their own Data source selector, which defaults to `prom-direct`. Point it at a `prom-trickster-*` datasource instead, and the dashboards query Trickster's metrics through Trickster itself. By keeping them open and refreshing, you are helping to generate the very metrics that they present, which is very meta. Dashboards for features the demo config doesn't use, such as load balancing or TLS, stay empty.
 
 In addition to generating metrics, using the `trickster`-labeled datasources generates traces that are viewable in Jaeger UI, as described above.
 

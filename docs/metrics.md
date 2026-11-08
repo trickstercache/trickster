@@ -2,6 +2,10 @@
 
 Trickster exposes a Prometheus /metrics endpoint with a customizable listener port number (default is 8481). For more information on customizing the metrics configuration, see [configuring.md](configuring.md).
 
+## Grafana Dashboards
+
+Trickster publishes a set of Grafana dashboards built on these metrics in [deploy/grafana](../deploy/grafana). They cover HTTP traffic, caching, time series acceleration, load balancing, TSM, L4 streams, SQL wire protocols, MoQ, access control, TLS, the Kubernetes controller, and the Trickster runtime. Start with **Trickster / Overview**, which links to the rest. [deploy/grafana/README.md](../deploy/grafana/README.md) explains how to import them, provision them from files, or load them into Kubernetes through the Grafana dashboard sidecar.
+
 ---
 
 The following metrics are available for polling with any Trickster configuration:
@@ -32,7 +36,7 @@ The following metrics are available for polling with any Trickster configuration
     * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
-* `trickster_frontend_written_byte_total` (Counter) - Count of bytes written in front end requests handled by Trickster
+* `trickster_frontend_written_bytes_total` (Counter) - Count of bytes written in front end requests handled by Trickster
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request
     * `provider` - the type of the configured backend handling the proxy request
@@ -209,9 +213,9 @@ The following metrics are available for polling with any Trickster configuration
     * `protocol` - `tcp`, `tls` or `udp`
     * `backend_name` - the name of the pool member backend
 
-* `trickster_proxy_query_range_rejected_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
+* `trickster_proxy_query_range_rejections_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
   * labels:
-    * `backend` - the name of the configured backend rejecting the query
+    * `backend_name` - the name of the configured backend rejecting the query
 
 * `trickster_graphite_resolution_lookups_total` (Counter) - Count of Graphite step-resolution lookups. Labels never include a metric path or target expression.
   * labels:

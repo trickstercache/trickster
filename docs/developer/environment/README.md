@@ -20,13 +20,18 @@ This runs `cmd/trickster/main.go` with a config file from the developer environm
 You can combine these make actions `make developer-start serve-dev` if you want.
 
 Once you have the Docker Compose running, and Trickster running locally, visit
-the Grafana Dashboard at <http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status>.
+the [Trickster / Overview](http://127.0.0.1:3000/d/trickster-overview/trickster-overview)
+dashboard. It and the rest of the `Trickster` folder are the published dashboards
+from [deploy/grafana](../../../deploy/grafana), mounted into Grafana from the repo.
+Edits to those files show up within 10 seconds.
 
-The data in this dashboard is polled by Prometheus from your local Trickster
-dev instance. So the longer you keep this dashboard up and refreshing, the more
-you can test out Trickster acceleration features. You can change the Data Source
-selector to go between various Trickster configs, or bypass Trickster altogether
-for verification purposes.
+Prometheus scrapes these dashboards' data from your local Trickster dev instance.
+The provider dashboards in the `Trickster Developer` folder generate traffic
+through Trickster. The `Trickster` dashboards default to querying Prometheus
+directly, but their Data source selector can point them at a Trickster-backed
+Prometheus data source, so the dashboards generate the traffic they chart.
+Dashboards for features the developer config doesn't enable, such as L4
+streams, ACLs and TLS, show no data.
 
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
@@ -40,8 +45,8 @@ so you can start only the databases you are working on and save memory, CPU
 and disk. The services with no profile always start: `redis`, `valkey`, `grafana`,
 `prometheus` (and its seeders), `devorigin` (and the `seed_data_generate`
 loader it needs), and `jaeger`. Prometheus is always on because it also
-scrapes your local Trickster for the
-[Trickster Status](http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status) dashboard.
+scrapes your local Trickster for the dashboards in the `Trickster` folder, starting with
+[Trickster / Overview](http://127.0.0.1:3000/d/trickster-overview/trickster-overview).
 
 | Profile | Services | Make target |
 |---|---|---|

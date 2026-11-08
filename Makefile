@@ -541,6 +541,27 @@ developer-moq: dev-certs
 developer-moq-browser: dev-certs
 	@hack/developer-moq.sh browser
 
+# generate-dash-demo runs a demo Trickster against the developer environment, on ports clear of make serve-dev's, and
+# drives realistic traffic through it for the dashboards in deploy/grafana (Prometheus job trickster-demo). Ctrl-C
+# stops both. GEN_DASH_DEMO_ARGS passes flags to the generator, such as -browsers 32 -viewers 16
+GEN_DASH_DEMO_DIR    := hack/generate-dash-demo
+GEN_DASH_DEMO_CONFIG := $(GEN_DASH_DEMO_DIR)/trickster-generate-dash-demo.yml
+GEN_DASH_DEMO_WORK   := /tmp/trickster-dash-demo
+GEN_DASH_DEMO_ARGS   ?=
+
+.PHONY: generate-dash-demo
+generate-dash-demo: dev-certs developer-start
+	@# Prometheus reads its scrape config only at start or on SIGHUP
+	@cd $(COMPOSE_ENV_DIR) && docker compose kill -s HUP prometheus >/dev/null 2>&1
+	@mkdir -p $(GEN_DASH_DEMO_WORK)
+	@$(GO) build -o $(GEN_DASH_DEMO_WORK)/trickster ./cmd/trickster
+	@$(GEN_DASH_DEMO_WORK)/trickster -config $(GEN_DASH_DEMO_CONFIG) >$(GEN_DASH_DEMO_WORK)/trickster.log 2>&1 & \
+		pid=$$!; trap 'kill $$pid 2>/dev/null; wait $$pid 2>/dev/null' EXIT INT TERM; \
+		echo "demo Trickster started (pid $$pid), logging to $(GEN_DASH_DEMO_WORK)/trickster.log"; \
+		timeout 60 sh -c 'until curl -sf http://127.0.0.1:18981/metrics >/dev/null 2>&1; do sleep 1; done' || \
+			{ echo "the demo Trickster did not start; see $(GEN_DASH_DEMO_WORK)/trickster.log" >&2; exit 1; }; \
+		$(GO) run ./$(GEN_DASH_DEMO_DIR) $(GEN_DASH_DEMO_ARGS)
+
 .PHONY: developer-stop
 developer-stop:
 	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_ALL_PROFILES)' docker compose stop

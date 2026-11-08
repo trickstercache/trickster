@@ -1,0 +1,163 @@
+# The demo Trickster that hack/generate-dash-demo drives, run by make generate-dash-demo from the root of the
+# repo. Its backends reach the developer environment's services (make developer-start), and its ports are clear
+# of the developer Trickster's (make serve-dev), so both can run at once. Prometheus scrapes its metrics as job
+# trickster-demo, instance trickster-demo-01.us-east-1.
+#
+#   HTTP:          http://127.0.0.1:18980/<backend>/
+#   HTTPS/HTTP3:   https://127.0.0.1:18983/<backend>/ (WebTransport for moqrelay-demo-01.us-east-1)
+#   metrics:       http://127.0.0.1:18981/metrics
+#   PostgreSQL:    127.0.0.1:18988 (pg-demo-01.us-east-1)
+#   MoQ ingest:    moqt://127.0.0.1:18990/ (moq-ingest-demo-01.us-east-1)
+
+listeners:
+  default:
+    port: 18980
+    tls_port: 18983
+    http3:
+      enabled: true
+  metrics:
+    port: 18981
+  mgmt:
+    port: 18984
+  pg-demo:
+    protocol: postgres
+    port: 18988
+  moq-ingest:
+    protocol: moq
+    port: 18990
+
+authenticators:
+  # Trickster authenticates PostgreSQL clients against these users, then opens the origin session with the
+  # origin_url credentials
+  pg-demo:
+    provider: basic
+    users:
+      grafana_ro: trickster-dev-grafana
+
+caches:
+  edge-mem:
+    provider: memory
+    memory:
+      max_size_bytes: 268435456
+  # a small filesystem cache, so the capacity and eviction panels have something to show
+  edge-disk:
+    provider: filesystem
+    filesystem:
+      cache_path: /tmp/trickster-dash-demo/edge-disk
+    index:
+      max_size_bytes: 33554432
+      max_size_backoff_bytes: 4194304
+      max_size_objects: 2000
+      max_size_backoff_objects: 200
+
+backends:
+  # web objects of various sizes and lifetimes from devorigin's range simulator
+  www-demo-01.us-east-1:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8482/byterange'
+    cache_name: edge-disk
+    paths:
+      - path: /
+        match_type: prefix
+        handler: proxycache
+  static-demo-01.us-east-1:
+    provider: static
+    static:
+      root: docs/developer/environment/static-site
+
+  # two HA replicas of one Prometheus, plus devorigin's simulated Prometheus in another region
+  prom-demo-01.us-east-1a:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: edge-mem
+    prometheus:
+      series_api: remote_read
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  prom-demo-02.us-east-1b:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:9090'
+    cache_name: edge-mem
+    prometheus:
+      series_api: remote_read
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  prom-demo-01.us-west-2:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:8482/prometheus'
+    cache_name: edge-mem
+    timeseries_retention_factor: 5184000
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  # TSM: one query evaluated over both replicas' raw series, and two regions' answers merged
+  tsm-demo-global.us-east-1:
+    provider: alb
+    cache_name: edge-mem
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global
+      pool:
+        - prom-demo-01.us-east-1a
+        - prom-demo-02.us-east-1b
+  tsm-demo-merge.global:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - prom-demo-01.us-east-1a
+        - prom-demo-01.us-west-2
+
+  pg-demo-01.us-east-1:
+    provider: timescaledb
+    origin_url: 'postgres://trickster:trickster-dev-upstream@127.0.0.1:5432/trickster'
+    listener_names: [pg-demo]
+    authenticator_name: pg-demo
+    cache_name: edge-mem
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  clickhouse-demo-01.us-east-1:
+    provider: clickhouse
+    origin_url: 'http://127.0.0.1:8123'
+    cache_name: edge-mem
+    volatile_window: 60s
+    timeseries_retention_factor: 2048
+  druid-demo-01.us-east-1:
+    provider: druid
+    origin_url: 'http://127.0.0.1:8888'
+    cache_name: edge-mem
+    volatile_window: 60s
+    timeseries_retention_factor: 2048
+  graphite-demo-01.us-east-1:
+    provider: graphite
+    origin_url: 'http://127.0.0.1:8081'
+    cache_name: edge-mem
+
+  # MoQ: the generator publishes into the ingest relay over native QUIC, and its viewers watch through the edge
+  # relay over WebTransport, which pulls from the ingest relay
+  moq-ingest-demo-01.us-east-1:
+    provider: moq
+    listener_names: [moq-ingest]
+    cache_name: edge-mem
+    moq:
+      publish:
+        enabled: true
+    tls:
+      full_chain_cert_path: docs/developer/environment/certs/trickster-dev.crt
+      private_key_path: docs/developer/environment/certs/trickster-dev.key
+  moqrelay-demo-01.us-east-1:
+    provider: moq
+    origin_url: 'moqt://127.0.0.1:18990/'
+    listener_names: [default]
+    cache_name: edge-mem
+    tls:
+      full_chain_cert_path: docs/developer/environment/certs/trickster-dev.crt
+      private_key_path: docs/developer/environment/certs/trickster-dev.key
+      insecure_skip_verify: true
+
+logging:
+  log_level: info

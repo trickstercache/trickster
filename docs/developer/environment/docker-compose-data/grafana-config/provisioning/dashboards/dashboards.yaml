@@ -22,3 +22,15 @@ providers:
   options:
     # <string, required> path to dashboard files on disk. Required
     path: /var/lib/grafana/dashboards
+# the dashboards published from deploy/grafana/dashboards, which monitor Trickster itself
+- name: 'trickster-dashboards'
+  orgId: 1
+  folder: 'Trickster'
+  folderUid: 'trickster'
+  type: file
+  disableDeletion: false
+  editable: true
+  updateIntervalSeconds: 10
+  allowUiUpdates: true
+  options:
+    path: /var/lib/grafana/dashboards-trickster
