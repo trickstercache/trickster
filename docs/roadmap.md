@@ -33,6 +33,7 @@ The roadmap for Trickster in the remainder of 2026 focuses on delivering version
   - [x] Improved support for Time Series Merge on distributed Mimir and Thanos deployments
 
 - [ ] Trickster v2.3 Release
+  - [x] Updated Grafana Dashboards for Trickster Metrics
   - [ ] Expand Authenticator to more providers (OIDC, JWT, API Key, mTLS, etc.)
   - [ ] Expand Prometheus support to more managed services (Azure, GCP)
   - [ ] Expand Time Series Merge to more providers (VictoraMetrics, InfluxDB, etc.)
@@ -46,7 +47,6 @@ The roadmap for Trickster in the remainder of 2026 focuses on delivering version
 
 ### Ongoing
 
-- [ ] Updated Grafana Dashboard for Trickster Metrics
 - [ ] More easily-importable Trickster packages by other projects
 
 ## Get Involved

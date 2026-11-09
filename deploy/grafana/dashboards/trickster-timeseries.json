@@ -1,0 +1,4817 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "purple",
+        "name": "Config reloads",
+        "expr": "changes(trickster_config_last_reload_success_time_seconds{job=~\"$job\", instance=~\"$instance\"}[$__interval]) > 0",
+        "step": "1m",
+        "titleFormat": "Config reloaded",
+        "textFormat": "{{instance}}",
+        "useValueForTime": false
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Restarts",
+        "expr": "changes(process_start_time_seconds{job=~\"$job\", instance=~\"$instance\"}[$__interval]) > 0",
+        "step": "1m",
+        "titleFormat": "Trickster restarted",
+        "textFormat": "{{instance}}",
+        "useValueForTime": false
+      }
+    ]
+  },
+  "description": "Is time series acceleration working? Share of points served from cache, delta-cache edge behavior (partial buckets, step alignment fallbacks, retention, range limits) with defect counters that must stay at zero, and per-provider query cacheability for SQL, Druid, VictoriaMetrics and Graphite.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "trickster"
+      ],
+      "targetBlank": false,
+      "title": "Trickster dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Metrics reference",
+      "tooltip": "Trickster metrics documentation",
+      "type": "link",
+      "url": "https://github.com/trickstercache/trickster/blob/main/docs/metrics.md"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Cached points",
+      "description": "Share of time series data points returned to clients in the selected range that came from the delta cache rather than the origin, across HTTP time series backends (Prometheus, VictoriaMetrics, InfluxDB, ClickHouse, Druid, Graphite, GreptimeDB); a partial hit that fetches 1 new point of 10,000 counts as 99.99% cached, and points in partial edge buckets always count as from the origin. Dashboards on relative time ranges usually stay above 70%; low values follow restarts, evictions, wide or absolute ranges, or queries the provider cannot delta cache (see the provider rows). n/a means no delta-cache response completed in the range.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "links": [
+        {
+          "title": "Caching",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&${backend:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=\"cached\"}[$__range])) or sum(increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) * 0) / (sum(increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) > 0)) or vector(-1)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.3
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "n/a",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "noValue": "n/a"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Off-grid extents",
+      "description": "Must stay 0. Fetch ranges in the selected range whose bounds fell between step buckets and were narrowed to whole buckets before a delta fetch or cache-coverage check (one request can add several). Any value is a step or phase mismatch worth reporting upstream; Trickster logs each one only at debug level (backend and extent), so enable debug logging to capture the query. The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_proxy_timeseries_offgrid_extents_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m]) unless last_over_time(trickster_proxy_timeseries_offgrid_extents_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m] offset $__range)) or increase(trickster_proxy_timeseries_offgrid_extents_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Step mispredicts",
+      "description": "Must stay 0. Graphite responses in the selected range whose step contradicted the step predicted from the learned archive ladders: Trickster discarded each one, relearned the ladder and re-served the request unaccelerated, so clients still got correct data, but the registry held a wrong ladder (usually after whisper-resize.py or a storage-schemas change). The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_graphite_step_mispredictions_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m]) unless last_over_time(trickster_graphite_step_mispredictions_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m] offset $__range)) or increase(trickster_graphite_step_mispredictions_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "SQL defects",
+      "description": "Must stay 0. Failures in the selected range to render a missing time range, partial bucket or delta row set of a delta-cached SQL query (ClickHouse, MySQL protocol, PostgreSQL wire, Flight SQL); native SQL engines then run the client's original statement, while a ClickHouse failure fails that range's fetch. ClickHouse and MySQL failures are also logged at ERROR, PostgreSQL wire and Flight SQL ones are not logged. The PostgreSQL wire reasons origin_rejected and result_size are cache bypasses, not defects, and are excluded (see the SQL query analysis row). The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_sql_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", reason!~\"origin_rejected|result_size\"}[5m]) unless last_over_time(trickster_sql_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", reason!~\"origin_rejected|result_size\"}[5m] offset $__range)) or increase(trickster_sql_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", reason!~\"origin_rejected|result_size\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Druid defects",
+      "description": "Must stay 0. Failures in the selected range to rewrite a missing time range of a delta-cached Druid native or SQL query into a request body; each is logged at ERROR and that range's fetch fails, which can reach the client as an error. Every reason is a defect. The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_druid_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m]) unless last_over_time(trickster_druid_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m] offset $__range)) or increase(trickster_druid_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Bucket errors",
+      "description": "Partial (incomplete) edge buckets that failed to fetch in the selected range; each is left out of its response, so the client misses a first or last point. Only step_alignment partial, partial_start and partial_end fetch partial buckets (InfluxQL defaults to partial_end, Druid native queries to partial). Isolated errors follow origin hiccups; a steady count means the origin is failing the small edge queries. The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_proxy_partial_bucket_fetches_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", status=\"err\"}[5m]) unless last_over_time(trickster_proxy_partial_bucket_fetches_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", status=\"err\"}[5m] offset $__range)) or increase(trickster_proxy_partial_bucket_fetches_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", status=\"err\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Over retention",
+      "description": "Requests in the selected range that spanned more buckets than their backend's timeseries_retention_factor keeps, so the cropped part is refetched from the origin every time and they can never be full hits. A sizing signal, not an incident: raise timeseries_retention_factor for the backends listed in the Delta cache behavior row. HTTP backends report it only with timeseries_eviction_method: lru; native SQL engines always do. The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_proxy_timeseries_retention_factor_exceeded_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m]) unless last_over_time(trickster_proxy_timeseries_retention_factor_exceeded_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m] offset $__range)) or increase(trickster_proxy_timeseries_retention_factor_exceeded_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Range rejections",
+      "description": "Time series queries refused in the selected range because their range exceeded the backend's (or a TSM ALB's) max_query_range; the client got a 400 and the origin was not contacted. Non-zero means the limit is working but users are hitting it; check it against the dashboards in use. Only backends with max_query_range set report this. The first event of a new series is counted too.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum((last_over_time(trickster_proxy_query_range_rejections_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m]) unless last_over_time(trickster_proxy_query_range_rejections_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[5m] offset $__range)) or increase(trickster_proxy_query_range_rejections_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) or vector(0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Points",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Points/s from cache vs origin",
+      "description": "Data points (samples across all series) per second in time series responses served by the delta cache, split into points that came from the cache and points fetched from the origin for that response; points in partial edge buckets count as uncached even when reused from the short-lived partial bucket cache. An accelerated dashboard is mostly green; uncached spikes follow cold caches, new queries, wide historical ranges and evictions. Only completed delta-cache responses on HTTP time series backends count: proxied fallbacks and TSM global evaluation do not, and ALB members count under their own names, so a TSM-merged response counts once per member. Native SQL rows are charted separately.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Caching: request-level cache outcomes",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&${backend:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__rate_interval]))",
+          "legendFormat": "{{cache_status}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "points/s",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cached"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "uncached"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Cached points share by provider",
+      "description": "Share of time series points served from cache, per provider type, from per-second rates, so it follows the current traffic mix. Compare providers to spot one whose queries cannot be delta cached or whose cache is churning; the table below breaks it down by backend. Dips after a restart or config reload are expected while caches refill.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(sum by (provider) (rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=\"cached\"}[$__rate_interval])) or sum by (provider) (rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__rate_interval])) * 0) / (sum by (provider) (rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__rate_interval])) > 0)",
+          "legendFormat": "{{provider}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "min": 0,
+          "max": 1,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Points by backend (selected range)",
+      "description": "Per-backend totals over the selected range: all points served, points fetched from the origin, and the share served from cache. Sorted by points from origin, so the backends that put the most load on their origins come first. Only backends with completed delta-cache responses appear; native SQL listeners count rows instead and are excluded.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) > 0",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "(sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=\"uncached\"}[$__range])) or sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=\"cached\"}[$__range])) * 0) and (sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) > 0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "(sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=\"cached\"}[$__range])) or sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) * 0) / (sum by (backend_name, provider) (increase(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_status=~\"cached|uncached\"}[$__range])) > 0)",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Points from origin",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "backend_name": "Backend",
+              "provider": "Provider",
+              "Value #A": "Points served",
+              "Value #B": "Points from origin",
+              "Value #C": "Cached share"
+            },
+            "indexByName": {
+              "backend_name": 0,
+              "provider": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            },
+            "includeByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cached share"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.3
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.7
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Native SQL rows/s by lookup status",
+      "description": "Rows per second returned by native SQL listeners (MySQL protocol, PostgreSQL wire protocol, Flight SQL), labeled with each statement's cache lookup status: hit rows came wholly from cache, phit rows were partly fetched, kmiss and rmiss rows came from the origin, proxy-only rows were relayed without caching. These are rows, not samples, so they are kept apart from the HTTP points. MySQL and PostgreSQL wire listeners report 0 from startup; Flight SQL appears with its first statement.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "links": [
+        {
+          "title": "SQL Wire Protocols",
+          "url": "/d/trickster-sql-wire?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&${backend:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", path=\"query\"}[$__rate_interval]))",
+          "legendFormat": "{{cache_status}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "rows/s",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#39FF14"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "phit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4CBB17"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rhit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#355E3B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#70D63B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "nchit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "purge"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-only"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808080"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "type": "row",
+      "title": "Delta cache behavior",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Partial bucket fetches/s by edge and status",
+      "description": "Partial (incomplete) edge buckets fetched through the object cache, by edge (start or end of the range) and outcome: hit reused a recent identical bucket (kept for partial_bucket_ttl, 15s by default), kmiss sent a new small query to the origin, err failed and the bucket was left out of the response. Only step_alignment partial, partial_start and partial_end produce these (InfluxQL defaults to partial_end, Druid native queries to partial; Prometheus' partial_end is Fast Forward and is not counted). Misses on most refreshes are normal for Grafana, which sends the end as a timestamp, and each fetch also counts as an object-cache request in the Caching dashboard.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (edge, status) (rate(trickster_proxy_partial_bucket_fetches_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+          "legendFormat": "{{edge}} {{status}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "end hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start kmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "end kmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start rmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "end rmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start err"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "end err"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Step alignment fallbacks (selected range)",
+      "description": "Requests that asked for a step alignment mode their query or provider cannot honor (through the backend's step_alignment, an ALB override or a trickster-step-align directive in the query) and were served in the query's default mode instead. A steady count is a configuration smell, not an outage: a mode that a backend's main query language cannot use falls back on every request (for example partial on an InfluxDB backend serving Flux, or a partial_end directive sent to VictoriaMetrics, which supports only truncate, drop and off). Fix the backend or ALB step_alignment, or the directive in the dashboards that send it.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name, requested, applied) (increase(trickster_step_alignment_fallbacks_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])) > 0",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Requests",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "backend_name": "Backend",
+              "requested": "Requested mode",
+              "applied": "Served in",
+              "Value": "Requests"
+            },
+            "indexByName": {
+              "backend_name": 0,
+              "requested": 1,
+              "applied": 2,
+              "Value": 3
+            },
+            "includeByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Off-grid extents (cumulative, should be 0)",
+      "description": "Cumulative count, since each Trickster process started, of fetch ranges whose bounds fell between step buckets and were narrowed to whole buckets, by backend and provider (HTTP provider or native protocol). An empty panel is healthy; each step up marks when new off-grid extents occurred, a step or phase mismatch worth reporting upstream. Trickster logs them only at debug level (backend and extent), so enable debug logging to capture the query. It is plotted cumulatively because the series is created by its first event, which a rate would not show.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name, provider) (max_over_time(trickster_proxy_timeseries_offgrid_extents_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+          "legendFormat": "{{backend_name}} ({{provider}})",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "stepAfter",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Requests exceeding the retention factor/s",
+      "description": "Time series requests per second whose bucket count exceeded the backend's timeseries_retention_factor: the cache keeps only the newest buckets of such a query, so the rest is refetched from the origin on every request and it can never be a full hit. Raise timeseries_retention_factor on the listed backends if these queries matter (a 24h panel at a 15s step needs at least 5,760; the default is 1,024, or 524,288 for Graphite). HTTP backends report this only with timeseries_eviction_method: lru (the default, oldest, proxies ranges that end before the retained window instead); native SQL delta engines always report it.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name) (rate(trickster_proxy_timeseries_retention_factor_exceeded_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "max_query_range rejections/s",
+      "description": "Queries per second refused because their requested range was longer than the backend's max_query_range (or a TSM ALB's, labeled with the ALB's name), measured as the client sent it, before step alignment. The client receives a 400 and no origin request is made, so these appear as 4xx in the HTTP Traffic dashboard but never as cache-engine requests. Only backends with max_query_range set report this.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "links": [
+        {
+          "title": "HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&${backend:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name) (rate(trickster_proxy_query_range_rejections_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Truncated origin responses/s",
+      "description": "Delta-cache fetches per second that the origin cut off at its series limit. The query is then proxied whole and uncached, and its cache key is marked truncated so later requests for it bypass the cache too. Only providers that declare a series limit report this (currently the CloudWatch PromQL flavor); a steady rate means those queries select more series than the origin returns at once, so narrow them. The proxied retry is not counted as a cache-engine request.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (backend_name) (rate(trickster_proxy_truncated_responses_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "row",
+      "title": "SQL query analysis",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "panels": [
+        {
+          "id": 23,
+          "type": "timeseries",
+          "title": "SQL statements analyzed/s by cache mode",
+          "description": "SQL statements analyzed per second by the strongest cache mode their shape allows: delta (time series delta cache; only the missing time range is fetched), object (cached whole, keyed on the exact statement), none (relayed uncached). Sources are ClickHouse HTTP queries, SELECTs on MySQL protocol listeners, row-returning simple queries on PostgreSQL wire listeners (postgres, timescaledb, greptimedb, questdb) and InfluxDB Flight SQL statements. This is the analyzer's verdict, not the mode served; the outcomes panel below shows what was served.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 52
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (cache_mode) (rate(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__rate_interval]))",
+              "legendFormat": "{{cache_mode}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 25,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "delta"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "object"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "none"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 24,
+          "type": "timeseries",
+          "title": "Delta-cacheable share by backend",
+          "description": "Share of each backend's analyzed SQL statements that qualify for delta caching. Dashboards built from time-bucketed GROUP BY queries with a bounded time filter should be near 100%; a low share means most statements are cached only as whole objects or not at all (the reasons table shows why). The dialect label names the engine, not the wire protocol: GreptimeDB over MySQL and over the PostgreSQL protocol both report greptimedb, and TimescaleDB reports postgres.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 52
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "(sum by (backend_name, dialect) (rate(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_mode=\"delta\"}[$__rate_interval])) or sum by (backend_name, dialect) (rate(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__rate_interval])) * 0) / (sum by (backend_name, dialect) (rate(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__rate_interval])) > 0)",
+              "legendFormat": "{{backend_name}} ({{dialect}})",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 25,
+          "type": "table",
+          "title": "Top non-delta reasons (selected range)",
+          "description": "The ten most common reasons SQL statements were not delta cacheable, with their share of that dialect's analyzed statements. invalid_sql and unsupported_statement: not a parseable read-only SELECT; not_time_range: no bounded time filter; unsupported_bucket, _grouping, _ordering, _limit and _format: a shape that cannot be split by time safely; unsafe_predicate and ambiguous_time_axis: the time column could not be proven; nondeterministic: volatile functions. multi_statement, in_transaction, pipelined, session_state and query_size come from the PostgreSQL wire gate (always none). These describe client query shapes, not Trickster faults.",
+          "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 60
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (dialect, cache_mode, reason) (increase(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_mode!=\"delta\"}[$__range])) > 0)",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "B",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (dialect, cache_mode, reason) (increase(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_mode!=\"delta\"}[$__range])) > 0) / on (dialect) group_left () sum by (dialect) (increase(trickster_sql_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "countRows": false,
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "Statements",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "dialect": "Dialect",
+                  "cache_mode": "Mode",
+                  "reason": "Reason",
+                  "Value #A": "Statements",
+                  "Value #B": "Share of dialect"
+                },
+                "indexByName": {
+                  "dialect": 0,
+                  "cache_mode": 1,
+                  "reason": 2,
+                  "Value #A": 3,
+                  "Value #B": 4
+                },
+                "includeByName": {}
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false,
+                "filterable": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Share of dialect"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Mode"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "object": {
+                            "text": "object",
+                            "color": "blue",
+                            "index": 0
+                          }
+                        }
+                      },
+                      {
+                        "type": "value",
+                        "options": {
+                          "none": {
+                            "text": "none",
+                            "color": "#808080",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 26,
+          "type": "timeseries",
+          "title": "SQL rewrite failures/s by reason",
+          "description": "SQL rewrite failures per second by backend and reason. Red reasons are defects that should never occur: ClickHouse invalid_input, missing_plan, render_error and invalid_request, render_extent and render_range from the native delta engines, and MySQL render_delta_rows; ClickHouse and MySQL also log each one at ERROR, PostgreSQL wire and Flight SQL do not log them. Orange reasons are not defects: origin_rejected (the origin refused the rewritten SQL) and result_size (too large to cache) make the PostgreSQL wire engine bypass the cache for that statement for a while, so a steady rate is a compatibility or sizing signal. The first failure of a new series does not show as a rate; the SQL defects tile counts it.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 60
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (backend_name, reason) (rate(trickster_sql_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__rate_interval]))",
+              "legendFormat": "{{backend_name}} {{reason}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*(origin_rejected|result_size)$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 27,
+          "type": "timeseries",
+          "title": "Native SQL cache outcomes/s",
+          "description": "Native SQL statements per second (MySQL protocol, PostgreSQL wire, Flight SQL) that took the cache path, by outcome under the mode actually served: hit (whole answer from cache), phit (cached rows plus a fetch of the missing time range), kmiss and rmiss (fetched from the origin), proxy-only (relayed because the session is not cache-eligible, or a Flight SQL statement with mode none), proxy-error (the relay or origin failed). ClickHouse is HTTP and reports in the Caching dashboard instead. Statements the analyzer marked none are not counted for MySQL and PostgreSQL wire. PostgreSQL wire statements that bypass the cache after an origin_rejected or result_size rewrite failure are relayed and not counted here.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 69
+          },
+          "links": [
+            {
+              "title": "SQL Wire Protocols",
+              "url": "/d/trickster-sql-wire?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&${backend:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (cache_status) (rate(trickster_sql_query_cache_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\"}[$__rate_interval]))",
+              "legendFormat": "{{cache_status}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 25,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "hit"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#39FF14"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "phit"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#4CBB17"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "rhit"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#355E3B"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy-hit"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#70D63B"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "nchit"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "kmiss"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "rmiss"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "purge"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "purple"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy-only"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy-error"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "error"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "dark-red"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 28,
+          "type": "timeseries",
+          "title": "Cacheable hit share by backend and mode",
+          "description": "Per backend and served mode, the share of cacheable native SQL statements answered at least partly from cache: (hit + phit) / (hit + phit + kmiss + rmiss), the same definition as the SQL Wire Protocols dashboard; relayed (proxy-only) and failed statements are left out. Delta-mode shares rise as dashboards refresh the same queries; object-mode shares need identical statement text, so queries that embed literal timestamps rarely hit there. A delta statement served from the object tier (step_alignment off) counts as object.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 69
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "(sum by (backend_name, cache_mode) (rate(trickster_sql_query_cache_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_status=~\"hit|phit\"}[$__rate_interval])) or sum by (backend_name, cache_mode) (rate(trickster_sql_query_cache_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_status=~\"hit|phit|kmiss|rmiss\"}[$__rate_interval])) * 0) / (sum by (backend_name, cache_mode) (rate(trickster_sql_query_cache_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", dialect=~\"$dialect\", cache_status=~\"hit|phit|kmiss|rmiss\"}[$__rate_interval])) > 0)",
+              "legendFormat": "{{backend_name}} {{cache_mode}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false
+              }
+            },
+            "overrides": []
+          }
+        }
+      ]
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "Druid",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "panels": [
+        {
+          "id": 30,
+          "type": "timeseries",
+          "title": "Druid queries/s by cache mode",
+          "description": "Queries per second to provider druid backends' native (/druid/v2) and SQL (/druid/v2/sql) endpoints, by classification: delta (delta cached; native timeseries, groupBy and topN queries with one interval and a fixed granularity, or the supported TIME_FLOOR SQL subset), object (a valid read cached whole, for one minute unless Druid sends freshness headers), proxy (relayed uncached: non-read, malformed or unsupported requests). Druid uses proxy where the SQL family uses none.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 78
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (cache_mode) (rate(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{cache_mode}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 25,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "delta"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "object"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "none"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 31,
+          "type": "timeseries",
+          "title": "Druid delta-eligible share by backend",
+          "description": "Share of each Druid backend's queries that are delta cached. Grafana panels built on native timeseries or groupBy queries, or on TIME_FLOOR SQL with both a lower and an upper __time bound, should be near 100%; the reasons table explains the rest.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 78
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "(sum by (backend_name) (rate(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_mode=\"delta\"}[$__rate_interval])) or sum by (backend_name) (rate(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval])) * 0) / (sum by (backend_name) (rate(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval])) > 0)",
+              "legendFormat": "{{backend_name}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "min": 0,
+              "max": 1,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 32,
+          "type": "table",
+          "title": "Druid non-delta reasons (selected range)",
+          "description": "The ten most common reasons Druid queries were not delta cached, with their share of all Druid queries in the range. sql_* reasons come from /druid/v2/sql: sql_unsupported means the SQL analyzer found no delta-cacheable shape (one TIME_FLOOR bucket, a GROUP BY covering it and every dimension, and both a lower and an upper __time bound), and it is proxy rather than object for non-read statements. The others mostly come from native queries (an unsupported queryType, several intervals, a calendar or non-UTC granularity, a response-changing context); invalid_context, unsupported_response_shape and invalid_json can come from either endpoint.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 86
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (cache_mode, reason) (increase(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_mode!=\"delta\"}[$__range])) > 0)",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "B",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (cache_mode, reason) (increase(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_mode!=\"delta\"}[$__range])) > 0) / scalar(sum(increase(trickster_druid_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])))",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "countRows": false,
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "Queries",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "cache_mode": "Mode",
+                  "reason": "Reason",
+                  "Value #A": "Queries",
+                  "Value #B": "Share of queries"
+                },
+                "indexByName": {
+                  "cache_mode": 0,
+                  "reason": 1,
+                  "Value #A": 2,
+                  "Value #B": 3
+                },
+                "includeByName": {}
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false,
+                "filterable": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Share of queries"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Mode"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "object": {
+                            "text": "object",
+                            "color": "blue",
+                            "index": 0
+                          }
+                        }
+                      },
+                      {
+                        "type": "value",
+                        "options": {
+                          "proxy": {
+                            "text": "proxy",
+                            "color": "#808080",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 33,
+          "type": "timeseries",
+          "title": "Druid rewrite failures (cumulative, should be 0)",
+          "description": "Cumulative count, since each Trickster process started, of failures to rewrite a missing time range of a delta-cached Druid query into a native or SQL request body, by backend and reason (invalid_input, missing_plan, invalid_step, invalid_extent, render_error, body_error). An empty panel is healthy: every reason is a defect, logged at ERROR, and the affected fetch fails. Plotted cumulatively because the series is created by its first event, which a rate would not show.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 86
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (backend_name, reason) (max_over_time(trickster_druid_query_rewrite_failures_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{backend_name}} {{reason}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "stepAfter",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "type": "row",
+      "title": "VictoriaMetrics",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 94
+      },
+      "panels": [
+        {
+          "id": 35,
+          "type": "timeseries",
+          "title": "MetricsQL requests/s by cache mode",
+          "description": "Requests per second to provider victoriametrics backends' query_range, query, series, labels and label values APIs, by classification: delta (eligible range queries, delta cached), object (eligible instant and metadata requests, and range queries using range-wide functions or the @ and limit modifiers, cached whole), proxy (relayed uncached). A large proxy share is normal: Grafana instant queries at the live edge land in proxy with reason live_edge, so do not alert on it alone. The VictoriaMetrics Graphite API is not counted here.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 95
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (cache_mode) (rate(trickster_victoriametrics_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{cache_mode}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 25,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "delta"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "object"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "none"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "proxy"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#808080"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 36,
+          "type": "table",
+          "title": "MetricsQL non-delta reasons (selected range)",
+          "description": "The ten most common non-delta classifications, with their share of all MetricsQL requests in the range. object/eligible is normal for instant and metadata requests; range_function, range_aggregate, limit_modifier and at_modifier are range queries that can only be cached whole. Under proxy, live_edge (an instant query with no time or a time near now) is expected in volume; nocache and trace come from client parameters; unsupported_time and parse_error mean a time or MetricsQL expression that did not parse; path_request_params on every request of a path means request_params there disables caching, a config smell.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 95
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (cache_mode, reason) (increase(trickster_victoriametrics_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_mode!=\"delta\"}[$__range])) > 0)",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "B",
+              "editorMode": "code",
+              "expr": "topk(10, sum by (cache_mode, reason) (increase(trickster_victoriametrics_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\", cache_mode!=\"delta\"}[$__range])) > 0) / scalar(sum(increase(trickster_victoriametrics_query_analysis_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__range])))",
+              "legendFormat": "__auto",
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm",
+            "footer": {
+              "show": false,
+              "reducer": [
+                "sum"
+              ],
+              "countRows": false,
+              "fields": ""
+            },
+            "sortBy": [
+              {
+                "displayName": "Requests",
+                "desc": true
+              }
+            ]
+          },
+          "transformations": [
+            {
+              "id": "merge",
+              "options": {}
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true
+                },
+                "renameByName": {
+                  "cache_mode": "Mode",
+                  "reason": "Reason",
+                  "Value #A": "Requests",
+                  "Value #B": "Share of requests"
+                },
+                "indexByName": {
+                  "cache_mode": 0,
+                  "reason": 1,
+                  "Value #A": 2,
+                  "Value #B": 3
+                },
+                "includeByName": {}
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false,
+                "filterable": false
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Share of requests"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "percentunit"
+                  },
+                  {
+                    "id": "decimals",
+                    "value": 1
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Mode"
+                },
+                "properties": [
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "color-text"
+                    }
+                  },
+                  {
+                    "id": "mappings",
+                    "value": [
+                      {
+                        "type": "value",
+                        "options": {
+                          "object": {
+                            "text": "object",
+                            "color": "blue",
+                            "index": 0
+                          }
+                        }
+                      },
+                      {
+                        "type": "value",
+                        "options": {
+                          "proxy": {
+                            "text": "proxy",
+                            "color": "#808080",
+                            "index": 1
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "type": "row",
+      "title": "Graphite resolution",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 103
+      },
+      "panels": [
+        {
+          "id": 38,
+          "type": "timeseries",
+          "title": "Step resolutions/s by confidence",
+          "description": "Step-resolution verdicts per second for provider graphite /render targets: exact (read from an origin response for that metric and age), derived (computed from known ladders, such as a wildcard's shared step or a step-changing function) and configured (from static_retentions, awaiting a confirming probe) are delta cached; unknown (no usable step) is served from the object cache. unknown is expected during warmup; a persistently high share means ladder learning is failing (see probes). Multi-target renders resolve each target twice, so lookups exceed targets.",
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 0,
+            "y": 104
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (confidence, source) (rate(trickster_graphite_resolution_lookups_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{confidence}} ({{source}})",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 25,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^exact"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^derived"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "light-green"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^configured"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "blue"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": "^unknown"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 39,
+          "type": "timeseries",
+          "title": "Resolution probes/s by kind and result",
+          "description": "Synthetic origin requests issued by the resolver. narrow and wide /render?format=raw probes learn a metric's archive ladder (step: a stepped series came back; empty: no data at that age); find requests (/metrics/expand) expand wildcards (step: leaves were found; empty: none). Expect a burst after startup, a reload or a ladder TTL expiry that falls toward zero; sustained errors usually mean the origin rejects the resolver's requests (authentication or the static resolution identity).",
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 8,
+            "y": 104
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (kind, result) (rate(trickster_graphite_probes_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{kind}} {{result}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": " error$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 40,
+          "type": "timeseries",
+          "title": "Render fallbacks/s by reason",
+          "description": "Render requests per second routed to the unaccelerated object-cache lane, by reason. unknown_step dominates after startup and should fade as ladders are learned; function_not_allowlisted, non_series_format, client_identity, resolution_identity and passthrough_max_data_points are steady and driven by dashboards or config; misprediction (red) means a response contradicted the predicted step. Not every unaccelerated render is counted (step_alignment off is not), and multi_target_step_mismatch is counted even when the targets are then delta cached one by one.",
+          "gridPos": {
+            "h": 8,
+            "w": 8,
+            "x": 16,
+            "y": 104
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (reason) (rate(trickster_graphite_fallbacks_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{reason}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "misprediction"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "unknown_step"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "yellow"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 41,
+          "type": "timeseries",
+          "title": "Resolution registry entries",
+          "description": "Entries per layer of each Graphite backend's resolution registry (largest replica): leaf (metric paths mapped to a ladder), ladder (ladders known, including ones still being learned), target (cached wildcard expansions) and negative (paths in resolution backoff), plus complete ladders. Ladders should flatten near the number of storage-schemas patterns in use; compare leaf and target with resolution_registry.max_entries, and a growing negative layer means paths with no data or failing probes. Complete ladders update only after a successful learn, so they never drop on invalidation.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 112
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "max by (backend_name, layer) (trickster_graphite_registry_entries{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"})",
+              "legendFormat": "{{backend_name}} {{layer}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "B",
+              "editorMode": "code",
+              "expr": "max by (backend_name) (trickster_graphite_ladders{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"})",
+              "legendFormat": "{{backend_name}} complete ladders",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "linear",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": " negative$"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "orange"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": " complete ladders$"
+                },
+                "properties": [
+                  {
+                    "id": "custom.lineStyle",
+                    "value": {
+                      "fill": "dash"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": 42,
+          "type": "timeseries",
+          "title": "Step mispredictions (cumulative, should be 0)",
+          "description": "Cumulative count, since each Trickster process started, of Graphite responses whose step contradicted the predicted step. An empty panel is healthy; each step up marks when a ladder in the registry proved wrong, usually after whisper-resize.py or a storage-schemas change. Trickster discarded those responses, relearned the ladders and re-served the requests unaccelerated, so clients got correct data. Plotted cumulatively because the series is created by its first event.",
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 112
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "refId": "A",
+              "editorMode": "code",
+              "expr": "sum by (backend_name) (max_over_time(trickster_graphite_step_mispredictions_total{job=~\"$job\", instance=~\"$instance\", backend_name=~\"$backend\"}[$__rate_interval]))",
+              "legendFormat": "{{backend_name}}",
+              "range": true,
+              "instant": false,
+              "format": "time_series"
+            }
+          ],
+          "options": {
+            "legend": {
+              "showLegend": true,
+              "displayMode": "list",
+              "placement": "bottom",
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc",
+              "hideZeros": false
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "mappings": [],
+              "color": {
+                "mode": "palette-classic"
+              },
+              "decimals": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "lineInterpolation": "stepAfter",
+                "showPoints": "never",
+                "pointSize": 4,
+                "spanNulls": false,
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                },
+                "axisPlacement": "auto",
+                "axisLabel": "",
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "barAlignment": 0,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                },
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "axisSoftMin": 0
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byRegexp",
+                  "options": ".*"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "red"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "trickster",
+    "timeseries",
+    "acceleration"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "regex": "",
+        "refresh": 1,
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": [],
+        "description": "The Prometheus-compatible data source that scrapes Trickster's /metrics endpoint."
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(trickster_build_info, job)",
+        "query": {
+          "query": "label_values(trickster_build_info, job)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "description": "Scrape job(s) holding the Trickster targets."
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(trickster_build_info{job=~\"$job\"}, instance)",
+        "query": {
+          "query": "label_values(trickster_build_info{job=~\"$job\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "description": "Trickster process(es) to include."
+      },
+      {
+        "name": "backend",
+        "label": "Backend",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}, backend_name)",
+        "query": {
+          "query": "label_values(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}, backend_name)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "allValue": ".*",
+        "description": "Backends whose cache engines ran: time series, object cache or native SQL. ALB members appear under their own names."
+      },
+      {
+        "name": "dialect",
+        "label": "Dialect",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values({__name__=~\"trickster_sql_query_analysis_total|trickster_sql_query_cache_total\", job=~\"$job\", instance=~\"$instance\"}, dialect)",
+        "query": {
+          "query": "label_values({__name__=~\"trickster_sql_query_analysis_total|trickster_sql_query_cache_total\", job=~\"$job\", instance=~\"$instance\"}, dialect)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "allValue": ".*",
+        "description": "SQL engine for the SQL query analysis row (the engine, not the wire protocol: TimescaleDB reports postgres)."
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Trickster / Time Series Acceleration",
+  "uid": "trickster-timeseries",
+  "version": 1,
+  "weekStart": ""
+}

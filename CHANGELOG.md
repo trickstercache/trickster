@@ -12,11 +12,13 @@ Each minor release also has a narrative overview in `docs/new-changed-<version>.
 
 ### Added
 
+- Official Grafana dashboards for Trickster's own metrics in [deploy/grafana](./deploy/grafana): an overview plus dashboards for HTTP traffic, caching, time series acceleration, load balancing, TSM, L4 streams, SQL wire protocols, MoQ, access control and rate limiting, TLS and ACME, the Kubernetes controller, and runtime and lifecycle. The Docker Compose demo and the developer environment provision them into a `Trickster` folder.
 - Any value in a configuration file can reference an environment variable, whatever its type, with `${NAME}`, `${NAME:-default}` or `${NAME:?message}`. A value that is only a reference to an unset variable leaves the setting at its default. See [Environment Variable References](./docs/configuring.md#environment-variable-references).
 - Media over QUIC (MoQ) Caching Relay now supports IETF Draft 23
 
 ### Changed
 
+- The `Trickster Status` dashboard in the Docker Compose demo, and its developer environment counterpart, are replaced by the dashboards in `deploy/grafana`.
 - A literal `${` in a configuration value now needs to be written `$${`. Inside `request_rewriters` instructions, only `TRK_`-prefixed variables are expanded, so capture tokens like `${1}` and `${site}` are unchanged.
 - The config view shows `<secret>` instead of `*****` for a Redis `password` and the Graphite `origin_password` and `origin_authorization`.
 - TSM now supports (and defaults to) an exact path match when constructing a request's merge plan.

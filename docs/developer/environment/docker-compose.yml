@@ -76,6 +76,8 @@ services:
     volumes:
       - ./docker-compose-data/grafana-config:/etc/grafana
       - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
+      # the published Trickster dashboards, provisioned into the "Trickster" folder
+      - ../../../deploy/grafana/dashboards:/var/lib/grafana/dashboards-trickster
     build:
       context: .
       network: host

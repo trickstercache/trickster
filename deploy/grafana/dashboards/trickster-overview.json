@@ -1,0 +1,3990 @@
+{
+  "__inputs": [],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.4.0"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "table",
+      "name": "Table",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "purple",
+        "name": "Config reloads",
+        "expr": "changes(trickster_config_last_reload_success_time_seconds{job=~\"$job\", instance=~\"$instance\"}[$__interval]) > 0",
+        "step": "1m",
+        "titleFormat": "Config reloaded",
+        "textFormat": "{{instance}}",
+        "useValueForTime": false
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "Restarts",
+        "expr": "changes(process_start_time_seconds{job=~\"$job\", instance=~\"$instance\"}[$__interval]) > 0",
+        "step": "1m",
+        "titleFormat": "Trickster restarted",
+        "textFormat": "{{instance}}",
+        "useValueForTime": false
+      }
+    ]
+  },
+  "description": "Landing page for a Trickster fleet: are the instances up, serving well and caching, and is any feature area unhealthy? Every tile links to the dashboard that explains it.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [
+        "trickster"
+      ],
+      "targetBlank": false,
+      "title": "Trickster dashboards",
+      "tooltip": "",
+      "type": "dashboards",
+      "url": ""
+    },
+    {
+      "asDropdown": false,
+      "icon": "doc",
+      "includeVars": false,
+      "keepTime": false,
+      "tags": [],
+      "targetBlank": true,
+      "title": "Metrics reference",
+      "tooltip": "Trickster metrics documentation",
+      "type": "link",
+      "url": "https://github.com/trickstercache/trickster/blob/main/docs/metrics.md"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Instances up",
+      "description": "Selected Trickster scrape targets that Prometheus reports as up and as down (the standard `up` series for the same job and instance). Any down instance turns the down count red: check the fleet table below and the target's scrape error in Prometheus. An instance that has dropped out of service discovery is not counted at all.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "links": [
+        {
+          "title": "Open Runtime & Lifecycle",
+          "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(up{job=~\"$job\", instance=~\"$instance\"}) or vector(0)",
+          "legendFormat": "up",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "count(up{job=~\"$job\", instance=~\"$instance\"} == 0) or vector(0)",
+          "legendFormat": "down",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "links": [
+            {
+              "title": "Open Runtime & Lifecycle",
+              "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "down"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Config loaded OK",
+      "description": "OK when the most recent configuration apply (startup or reload) succeeded on every selected instance; FAILED when at least one instance's last reload failed. A failed reload is rolled back, so FAILED means that instance is still serving its previous configuration, not that it is down. Per-instance history and reload counts are on Runtime & Lifecycle.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "links": [
+        {
+          "title": "Open Runtime & Lifecycle",
+          "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "min(trickster_config_last_reload_successful{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAILED",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "noValue": "n/a",
+          "links": [
+            {
+              "title": "Open Runtime & Lifecycle",
+              "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Edge requests/s",
+      "description": "HTTP requests per second that matched a backend route on any listener, whatever the outcome (cache hits, proxied requests, ACL and rate-limit refusals and range rejections all count). A request through an ALB is counted again under each pool member, rule target or mirror target it reaches, so with ALBs this overstates unique client traffic. Native SQL and L4 stream traffic is not included.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) or vector(0))",
+          "legendFormat": "__auto",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "5xx ratio",
+      "description": "Share of edge HTTP requests answered with a 5xx status: Trickster's own 502/503/504 when an origin is unreachable or slow, plus 5xx responses passed through from origins. Orange above 1%, red above 5%. Requests through an ALB are counted under the ALB and again under the member, so one failing member counts twice. 'no traffic' means no edge request in the window; HTTP Traffic breaks this down by backend.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\", http_status=\"5xx\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0)) or vector(-1)",
+          "legendFormat": "__auto",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no traffic",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "min": 0,
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Under 100 ms",
+      "description": "Share of edge HTTP requests that finished in under 100 ms, from route entry until the response body was fully written. 1xx responses (WebSocket and other upgrades, timed for the life of the tunnel) are excluded. The latency histogram's first buckets are 50 ms and 100 ms, so this bucket ratio is exact where low quantiles would only be interpolated. Large objects and cache misses on slow origins legitimately take longer, so judge it against your workload; 'no traffic' means no timed request in the window.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(sum(rate(trickster_frontend_requests_duration_seconds_bucket{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\", le=\"0.1\"}[$__rate_interval])) / (sum(rate(trickster_frontend_requests_duration_seconds_count{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__rate_interval])) > 0)) or vector(-1)",
+          "legendFormat": "__auto",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no traffic",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Cache hit ratio",
+      "description": "Share of cache-engine executions (object proxy cache, time series delta cache and native SQL caching) answered from cache in full or in part: hit, phit (partial hit: only the missing range was fetched from the origin), rhit (revalidated), nchit (negative cache) and proxy-hit (joined another request's in-flight fetch). With delta caching a phit is the normal good case for a refreshing dashboard; Full hit ratio, next to it, leaves partial hits out. Plain proxy paths never reach a cache engine and are excluded, while native SQL statements that cannot be cached (proxy-only) count against it. A sudden drop usually means a cache outage, a restarted memory cache or a cache-key/TTL change.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Open Caching",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\", cache_status=~\"hit|phit|rhit|nchit|proxy-hit\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0)) or vector(-1)",
+          "legendFormat": "__auto",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no cache traffic",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "links": [
+            {
+              "title": "Open Caching",
+              "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Full hit ratio",
+      "description": "Share of cache-engine executions answered entirely from cache, with no origin fetch at all: hit, rhit, nchit and proxy-hit over all executions. Unlike Cache hit ratio it counts partial hits (phit) as misses, so time series backends whose dashboards refresh only the newest minute legitimately read low here, which is why it has no good or bad coloring. The gap between the two ratios is the share of partial hits.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Open Caching",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\", cache_status=~\"hit|rhit|nchit|proxy-hit\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0)) or vector(-1)",
+          "legendFormat": "__auto",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no cache traffic",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "links": [
+            {
+              "title": "Open Caching",
+              "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Recovered panics",
+      "description": "Panics Trickster caught and survived in background goroutines (proxy engines, cache index workers, ALB pool refresh, health probe loops, health status notifications and the health status page) over the time range. Any value above 0 is a bug worth reporting with the logged stack; a cache index panic is critical because that worker stays stopped until the next reload or restart. The first panic of a new series is counted too. Runtime & Lifecycle lists them by component.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "links": [
+        {
+          "title": "Open Runtime & Lifecycle",
+          "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(sum(((last_over_time(trickster_proxy_engines_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_proxy_engines_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_proxy_engines_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0)) + (sum(((last_over_time(trickster_cache_index_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_cache_index_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_cache_index_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0)) + (sum(((last_over_time(trickster_alb_pool_refresh_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_alb_pool_refresh_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_alb_pool_refresh_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0)) + (sum(((last_over_time(trickster_healthcheck_probe_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_healthcheck_probe_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_healthcheck_probe_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0)) + (sum(((last_over_time(trickster_healthcheck_status_notify_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_healthcheck_status_notify_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_healthcheck_status_notify_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0)) + (sum(((last_over_time(trickster_healthcheck_handler_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m]) unless last_over_time(trickster_healthcheck_handler_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[5m] offset $__range)) or increase(trickster_healthcheck_handler_panic_recovered_total{job=~\"$job\", instance=~\"$instance\"}[$__range]))) or vector(0))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open Runtime & Lifecycle",
+              "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Feature health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "HTTP",
+      "description": "Accept calls that failed on Trickster's metered TCP listeners (HTTP front ends, metrics and management, native SQL and L4 tcp/tls listeners) over the time range, summed across instances; edge request health is in the top row. Each listener closed by a reload or shutdown adds one, so a handful around a reload is expected. A sustained count usually means the process ran out of file descriptors (EMFILE) and new clients cannot connect: check FD utilization on Runtime & Lifecycle. TLS handshake failures are not counted.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(increase(trickster_proxy_failed_connections_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) or vector(0)",
+          "legendFormat": "failed accepts",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Caching",
+      "description": "Cache lookups that failed with something other than a key miss, plus native-protocol and TSM raw cache tier failures, over the time range and across all caches; every request waiting on the same failed lookup counts. For Redis or Valkey this is usually a connection or timeout problem. Refusals to store an oversized object (the *_max_object_size reasons) are a size policy, not a fault, and are excluded. A failed lookup is served from the origin, so errors also show as a lower hit ratio and more origin load.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open Caching",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(increase(trickster_cache_events_total{job=~\"$job\", instance=~\"$instance\", event=\"error\", reason!~\".*_max_object_size\"}[$__range])) or vector(0)",
+          "legendFormat": "cache errors",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open Caching",
+              "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Time series",
+      "description": "Share of time series data points in Delta Proxy Cache responses that came from cache rather than a fresh origin fetch, over the last rate interval (HTTP time series backends; native SQL rows are excluded). This is the most direct measure of acceleration: a dashboard refresh that fetches only the newest minute of a 24h query scores close to 100%. 'no range queries' means no delta-cached range query finished in the window, including when no time series backend is configured.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open Time Series Acceleration",
+          "url": "/d/trickster-timeseries?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", cache_status=\"cached\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_proxy_points_total{job=~\"$job\", instance=~\"$instance\", cache_status=~\"cached|uncached\"}[$__rate_interval])) > 0)) or vector(-1)",
+          "legendFormat": "points from cache",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no range queries",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "min": 0,
+          "max": 1,
+          "links": [
+            {
+              "title": "Open Time Series Acceleration",
+              "url": "/d/trickster-timeseries?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Load balancing",
+      "description": "Share of client requests addressed to ALB backends that were answered with a 5xx, over the last rate interval: the 502 an ALB returns when no pool member is eligible, plus 5xx answers passed through from members. The sub-requests an ALB sends to its members are not counted (unless a member is itself an ALB). Idle ALBs read 0; 'no ALB traffic' means no ALB has served a request since the selected instances started, including when none is configured. Backup-tier failover, ejections and fanout failures are on Load Balancing.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open Load Balancing",
+          "url": "/d/trickster-alb?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\", provider=\"alb\", http_status=\"5xx\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\", provider=\"alb\"}[$__rate_interval])) > 0)) or (0 * sum(rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\", provider=\"alb\"}[$__rate_interval]))) or vector(-1)",
+          "legendFormat": "ALB 5xx share",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no ALB traffic",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "links": [
+            {
+              "title": "Open Load Balancing",
+              "url": "/d/trickster-alb?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "TSM",
+      "description": "The worse of two shares over the last rate interval, named under the value. Merge path: TSM replica groups (or members, when replica_group is unset) that gave no usable contribution to a merged query, which makes that response partial. Global evaluation (tsm.evaluation: global): evaluations answered without a member (partial) or failed on the server side (engine or limit errors, timeouts, no readable member, storage errors); client cancellations, invalid queries and cache hits are not counted. 'no TSM queries' means neither ran in the window, including when TSM is not configured.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open TSM",
+          "url": "/d/trickster-tsm?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "topk(1, label_replace((sum(rate(trickster_alb_tsm_replica_events_total{job=~\"$job\", instance=~\"$instance\", event=\"group_failed\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_alb_tsm_replica_events_total{job=~\"$job\", instance=~\"$instance\", event=\"group_attempted\"}[$__rate_interval])) > 0), \"signal\", \"merge groups failed\", \"\", \"\") or label_replace((sum(rate(trickster_alb_global_evaluations_total{job=~\"$job\", instance=~\"$instance\", status=~\"partial|execution|timeout|unavailable|internal\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_alb_global_evaluations_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0), \"signal\", \"global evals degraded\", \"\", \"\")) or on () label_replace(vector(-1), \"signal\", \"incomplete answers\", \"\", \"\")",
+          "legendFormat": "{{signal}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.001
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no TSM queries",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "links": [
+            {
+              "title": "Open TSM",
+              "url": "/d/trickster-tsm?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Runtime",
+      "description": "The worst resource saturation on any selected instance, named under the value: CPU used as a share of GOMAXPROCS (the cores the Go scheduler may use) or open file descriptors as a share of the process limit, whichever is higher. Near 100% CPU, latency rises and garbage collection falls behind; near 100% descriptors, new connections fail (EMFILE). Platforms that do not report descriptor counts show CPU only; memory against GOMEMLIMIT is on Runtime & Lifecycle.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 10
+      },
+      "links": [
+        {
+          "title": "Open Runtime & Lifecycle",
+          "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "topk(1, label_replace(max(sum by (instance) (rate(process_cpu_seconds_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / on (instance) max by (instance) (go_sched_gomaxprocs_threads{job=~\"$job\", instance=~\"$instance\"})), \"signal\", \"CPU / GOMAXPROCS\", \"\", \"\") or label_replace(max(max by (instance) (process_open_fds{job=~\"$job\", instance=~\"$instance\"}) / on (instance) (max by (instance) (process_max_fds{job=~\"$job\", instance=~\"$instance\"}) > 0)), \"signal\", \"FD utilization\", \"\", \"\")) or on () label_replace(vector(-1), \"signal\", \"saturation\", \"\", \"\")",
+          "legendFormat": "{{signal}}",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.7
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "n/a",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open Runtime & Lifecycle",
+              "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "stat",
+      "title": "L4 streams",
+      "description": "Share of new stream connections and UDP flows, over the last rate interval, that could not be relayed: no route for the SNI, no dialable upstream, every dial failed, refused (listener draining or at a session bound), or a non-TLS client on a tls listener. Refusals by IP/geo ACLs or rate limits are policy decisions and are excluded (see Access Control). On UDP, refusals are counted per datagram, which inflates this under overload. Reads 0 while stream listeners are idle; 'not configured' means none exists.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open L4 Streams",
+          "url": "/d/trickster-l4?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_proxy_stream_connections_total{job=~\"$job\", instance=~\"$instance\", result!~\"proxied|denied\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_proxy_stream_connections_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0)) or (0 * sum(trickster_proxy_stream_active_connections{job=~\"$job\", instance=~\"$instance\"})) or vector(-1)",
+          "legendFormat": "not relayed",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "not configured",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "links": [
+            {
+              "title": "Open L4 Streams",
+              "url": "/d/trickster-l4?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 18,
+      "type": "stat",
+      "title": "SQL wire",
+      "description": "MySQL and PostgreSQL wire-protocol errors over the time range that point at Trickster or the origin rather than the client: upstream connection limit reached, origin connection or login failures, no route available, session state that could not be restored on a new origin connection, and origin queries abandoned or timed out. Ordinary SQL errors from the origin, failed client logins, handshake and protocol errors are excluded; SQL Wire Protocols breaks every class down by backend. 'not configured' means no native SQL listener runs on the selected instances.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open SQL Wire Protocols",
+          "url": "/d/trickster-sql-wire?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(((sum(increase(trickster_mysql_errors_total{job=~\"$job\", instance=~\"$instance\", class=~\"upstream_admission|upstream_connect|route|session_replay|query_timeout|origin_query\"}[$__range])) or vector(0)) + (sum(increase(trickster_pgwire_errors_total{job=~\"$job\", instance=~\"$instance\", class=~\"upstream_admission|upstream_connect|route\"}[$__range])) or vector(0))) and on () group(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\", method=\"QUERY\"})) or vector(-1)",
+          "legendFormat": "proxy/origin errors",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "not configured",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open SQL Wire Protocols",
+              "url": "/d/trickster-sql-wire?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 19,
+      "type": "stat",
+      "title": "MoQ",
+      "description": "Share of downstream Media over QUIC session attempts (native QUIC and WebTransport), over the last rate interval, that failed to establish: no relay backend matched (no_route), max_sessions was reached (busy), or the handshake, SETUP or WebTransport upgrade failed. Refusals by IP/geo ACLs, rate limits, the WebTransport Origin policy or an unsupported draft are left out of the numerator. Reads 0 while a relay is configured but idle; malformed tracks and dropped objects are on MoQ Relay.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open MoQ Relay",
+          "url": "/d/trickster-moq?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "((sum(rate(trickster_moq_sessions_total{job=~\"$job\", instance=~\"$instance\", result=~\"no_route|busy|failed\"}[$__rate_interval])) or vector(0)) / (sum(rate(trickster_moq_sessions_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) > 0)) or (0 * sum(trickster_moq_publishers_active{job=~\"$job\", instance=~\"$instance\"})) or vector(-1)",
+          "legendFormat": "sessions failed",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "not configured",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "links": [
+            {
+              "title": "Open MoQ Relay",
+              "url": "/d/trickster-moq?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Access control",
+      "description": "Decisions per second that refused traffic: IP ACL denies, geo ACL denies and rate-limiter refusals (result limited), across the HTTP, stream, native SQL and MoQ planes. Units are mixed (requests, connections, sessions or datagrams, depending on where the list or limiter is attached). A sudden change is either an attack being blocked or a misconfigured list or limit. Count-mode would-denies are allowed traffic and are excluded; 'not configured' means no IP ACL, geo ACL or rate limiter is attached.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open Access Control & Rate Limiting",
+          "url": "/d/trickster-access?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_ip_acl_decisions_total{job=~\"$job\", instance=~\"$instance\", verdict=\"deny\"}[$__rate_interval]) or rate(trickster_geo_acl_decisions_total{job=~\"$job\", instance=~\"$instance\", verdict=\"deny\"}[$__rate_interval]) or rate(trickster_ratelimit_decisions_total{job=~\"$job\", instance=~\"$instance\", result=\"limited\"}[$__rate_interval])) or vector(-1)",
+          "legendFormat": "refusals/s",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "not configured",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "links": [
+            {
+              "title": "Open Access Control & Rate Limiting",
+              "url": "/d/trickster-access?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "TLS",
+      "description": "Days until the earliest-expiring certificate served by any TLS-enabled HTTP or MoQ listener (file, config, Kubernetes Secret or ACME sourced). Red under 7 days, orange under 14, yellow under 30. A certificate whose leaf could not be parsed reports the Unix epoch, so it reads as long expired. 'no TLS' means no listener serves TLS from a certificate store; native SQL and tls stream listeners are not covered.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open TLS & ACME",
+          "url": "/d/trickster-tls?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "(min(trickster_tls_certificate_expiration_time_seconds{job=~\"$job\", instance=~\"$instance\"} - time()) / 86400) or vector(1000000)",
+          "legendFormat": "soonest expiry",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: d",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 7
+              },
+              {
+                "color": "yellow",
+                "value": 14
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1000000": {
+                  "text": "no TLS",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1,
+          "links": [
+            {
+              "title": "Open TLS & ACME",
+              "url": "/d/trickster-tls?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Kubernetes",
+      "description": "Time since the most stale selected replica of the in-process Gateway/Ingress controller last finished a reconcile pass whose compile and publish succeeded, i.e. since its data plane last matched the cluster. Resyncs run a pass every resync_interval (10 minutes by default) even when nothing changes, so orange from 15 and red from 30 minutes mean passes are failing. 'never synced' is a replica that has reconciled but never succeeded; 'not enabled' means no selected instance has completed a reconcile pass, which includes not running the controller at all.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 14
+      },
+      "links": [
+        {
+          "title": "Open Kubernetes Controller",
+          "url": "/d/trickster-kubernetes?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "max((time() - (trickster_kgw_last_successful_sync_time_seconds{job=~\"$job\", instance=~\"$instance\"} > 0)) or on (job, instance) (group(trickster_kgw_reconciles_total{job=~\"$job\", instance=~\"$instance\"}) by (job, instance) * 0 + 1e12)) or vector(-1)",
+          "legendFormat": "since last sync",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "not enabled",
+                  "color": "text",
+                  "index": 0
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 100000000000.0,
+                "to": 10000000000000.0,
+                "result": {
+                  "text": "never synced",
+                  "color": "red",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "links": [
+            {
+              "title": "Open Kubernetes Controller",
+              "url": "/d/trickster-kubernetes?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 23,
+      "type": "row",
+      "title": "Traffic",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Edge requests/s by status class",
+      "description": "Edge HTTP requests per second, stacked by response status class (2xx green, 3xx blue, 4xx orange, 5xx red, 1xx purple, 0xx gray for writes with no valid status). Includes ALB member sub-requests, so ALB traffic appears more than once. Exact status codes for cached paths are on the Caching dashboard.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 19
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (http_status) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{http_status}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "2xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "3xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "4xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "0xx"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808080"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Edge latency: share under 100 / 500 ms and mean",
+      "description": "Left axis: share of edge HTTP requests finished in under 100 ms and under 500 ms (exact histogram bucket ratios). Right axis: mean request time. 1xx upgrades are excluded because they are timed for the life of the tunnel. The histogram's buckets are 50 ms, 100 ms, 500 ms, 1 s, 5 s, 10 s and 20 s, which is why this panel shows shares and a mean instead of quantiles. A falling share with a rising mean points at slow origins or cache misses.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 19
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_frontend_requests_duration_seconds_bucket{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\", le=\"0.1\"}[$__rate_interval])) / (sum(rate(trickster_frontend_requests_duration_seconds_count{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__rate_interval])) > 0)",
+          "legendFormat": "under 100 ms",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_frontend_requests_duration_seconds_bucket{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\", le=\"0.5\"}[$__rate_interval])) / (sum(rate(trickster_frontend_requests_duration_seconds_count{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__rate_interval])) > 0)",
+          "legendFormat": "under 500 ms",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "sum(rate(trickster_frontend_requests_duration_seconds_sum{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__rate_interval])) / (sum(rate(trickster_frontend_requests_duration_seconds_count{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__rate_interval])) > 0)",
+          "legendFormat": "mean",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0,
+            "axisSoftMax": 1
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "under 100 ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "under 500 ms"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "light-green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mean"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Cache-engine executions/s by cache status",
+      "description": "Cache-engine executions per second (object proxy cache, time series delta cache, native SQL caching), stacked by cache status: green shades are served from cache, yellow/orange are misses fetched from the origin, red is an upstream error. Internal partial-bucket fetches and Graphite multi-target sub-renders add their own executions, so this can exceed the request rate. Plain proxy paths are not included.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 19
+      },
+      "links": [
+        {
+          "title": "Open Caching",
+          "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "{{cache_status}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "links": [
+            {
+              "title": "Open Caching",
+              "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 25,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#39FF14"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "phit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4CBB17"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rhit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#355E3B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-hit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#70D63B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "nchit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rmiss"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "purge"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-only"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808080"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "proxy-error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "error"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Edge requests/s by backend (top 10)",
+      "description": "Edge HTTP requests per second for the ten busiest backends at each point in time. ALB pool members, rule targets and mirror targets appear under their own names in addition to the ALB that dispatched to them, so the same client request can show up on two lines.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "topk(10, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Egress by backend (top 10)",
+      "description": "Response body bytes per second written to clients for the ten heaviest backends (after compression, headers excluded). Streams and tunnels add their bytes in one step when they close. ALB requests are counted under the ALB and again under the member.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "links": [
+        {
+          "title": "Open HTTP Traffic",
+          "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "topk(10, sum by (backend_name) (rate(trickster_frontend_written_bytes_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))",
+          "legendFormat": "{{backend_name}}",
+          "range": true,
+          "instant": false,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "sortBy": "Mean",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc",
+          "hideZeros": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "links": [
+            {
+              "title": "Open HTTP Traffic",
+              "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ],
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineInterpolation": "linear",
+            "showPoints": "never",
+            "pointSize": 4,
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "barAlignment": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "Fleet",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Versions running",
+      "description": "Distinct Trickster builds (version and revision) among the selected instances. More than 1 is expected during a rolling upgrade; if it persists, some replicas did not roll. The fleet table shows which instance runs what.",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 0,
+        "y": 36
+      },
+      "links": [
+        {
+          "title": "Open Runtime & Lifecycle",
+          "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+          "targetBlank": false
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "count(count by (version, revision) (trickster_build_info{job=~\"$job\", instance=~\"$instance\"}))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "time_series"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "percentChangeColorMode": "standard"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "noValue": "0",
+          "links": [
+            {
+              "title": "Open Runtime & Lifecycle",
+              "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 31,
+      "type": "table",
+      "title": "Fleet",
+      "description": "One row per selected Trickster instance: whether Prometheus can scrape it, the build it runs (revision is empty for local builds), its uptime, whether its last configuration apply succeeded (FAILED means it rolled back and serves the previous config), how long ago that configuration was loaded, and its current edge request rate and response body egress (both including ALB member sub-requests). Click an instance to open Runtime & Lifecycle for it.",
+      "gridPos": {
+        "h": 7,
+        "w": 20,
+        "x": 4,
+        "y": 36
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "max by (instance, version, revision, goversion) (trickster_build_info{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "max by (instance) (up{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "max by (instance) (time() - process_start_time_seconds{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "D",
+          "editorMode": "code",
+          "expr": "min by (instance) (trickster_config_last_reload_successful{job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "E",
+          "editorMode": "code",
+          "expr": "max by (instance) (time() - (trickster_config_last_reload_success_time_seconds{job=~\"$job\", instance=~\"$instance\"} > 0))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "F",
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "G",
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(trickster_frontend_written_bytes_total{job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Instance",
+            "desc": false
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "renameByName": {
+              "instance": "Instance",
+              "version": "Version",
+              "revision": "Revision",
+              "goversion": "Go",
+              "Value #B": "Scrape",
+              "Value #C": "Uptime",
+              "Value #D": "Last config load",
+              "Value #E": "Config age",
+              "Value #F": "Edge req/s",
+              "Value #G": "Egress"
+            },
+            "indexByName": {
+              "instance": 0,
+              "Value #B": 1,
+              "version": 2,
+              "revision": 3,
+              "goversion": 4,
+              "Value #C": 5,
+              "Value #D": 6,
+              "Value #E": 7,
+              "Value #F": 8,
+              "Value #G": 9
+            },
+            "includeByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Instance"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Runtime & Lifecycle for this instance",
+                    "url": "/d/trickster-runtime?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&var-instance=${__value.raw}",
+                    "targetBlank": false
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Scrape"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "up",
+                        "color": "green",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "down",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Uptime"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last config load"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "1": {
+                        "text": "OK",
+                        "color": "green",
+                        "index": 0
+                      }
+                    }
+                  },
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "FAILED",
+                        "color": "red",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Config age"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dtdurations"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Edge req/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Egress"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 32,
+      "type": "row",
+      "title": "Backends",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 43
+      },
+      "panels": []
+    },
+    {
+      "id": 33,
+      "type": "table",
+      "title": "Top backends (time range)",
+      "description": "The 25 busiest backends by edge request rate, averaged over the dashboard time range: requests/s, 5xx ratio, mean request time (1xx upgrades excluded), egress, the cache hit ratio (hit, phit, rhit, nchit and proxy-hit over all cache-engine executions) and the full hit ratio (the same without partial hits). A '-' hit ratio means the backend never ran a cache engine (plain proxy paths, reverse proxies, ALBs that only dispatch). ALB pool members appear under their own names in addition to the ALB. Click a backend for its HTTP Traffic or Caching view.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "A",
+          "editorMode": "code",
+          "expr": "topk(25, sum by (backend_name, provider) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "B",
+          "editorMode": "code",
+          "expr": "((sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\", http_status=\"5xx\"}[$__range])) or sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) * 0) / (sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) > 0)) and on (backend_name) topk(25, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "C",
+          "editorMode": "code",
+          "expr": "(sum by (backend_name) (rate(trickster_frontend_requests_duration_seconds_sum{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__range])) / (sum by (backend_name) (rate(trickster_frontend_requests_duration_seconds_count{job=~\"$job\", instance=~\"$instance\", http_status!=\"1xx\"}[$__range])) > 0)) and on (backend_name) topk(25, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "D",
+          "editorMode": "code",
+          "expr": "sum by (backend_name) (rate(trickster_frontend_written_bytes_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) and on (backend_name) topk(25, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "E",
+          "editorMode": "code",
+          "expr": "((sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\", cache_status=~\"hit|phit|rhit|nchit|proxy-hit\"}[$__range])) or sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) * 0) / (sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) > 0)) and on (backend_name) topk(25, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "refId": "F",
+          "editorMode": "code",
+          "expr": "((sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\", cache_status=~\"hit|rhit|nchit|proxy-hit\"}[$__range])) or sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) * 0) / (sum by (backend_name) (rate(trickster_proxy_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])) > 0)) and on (backend_name) topk(25, sum by (backend_name) (rate(trickster_frontend_requests_total{job=~\"$job\", instance=~\"$instance\"}[$__range])))",
+          "legendFormat": "__auto",
+          "range": false,
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Req/s",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "backend_name": "Backend",
+              "provider": "Provider",
+              "Value #A": "Req/s",
+              "Value #B": "5xx ratio",
+              "Value #C": "Mean time",
+              "Value #D": "Egress",
+              "Value #E": "Cache hit ratio",
+              "Value #F": "Full hit ratio"
+            },
+            "indexByName": {
+              "backend_name": 0,
+              "provider": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7
+            },
+            "includeByName": {}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [],
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "-",
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Backend"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "HTTP Traffic for this backend",
+                    "url": "/d/trickster-http?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&var-backend=${__value.raw}",
+                    "targetBlank": false
+                  },
+                  {
+                    "title": "Caching for this backend",
+                    "url": "/d/trickster-caching?${__url_time_range}&${datasource:queryparam}&${job:queryparam}&${instance:queryparam}&var-backend=${__value.raw}",
+                    "targetBlank": false
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Req/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5xx ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.01
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.05
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mean time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Egress"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "Bps"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cache hit ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.2
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Full hit ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "trickster",
+    "overview"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "regex": "",
+        "refresh": 1,
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "current": {},
+        "options": [],
+        "description": "The Prometheus-compatible data source that scrapes Trickster's /metrics endpoint."
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(trickster_build_info, job)",
+        "query": {
+          "query": "label_values(trickster_build_info, job)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "description": "Scrape job(s) holding the Trickster targets."
+      },
+      {
+        "name": "instance",
+        "label": "Instance",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(trickster_build_info{job=~\"$job\"}, instance)",
+        "query": {
+          "query": "label_values(trickster_build_info{job=~\"$job\"}, instance)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "regex": "",
+        "refresh": 2,
+        "sort": 1,
+        "hide": 0,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "description": "Trickster process(es) to include."
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
+  "timezone": "browser",
+  "title": "Trickster / Overview",
+  "uid": "trickster-overview",
+  "version": 1,
+  "weekStart": ""
+}

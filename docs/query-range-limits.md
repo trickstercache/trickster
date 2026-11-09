@@ -50,8 +50,8 @@ When an incoming query's duration exceeds the allowed `max_query_range`:
 Trickster exposes metrics and logs to track rejected queries:
 
 ### Metrics
-- **Metric Name:** `trickster_proxy_query_range_rejected_total`
-- **Labels:** `backend` (name of the backend rejecting the query)
+- **Metric Name:** `trickster_proxy_query_range_rejections_total`
+- **Labels:** `backend_name` (name of the backend rejecting the query)
 - **Type:** Counter
 - **Description:** Tracks the total number of queries rejected due to exceeding the `max_query_range` limit.
 

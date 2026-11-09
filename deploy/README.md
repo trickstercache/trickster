@@ -86,6 +86,13 @@ a graphite-web/carbon pair to the Trickster pod:
 Storage is an `emptyDir`, so this is a demonstration only. See
 [docs/graphite.md](../docs/graphite.md) for the provider's behavior and sizing.
 
+## Grafana Dashboards
+---
+The `deploy/grafana` directory has Grafana dashboards for monitoring Trickster
+from its own metrics. It also has a file-provisioning provider and a
+kustomization that loads them through the Grafana dashboard sidecar. See
+[grafana/README.md](./grafana/README.md).
+
 ## Local Binary
 ---
 #### Binary Dev
