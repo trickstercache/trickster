@@ -36,10 +36,8 @@ var promQLParser = parser.NewParser(ParserOptions())
 // ParserOptions accepts experimental syntax, so TSM rejects nothing a backend can evaluate.
 func ParserOptions() parser.Options {
 	return parser.Options{
-		EnableExperimentalFunctions:  true,
-		ExperimentalDurationExpr:     true,
-		EnableExtendedRangeSelectors: true,
-		EnableBinopFillModifiers:     true,
+		EnableExperimentalFunctions: true,
+		EnableBinopFillModifiers:    true,
 	}
 }
 
