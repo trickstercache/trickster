@@ -48,6 +48,9 @@ import (
 const (
 	decodeTestMint = 100
 	decodeTestMaxt = 200
+	// allocation measurements count the whole process, so the least of several excludes other goroutines' allocations
+	decodeAllocAttempts = 5
+	decodeAllocRuns     = 5
 )
 
 func appendBytesField(b []byte, num protowire.Number, v []byte) []byte {
@@ -106,14 +109,18 @@ func decodeFrames(t testing.TB, budget *Budget, frames ...[]byte) ([]storage.Ser
 // decodeAllocs returns the allocations and bytes decoding data takes, and its error
 func decodeAllocs(t *testing.T, decode func(*decoder) error) (allocs float64, allocated uint64, err error) {
 	t.Helper()
-	allocs = testing.AllocsPerRun(5, func() {
-		err = decode(newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead))
-	})
+	allocs, allocated = math.MaxFloat64, math.MaxUint64
 	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
-	err = decode(newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead))
-	runtime.ReadMemStats(&after)
-	return allocs, after.TotalAlloc - before.TotalAlloc, err
+	for range decodeAllocAttempts {
+		allocs = min(allocs, testing.AllocsPerRun(decodeAllocRuns, func() {
+			err = decode(newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead))
+		}))
+		runtime.ReadMemStats(&before)
+		err = decode(newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead))
+		runtime.ReadMemStats(&after)
+		allocated = min(allocated, after.TotalAlloc-before.TotalAlloc)
+	}
+	return allocs, allocated, err
 }
 
 func TestDecoderKeepsOnlyInRange(t *testing.T) {
