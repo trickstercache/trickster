@@ -229,12 +229,13 @@ services:
       - --data-dir=/var/lib/influxdb3
       - --without-auth
 
-  # Apache Druid single-node nano quickstart. The published image is
-  # distroless, so start-nano.sh supplies the same five Druid services plus
-  # ZooKeeper without relying on the upstream Perl supervisor.
+  # Apache Druid single-node nano quickstart. apache/druid is amd64-only, so
+  # this is the same release rebuilt multi-arch by hack/druid-image/build.sh;
+  # start-nano.sh supplies the same five Druid services plus ZooKeeper without
+  # relying on the upstream Perl supervisor.
   druid:
     profiles: [druid, all-providers, integration]
-    image: apache/druid:37.0.0
+    image: trickstercache/druid:37.0.0
     environment:
       DRUID_LOG_DIR: /opt/druid/log
     ports:

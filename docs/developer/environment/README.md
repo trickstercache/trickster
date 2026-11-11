@@ -386,8 +386,20 @@ Druid SQL. Before loading, it marks any segments from the previous moving seed
 window unused so repeated runs do not accumulate stale rows. It runs in
 parallel with the other database seeders after the shared generation step.
 
-The published Druid image contains the nano service scripts but not the Perl
-runtime used by its bundled supervisor. `druid-config/start-nano.sh` launches
+The published `apache/druid` image is amd64-only, so arm64 hosts would run it
+under emulation. The environment uses `trickstercache/druid` instead. It holds
+the same Druid release tarball (pinned by SHA-512) on a multi-arch Java 17
+runtime, for `linux/amd64` and `linux/arm64`. The image is built by hand from
+`hack/druid-image`. To move to a new Druid release:
+
+1. Update `DRUID_VERSION` and `DRUID_SHA512` in `hack/druid-image/Dockerfile`.
+2. Run `hack/druid-image/build.sh` to build both platforms locally, then
+   `hack/druid-image/build.sh --push` to publish them (requires `docker login`
+   with push access to `trickstercache/druid`).
+3. Update the `druid` image tag in `docker-compose.yml`.
+
+The official image doesn't use the Perl supervisor bundled with Druid's nano
+quickstart, so the environment doesn't either. `druid-config/start-nano.sh` launches
 the same ZooKeeper, Coordinator/Overlord, Broker, Router, Historical, and Middle
 Manager processes with Bash inside the one development container.
 
