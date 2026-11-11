@@ -65,17 +65,6 @@ func testPoints3() Points {
 	}
 }
 
-func genTestPoints(baseEpoch, n int) Points {
-	points := make(Points, n)
-	for i := range n {
-		points[i] = Point{
-			Epoch:  epoch.Epoch((i * 10 * timeseries.Second) + baseEpoch),
-			Values: []any{1, 24 + (i * 5)},
-		}
-	}
-	return points
-}
-
 func TestPointEqual(t *testing.T) {
 	p := testPoints()
 	p1 := p[0]
