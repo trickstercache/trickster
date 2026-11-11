@@ -417,7 +417,7 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 // newQuery prepares q's instant or range query
 func (e *globalEvaluator) newQuery(ctx context.Context, q globalQuery, queryable *global.Queryable,
 ) (promql.Query, error) {
-	opts := promql.NewPrometheusQueryOpts(false, 0)
+	opts := promql.NewPrometheusQueryOpts(false, 0, nil)
 	if q.isRange {
 		return e.engine.NewRangeQuery(ctx, queryable, opts, q.query, q.start, q.end, q.step)
 	}
