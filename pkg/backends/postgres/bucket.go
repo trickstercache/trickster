@@ -20,10 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
-
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 )
 
 const (
@@ -143,13 +141,13 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
 func isLetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }
 
-func intervalArg(expr tree.Expr) (time.Duration, bool) {
+func intervalArg(expr ast.Expr) (time.Duration, bool) {
 	switch value := expr.(type) {
-	case *tree.StrVal:
+	case *ast.StrVal:
 		return parseInterval(value.RawString())
-	case *tree.CastExpr:
-		literal, ok := value.Expr.(*tree.StrVal)
-		if !ok || !castsTo(value, types.Interval) {
+	case *ast.CastExpr:
+		literal, ok := value.Expr.(*ast.StrVal)
+		if !ok || !castsTo(value, ast.TypeInterval) {
 			return 0, false
 		}
 		return parseInterval(literal.RawString())
@@ -157,9 +155,9 @@ func intervalArg(expr tree.Expr) (time.Duration, bool) {
 	return 0, false
 }
 
-func castsTo(cast *tree.CastExpr, want *types.T) bool {
+func castsTo(cast *ast.CastExpr, want *ast.T) bool {
 	// an INTERVAL with a field restriction or a precision is a different type, and changes the value
-	castType, ok := tree.GetStaticallyKnownType(cast.Type)
+	castType, ok := ast.GetStaticallyKnownType(cast.Type)
 	return ok && castType.Identical(want)
 }
 
@@ -195,10 +193,10 @@ type bucketMatchers struct {
 	utc bool
 }
 
-func (m bucketMatchers) timeBucket(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func (m bucketMatchers) timeBucket(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	// matches time_bucket(width, column[, origin|offset]) and the two-argument
 	// time_bucket_gapfill, whose start and finish come from the WHERE range.
-	none := cockroach.BucketMatch{}
+	none := pgfamily.BucketMatch{}
 	switch {
 	case name == fnTimeBucket && (len(args) == 2 || len(args) == 3):
 	case name == fnTimeBucketGapfill && len(args) == 2:
@@ -209,7 +207,7 @@ func (m bucketMatchers) timeBucket(name string, args []tree.Expr) (cockroach.Buc
 	if !ok {
 		return none, false
 	}
-	column, ok := cockroach.ColumnName(args[1])
+	column, ok := pgfamily.ColumnName(args[1])
 	if !ok {
 		return none, false
 	}
@@ -217,20 +215,20 @@ func (m bucketMatchers) timeBucket(name string, args []tree.Expr) (cockroach.Buc
 	origin := timeBucketOrigin
 	if len(args) == 3 {
 		// an untyped third argument is the time zone overload, so only a typed one matches
-		cast, ok := args[2].(*tree.CastExpr)
+		cast, ok := args[2].(*ast.CastExpr)
 		if !ok {
 			return none, false
 		}
-		literal, ok := cast.Expr.(*tree.StrVal)
+		literal, ok := cast.Expr.(*ast.StrVal)
 		if !ok {
 			return none, false
 		}
 		switch {
-		case castsTo(cast, types.TimestampTZ):
+		case castsTo(cast, ast.TypeTimestampTZ):
 			if origin, ok = parseInstant(literal.RawString(), m.utc); !ok {
 				return none, false
 			}
-		case castsTo(cast, types.Interval):
+		case castsTo(cast, ast.TypeInterval):
 			offset, ok := parseInterval(literal.RawString())
 			if !ok {
 				return none, false
@@ -240,14 +238,14 @@ func (m bucketMatchers) timeBucket(name string, args []tree.Expr) (cockroach.Buc
 			return none, false
 		}
 	}
-	return cockroach.BucketMatch{
+	return pgfamily.BucketMatch{
 		TimeColumn: column, Step: step, Phase: phaseOf(origin, step), OutputColumn: name,
 	}, true
 }
 
-func (m bucketMatchers) dateBin(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func (m bucketMatchers) dateBin(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	// matches date_bin(width, column, origin); PostgreSQL requires the origin.
-	none := cockroach.BucketMatch{}
+	none := pgfamily.BucketMatch{}
 	if name != fnDateBin || len(args) != 3 {
 		return none, false
 	}
@@ -255,16 +253,16 @@ func (m bucketMatchers) dateBin(name string, args []tree.Expr) (cockroach.Bucket
 	if !ok {
 		return none, false
 	}
-	column, ok := cockroach.ColumnName(args[1])
+	column, ok := pgfamily.ColumnName(args[1])
 	if !ok {
 		return none, false
 	}
-	literal, ok := args[2].(*tree.StrVal)
-	if cast, isCast := args[2].(*tree.CastExpr); isCast {
-		if !castsTo(cast, types.TimestampTZ) && (!m.utc || !castsTo(cast, types.Timestamp)) {
+	literal, ok := args[2].(*ast.StrVal)
+	if cast, isCast := args[2].(*ast.CastExpr); isCast {
+		if !castsTo(cast, ast.TypeTimestampTZ) && (!m.utc || !castsTo(cast, ast.TypeTimestamp)) {
 			return none, false
 		}
-		literal, ok = cast.Expr.(*tree.StrVal)
+		literal, ok = cast.Expr.(*ast.StrVal)
 	}
 	if !ok {
 		return none, false
@@ -273,21 +271,21 @@ func (m bucketMatchers) dateBin(name string, args []tree.Expr) (cockroach.Bucket
 	if !ok {
 		return none, false
 	}
-	return cockroach.BucketMatch{
+	return pgfamily.BucketMatch{
 		TimeColumn: column, Step: step, Phase: phaseOf(origin, step), OutputColumn: name,
 	}, true
 }
 
-func dateTrunc(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func dateTrunc(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	// PostgreSQL truncates a timestamptz in the session zone, so this matcher
 	// is registered only for sessions whose zone is UTC.
-	match, ok := cockroach.DateTruncMatcher(name, args)
+	match, ok := pgfamily.DateTruncMatcher(name, args)
 	match.OutputColumn = fnDateTrunc
 	return match, ok
 }
 
-func epochFloor(expr tree.Expr) (cockroach.BucketMatch, bool) {
-	match, ok := cockroach.EpochFloorMatcher(expr)
+func epochFloor(expr ast.Expr) (pgfamily.BucketMatch, bool) {
+	match, ok := pgfamily.EpochFloorMatcher(expr)
 	if ok {
 		match.OutputColumn = unnamedColumn
 	}

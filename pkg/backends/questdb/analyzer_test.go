@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -212,5 +213,15 @@ func timeRangeExtent() timeseries.Extent {
 	return timeseries.Extent{
 		Start: questDBTestNow.Add(-2 * time.Hour),
 		End:   questDBTestNow.Add(-time.Hour),
+	}
+}
+
+func TestSampleByMatcherClaimsOnlySampleBy(t *testing.T) {
+	if clause, err := sampleByMatcher(&ast.DialectClause{Keyword: "latest on", Body: "ts"}); clause != nil || err != nil {
+		t.Errorf("got %v, %v", clause, err)
+	}
+	clause, err := sampleByMatcher(&ast.DialectClause{Keyword: sampleByKeyword, Body: "15m"})
+	if err != nil || clause.Bucket.Step != 15*time.Minute || !clause.InferTimeColumn || !clause.ImplicitGrouping {
+		t.Errorf("got %+v, %v", clause, err)
 	}
 }

@@ -117,8 +117,8 @@ func (c *Client) processLabelsResponse(body []byte, path string) []byte {
 			}
 		}
 	case strings.HasSuffix(path, "/values"):
-		if i := strings.LastIndex(path, "/"+mnLabel+"/"); i >= 0 {
-			name := strings.TrimSuffix(path[i+len("/"+mnLabel+"/"):], "/values")
+		if _, after, ok := strings.CutLast(path, "/"+mnLabel+"/"); ok {
+			name := strings.TrimSuffix(after, "/values")
 			if v, ok := c.injectLabels[name]; ok {
 				if _, has := seen[v]; !has {
 					ld.Data = append(ld.Data, v)

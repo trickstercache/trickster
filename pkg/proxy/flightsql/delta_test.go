@@ -28,7 +28,7 @@ import (
 	trickstercache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -69,8 +69,8 @@ func (c deltaTestCache) Remove(keys ...string) error {
 
 func (c deltaTestCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
 
-var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: cockroach.DataFusionBucketMatchers(),
+var testAnalyzer = pgfamily.NewAnalyzer(pgfamily.Options{
+	BucketMatchers: pgfamily.DataFusionBucketMatchers(),
 })
 
 var renderedBounds = regexp.MustCompile(`>= (\d+).* < (\d+)`)

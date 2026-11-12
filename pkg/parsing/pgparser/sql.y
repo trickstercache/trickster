@@ -1,0 +1,4280 @@
+// Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+// Portions Copyright (c) 1994, Regents of the University of California
+
+// Portions of this file are additionally subject to the following
+// license and copyright.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+// Modified by The Trickster Authors in 2026: reduced to query statements, with CockroachDB-only syntax removed.
+
+%{
+// Portions Copyright (c) 1996-2015, PostgreSQL Global Development Group
+// Portions Copyright (c) 1994, Regents of the University of California
+
+// Portions of this file are additionally subject to the following
+// license and copyright.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+// implied. See the License for the specific language governing
+// permissions and limitations under the License.
+
+// Modified by The Trickster Authors in 2026: reduced to query statements, with CockroachDB-only syntax removed.
+
+package pgparser
+
+import (
+    "fmt"
+    "strings"
+
+    "github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
+)
+
+// MaxUint is the maximum value of an uint.
+const MaxUint = ^uint(0)
+// MaxInt is the maximum value of an int.
+const MaxInt = int(MaxUint >> 1)
+
+func unimplemented(sqllex sqlLexer, feature string) int {
+    sqllex.(*lexer).Unimplemented(feature)
+    return 1
+}
+
+func setErr(sqllex sqlLexer, err error) int {
+    sqllex.(*lexer).setErr(err)
+    return 1
+}
+
+func unimplementedWithIssue(sqllex sqlLexer, _ int) int {
+    return unimplemented(sqllex, "this syntax")
+}
+
+func unimplementedWithIssueDetail(sqllex sqlLexer, _ int, detail string) int {
+    return unimplemented(sqllex, detail)
+}
+
+func processBinaryQualOp(
+  sqllex sqlLexer,
+  op ast.Operator,
+  lhs ast.Expr,
+  rhs ast.Expr,
+) (ast.Expr, int) {
+  switch op := op.(type) {
+  case ast.BinaryOperator:
+    op.IsExplicitOperator = true
+    return &ast.BinaryExpr{Operator: op, Left: lhs, Right: rhs}, 0
+  case ast.ComparisonOperator:
+    op.IsExplicitOperator = true
+    return &ast.ComparisonExpr{Operator: op, Left: lhs, Right: rhs}, 0
+  case ast.UnaryOperator:
+    // We have a unary operator which have the same symbol as the binary
+    // operator, so adjust accordingly.
+    switch op.Symbol {
+    case ast.UnaryComplement:
+      return &ast.ComparisonExpr{
+        Operator: ast.ComparisonOperator{
+          Symbol: ast.RegMatch,
+          IsExplicitOperator: true,
+        },
+        Left: lhs,
+        Right: rhs,
+      }, 0
+    default:
+      sqllex.Error(fmt.Sprintf("unknown binary operator %s", op))
+      return nil, -1
+    }
+  default:
+    sqllex.Error(fmt.Sprintf("unknown binary operator %s", op))
+    return nil, 1
+  }
+}
+
+func processUnaryQualOp(
+  sqllex sqlLexer,
+  op ast.Operator,
+  expr ast.Expr,
+) (ast.Expr, int) {
+  e, code := processUnaryQualOpInternal(sqllex, op, expr)
+  if code != 0 {
+    return e, code
+  }
+  if e, ok := e.(*ast.UnaryExpr); ok {
+    e.Operator.IsExplicitOperator = true
+  }
+  return e, code
+}
+
+func processUnaryQualOpInternal(
+  sqllex sqlLexer,
+  op ast.Operator,
+  expr ast.Expr,
+) (ast.Expr, int) {
+  switch op := op.(type) {
+  case ast.UnaryOperator:
+    return &ast.UnaryExpr{Operator: op, Expr: expr}, 0
+  case ast.BinaryOperator:
+    // We have some binary operators which have the same symbol as the unary
+    // operator, so adjust accordingly.
+    switch op.Symbol {
+    case ast.Plus:
+      return &ast.UnaryExpr{
+        Operator: ast.MakeUnaryOperator(ast.UnaryPlus),
+        Expr: expr,
+      }, 0
+    case ast.Minus:
+      return &ast.UnaryExpr{
+        Operator: ast.MakeUnaryOperator(ast.UnaryMinus),
+        Expr: expr,
+      }, 0
+    }
+  case ast.ComparisonOperator:
+    switch op.Symbol {
+    case ast.RegMatch:
+      return &ast.UnaryExpr{
+        Operator: ast.MakeUnaryOperator(ast.UnaryComplement),
+        Expr: expr,
+      }, 0
+    }
+  }
+  sqllex.Error(fmt.Sprintf("unknown unary operator %s", op))
+  return nil, 1
+}
+
+%}
+
+%{
+// sqlSymType is generated by goyacc, and implements the ScanSymType interface.
+
+func (s *sqlSymType) ID() int32 {
+	return s.id
+}
+
+func (s *sqlSymType) SetID(id int32) {
+	s.id = id
+}
+
+func (s *sqlSymType) Pos() int32 {
+	return s.pos
+}
+
+func (s *sqlSymType) SetPos(pos int32) {
+	s.pos = pos
+}
+
+func (s *sqlSymType) Str() string {
+	return s.str
+}
+
+func (s *sqlSymType) SetStr(str string) {
+	s.str = str
+}
+
+func (s *sqlSymType) UnionVal() interface{} {
+	return s.union.val
+}
+
+func (s *sqlSymType) SetUnionVal(val interface{}) {
+	s.union.val = val
+}
+
+// sqlSymUnion represents a union of types, providing accessor methods
+// to retrieve the underlying type stored in the union's empty interface.
+// The purpose of the sqlSymUnion struct is to reduce the memory footprint of
+// the sqlSymType because only one value (of a variety of types) is ever needed
+// to be stored in the union field at a time.
+//
+// By using an empty interface, we lose the type checking previously provided
+// by yacc and the Go compiler when dealing with union values. Instead, runtime
+// type assertions must be relied upon in the methods below, and as such, the
+// parser should be thoroughly tested whenever new syntax is added.
+//
+// It is important to note that when assigning values to sqlSymUnion.val, all
+// nil values should be typed so that they are stored as nil instances in the
+// empty interface, instead of setting the empty interface to nil. This means
+// that:
+//     $$ = []String(nil)
+// should be used, instead of:
+//     $$ = nil
+// to assign a nil string slice to the union.
+type sqlSymUnion struct {
+    val interface{}
+}
+
+// The following accessor methods come in three forms, depending on the
+// type of the value being accessed and whether a nil value is admissible
+// for the corresponding grammar rule.
+// - Values and pointers are directly type asserted from the empty
+//   interface, regardless of whether a nil value is admissible or
+//   not. A panic occurs if the type assertion is incorrect; no panic occurs
+//   if a nil is not expected but present. (TODO(knz): split this category of
+//   accessor in two; with one checking for unexpected nils.)
+//   Examples: bool(), tableIndexName().
+//
+// - Interfaces where a nil is admissible are handled differently
+//   because a nil instance of an interface inserted into the empty interface
+//   becomes a nil instance of the empty interface and therefore will fail a
+//   direct type assertion. Instead, a guarded type assertion must be used,
+//   which returns nil if the type assertion fails.
+//   Examples: expr(), stmt().
+//
+// - Interfaces where a nil is not admissible are implemented as a direct
+//   type assertion, which causes a panic to occur if an unexpected nil
+//   is encountered.
+//   Examples: tblDef().
+//
+func (u *sqlSymUnion) numVal() *ast.NumVal {
+    return u.val.(*ast.NumVal)
+}
+func (u *sqlSymUnion) placeholder() *ast.Placeholder {
+    return u.val.(*ast.Placeholder)
+}
+func (u *sqlSymUnion) bool() bool {
+    return u.val.(bool)
+}
+func (u *sqlSymUnion) nameList() ast.NameList {
+    return u.val.(ast.NameList)
+}
+func (u *sqlSymUnion) unresolvedName() *ast.UnresolvedName {
+    return u.val.(*ast.UnresolvedName)
+}
+func (u *sqlSymUnion) unresolvedObjectName() *ast.UnresolvedObjectName {
+    return u.val.(*ast.UnresolvedObjectName)
+}
+func (u *sqlSymUnion) tableNames() ast.TableNames {
+    return u.val.(ast.TableNames)
+}
+func (u *sqlSymUnion) arraySubscript() *ast.ArraySubscript {
+    return u.val.(*ast.ArraySubscript)
+}
+func (u *sqlSymUnion) arraySubscripts() ast.ArraySubscripts {
+    if as, ok := u.val.(ast.ArraySubscripts); ok {
+        return as
+    }
+    return nil
+}
+func (u *sqlSymUnion) stmt() ast.Statement {
+    if stmt, ok := u.val.(ast.Statement); ok {
+        return stmt
+    }
+    return nil
+}
+func (u *sqlSymUnion) cte() *ast.CTE {
+    if cte, ok := u.val.(*ast.CTE); ok {
+        return cte
+    }
+    return nil
+}
+func (u *sqlSymUnion) ctes() []*ast.CTE {
+    return u.val.([]*ast.CTE)
+}
+func (u *sqlSymUnion) with() *ast.With {
+    if with, ok := u.val.(*ast.With); ok {
+        return with
+    }
+    return nil
+}
+func (u *sqlSymUnion) slct() *ast.Select {
+    return u.val.(*ast.Select)
+}
+func (u *sqlSymUnion) selectStmt() ast.SelectStatement {
+    return u.val.(ast.SelectStatement)
+}
+func (u *sqlSymUnion) colDef() ast.ColumnDef {
+    return u.val.(ast.ColumnDef)
+}
+func (u *sqlSymUnion) colDefList() ast.ColumnDefList {
+    return u.val.(ast.ColumnDefList)
+}
+func (u *sqlSymUnion) colType() *ast.T {
+    if colType, ok := u.val.(*ast.T); ok && colType != nil {
+        return colType
+    }
+    return nil
+}
+func (u *sqlSymUnion) int32() int32 {
+    return u.val.(int32)
+}
+func (u *sqlSymUnion) expr() ast.Expr {
+    if expr, ok := u.val.(ast.Expr); ok {
+        return expr
+    }
+    return nil
+}
+func (u *sqlSymUnion) dialectClause() *ast.DialectClause {
+    return u.val.(*ast.DialectClause)
+}
+func (u *sqlSymUnion) dialectClauses() []*ast.DialectClause {
+    return u.val.([]*ast.DialectClause)
+}
+func (u *sqlSymUnion) exprs() ast.Exprs {
+    return u.val.(ast.Exprs)
+}
+func (u *sqlSymUnion) selExpr() ast.SelectExpr {
+    return u.val.(ast.SelectExpr)
+}
+func (u *sqlSymUnion) selExprs() ast.SelectExprs {
+    return u.val.(ast.SelectExprs)
+}
+func (u *sqlSymUnion) aliasClause() ast.AliasClause {
+    return u.val.(ast.AliasClause)
+}
+func (u *sqlSymUnion) tblExpr() ast.TableExpr {
+    return u.val.(ast.TableExpr)
+}
+func (u *sqlSymUnion) tblExprs() ast.TableExprs {
+    return u.val.(ast.TableExprs)
+}
+func (u *sqlSymUnion) from() ast.From {
+    return u.val.(ast.From)
+}
+func (u *sqlSymUnion) int32s() []int32 {
+    return u.val.([]int32)
+}
+func (u *sqlSymUnion) joinCond() ast.JoinCond {
+    return u.val.(ast.JoinCond)
+}
+func (u *sqlSymUnion) when() *ast.When {
+    return u.val.(*ast.When)
+}
+func (u *sqlSymUnion) whens() []*ast.When {
+    return u.val.([]*ast.When)
+}
+func (u *sqlSymUnion) lockingClause() ast.LockingClause {
+    return u.val.(ast.LockingClause)
+}
+func (u *sqlSymUnion) lockingItem() *ast.LockingItem {
+    return u.val.(*ast.LockingItem)
+}
+func (u *sqlSymUnion) lockingStrength() ast.LockingStrength {
+    return u.val.(ast.LockingStrength)
+}
+func (u *sqlSymUnion) lockingWaitPolicy() ast.LockingWaitPolicy {
+    return u.val.(ast.LockingWaitPolicy)
+}
+func (u *sqlSymUnion) limit() *ast.Limit {
+    return u.val.(*ast.Limit)
+}
+func (u *sqlSymUnion) orderBy() ast.OrderBy {
+    return u.val.(ast.OrderBy)
+}
+func (u *sqlSymUnion) order() *ast.Order {
+    return u.val.(*ast.Order)
+}
+func (u *sqlSymUnion) orders() []*ast.Order {
+    return u.val.([]*ast.Order)
+}
+func (u *sqlSymUnion) groupBy() ast.GroupBy {
+    return u.val.(ast.GroupBy)
+}
+func (u *sqlSymUnion) windowFrame() *ast.WindowFrame {
+    return u.val.(*ast.WindowFrame)
+}
+func (u *sqlSymUnion) windowFrameBounds() ast.WindowFrameBounds {
+    return u.val.(ast.WindowFrameBounds)
+}
+func (u *sqlSymUnion) windowFrameBound() *ast.WindowFrameBound {
+    return u.val.(*ast.WindowFrameBound)
+}
+func (u *sqlSymUnion) windowFrameExclusion() ast.WindowFrameExclusion {
+    return u.val.(ast.WindowFrameExclusion)
+}
+func (u *sqlSymUnion) distinctOn() ast.DistinctOn {
+    return u.val.(ast.DistinctOn)
+}
+func (u *sqlSymUnion) dir() ast.Direction {
+    return u.val.(ast.Direction)
+}
+func (u *sqlSymUnion) nullsOrder() ast.NullsOrder {
+    return u.val.(ast.NullsOrder)
+}
+func (u *sqlSymUnion) tuple() *ast.Tuple {
+    return u.val.(*ast.Tuple)
+}
+func (u *sqlSymUnion) windowDef() *ast.WindowDef {
+    return u.val.(*ast.WindowDef)
+}
+func (u *sqlSymUnion) window() ast.Window {
+    return u.val.(ast.Window)
+}
+func (u *sqlSymUnion) op() ast.Operator {
+    return u.val.(ast.Operator)
+}
+func (u *sqlSymUnion) cmpOp() ast.ComparisonOperator {
+    return u.val.(ast.ComparisonOperator)
+}
+func (u *sqlSymUnion) intervalTypeMetadata() ast.IntervalTypeMetadata {
+    return u.val.(ast.IntervalTypeMetadata)
+}
+func (u *sqlSymUnion) resolvableFuncRefFromName() ast.ResolvableFunctionReference {
+    return ast.ResolvableFunctionReference{FunctionReference: u.unresolvedName()}
+}
+func (u *sqlSymUnion) resolvableFuncRef() ast.ResolvableFunctionReference {
+    return u.val.(ast.ResolvableFunctionReference)
+}
+
+func (u *sqlSymUnion) typeReference() ast.ResolvableTypeReference {
+    return u.val.(ast.ResolvableTypeReference)
+}
+func (u *sqlSymUnion) typeReferences() []ast.ResolvableTypeReference {
+    return u.val.([]ast.ResolvableTypeReference)
+}
+func (u *sqlSymUnion) cteMaterializeClause() ast.CTEMaterializeClause {
+    return u.val.(ast.CTEMaterializeClause)
+}
+%}
+
+// NB: the %token definitions must come before the %type definitions in this
+// file to work around a bug in goyacc. See #16369 for more details.
+
+// Non-keyword token types.
+%token <str> IDENT SCONST BCONST BITCONST DCONST
+%token <union> DIALECT_CLAUSE DIALECT_SUFFIX
+%token <union> ICONST FCONST
+%token <union> PLACEHOLDER
+%token <str> TYPECAST TYPEANNOTATE DOT_DOT
+%token <str> LESS_EQUALS GREATER_EQUALS NOT_EQUALS
+%token <str> NOT_REGMATCH REGIMATCH NOT_REGIMATCH
+%token <str> ERROR
+
+// If you want to make any keyword changes, add the new keyword here as well as
+// to the appropriate one of the reserved-or-not-so-reserved keyword lists,
+// below; search this file for "Keyword category lists".
+
+// Ordinary key words in alphabetical order.
+%token <str> ALL ANALYSE ANALYZE AND AND_AND ANY ANNOTATE_TYPE ARRAY AS ASC AT_AT
+%token <str> ASYMMETRIC AT AUTHORIZATION
+
+%token <str> BETWEEN BIGINT BIT
+%token <str> BOOLEAN BOTH BOX2D BY
+
+%token <str> CASE CAST CBRT CHAR
+%token <str> CHARACTER CHARACTERISTICS CHECK
+%token <str> COALESCE COLLATE COLLATION COLUMN
+%token <str> CONCAT CONCURRENTLY
+%token <str> CONSTRAINT CONTAINS
+%token <str> CREATE
+%token <str> CROSS CUBE CURRENT CURRENT_CATALOG CURRENT_DATE CURRENT_SCHEMA
+%token <str> CURRENT_ROLE CURRENT_TIME CURRENT_TIMESTAMP
+%token <str> CURRENT_USER
+
+%token <str> DATE DAY DEC DECIMAL DEFAULT
+%token <str> DEFERRABLE DESC
+%token <str> DISTINCT DO DOUBLE
+
+%token <str> ELSE END ESCAPE EXCEPT EXCLUDE
+%token <str> EXISTS
+%token <str> EXTRACT EXTRACT_DURATION
+
+%token <str> FALSE FAMILY FETCH FETCHVAL FETCHTEXT FETCHVAL_PATH FETCHTEXT_PATH
+%token <str> FILTER
+%token <str> FIRST FLOAT FLOORDIV FOLLOWING FOR
+%token <str> FOREIGN FROM FULL
+
+%token <str> GEOGRAPHY GEOMETRY
+%token <str> GRANT GREATEST GROUP GROUPING GROUPS
+
+%token <str> HAVING HOUR
+
+%token <str> IF IFERROR IFNULL ILIKE IN
+%token <str> INET_CONTAINED_BY_OR_EQUALS
+%token <str> INET_CONTAINS_OR_EQUALS INITIALLY
+%token <str> INDEX_BEFORE_PAREN INDEX_BEFORE_NAME_THEN_PAREN INDEX_AFTER_ORDER_BY_BEFORE_AT
+%token <str> INNER INOUT INT INTEGER
+%token <str> INTERSECT INTERVAL INTO IS ISERROR ISNULL
+
+%token <str> JOIN JSON_SOME_EXISTS JSON_ALL_EXISTS
+
+%token <str> KEY
+
+%token <str> LAST LATERAL
+%token <str> LEADING LEAST LEFT LIKE LIMIT
+%token <str> LOCALTIME LOCALTIMESTAMP LOCKED LSHIFT
+
+%token <str> MATERIALIZED MINUTE MONTH
+
+%token <str> NAN NATURAL NEXT NO
+%token <str> NONE NOT
+%token <str> NOTHING_AFTER_RETURNING
+%token <str> NOTNULL
+%token <str> NOWAIT NULL NULLIF NUMERIC
+
+%token <str> OF OFFSET ON ONLY OR
+%token <str> ORDER ORDINALITY OTHERS OUT OUTER OVER OVERLAPS OVERLAY OPERATOR
+
+%token <str> PARTITION PLACING
+%token <str> POINT POLYGON
+%token <str> POSITION PRECEDING PRECISION PRIMARY
+
+
+%token <str> RANGE READ REAL RECURSIVE REFERENCES
+%token <str> REMOVE_PATH
+%token <str> RETURNING
+%token <str> RIGHT ROLLUP ROW ROWS RSHIFT
+
+%token <str> SECOND SELECT
+%token <str> SESSION_USER SET SETOF
+%token <str> SHARE SIMILAR SKIP
+%token <str> SMALLINT
+%token <str> SOME
+%token <str> STRING SUBSTRING
+%token <str> SYMMETRIC SQRT
+
+%token <str> TABLE THEN
+%token <str> TIES TIME TIMETZ TIMESTAMP TIMESTAMPTZ TO TRAILING
+%token <str> TREAT TRIM TRUE
+
+%token <str> UNBOUNDED UNION UNIQUE UNKNOWN
+%token <str> UPDATE USER USING
+
+%token <str> VALUES VARBIT VARCHAR VARIADIC VARYING
+%token <str> VIRTUAL
+
+%token <str> WHEN WHERE WINDOW WITH WITHIN WITHOUT WORK
+
+%token <str> YEAR
+
+%token <str> ZONE
+
+// The grammar thinks these are keywords, but they are not in any category
+// and so can never be entered directly. The filter in scan.go creates these
+// tokens when required (based on looking one token ahead).
+// Reference: pkg/sql/parser/lexer.go
+//
+// - NOT_LA exists so that productions such as NOT LIKE can be given the same
+// precedence as LIKE; otherwise they'd effectively have the same precedence as
+// NOT, at least with respect to their left-hand subexpression.
+// - WITH_LA is needed to make the grammar LALR(1).
+// - GENERATED_ALWAYS is needed to support the Postgres syntax for computed
+// columns along with our family related extensions (CREATE FAMILY/CREATE FAMILY
+// family_name).
+// - RESET_ALL is used to differentiate `RESET var` from `RESET ALL`.
+// - ROLE_ALL and USER_ALL are used in ALTER ROLE statements that affect all
+// roles.
+// - ON_LA is needed for ON UPDATE and ON DELETE expressions for foreign key
+// references.
+// - TENANT_ALL is used to differentiate `ALTER TENANT <id>` from
+// `ALTER TENANT ALL`. Ditto `CLUSTER_ALL` and `CLUSTER ALL`.
+%token <str> NULLS SETS
+%token  NOT_LA NULLS_LA WITH_LA
+
+%union {
+  id    int32
+  pos   int32
+  end   int32
+  str   string
+  union sqlSymUnion
+}
+
+%type <union> /* <union> */ stmt_block
+
+
+
+// ALTER RANGE
+
+// ALTER TABLE
+
+// ALTER VIRTUAL CLUSTER
+
+// ALTER VIRTUAL CLUSTER CAPABILITY
+
+// ALTER VIRTUAL CLUSTER SET CLUSTER SETTING
+
+// ALTER VIRTUAL CLUSTER CAPABILITY
+
+// Other ALTER VIRTUAL CLUSTER statements.
+
+// ALTER PARTITION
+
+// ALTER DATABASE
+
+// ALTER INDEX
+
+// ALTER VIEW
+
+// ALTER SEQUENCE
+
+// ALTER DEFAULT PRIVILEGES
+
+// ALTER FUNCTION
+
+// ALTER PROCEDURE
+
+
+
+
+// SCRUB
+
+
+
+
+
+
+
+%type <union> /* <union> */ select_stmt
+
+
+
+
+
+
+
+
+
+%type <union> /* <union> */ select_no_parens
+%type <union> /* <union> */ select_clause select_with_parens simple_select values_clause table_clause simple_select_clause
+%type <union> /* <union> */ opt_dialect_clauses dialect_clauses
+%type <union> /* <union> */ for_locking_clause opt_for_locking_clause for_locking_items
+%type <union> /* <union> */ for_locking_item
+%type <union> /* <union> */ for_locking_strength
+%type <union> /* <union> */ opt_nowait_or_skip
+%type <union> /* <union> */ set_operation
+
+%type <union> /* <union> */ opt_asc_desc
+%type <union> /* <union> */ opt_nulls_order
+
+
+
+
+
+
+
+
+%type <str> name
+%type <union> /* <union> */ subquery_op
+%type <union> /* <union> */ func_name func_name_no_extra
+%type <union> /* <union> */ func_application_name
+
+%type <str> window_name
+%type <str> table_alias_name target_name collation_name
+%type <str> db_object_name_component
+%type <union> /* <union> */ table_name
+%type <union> /* <union> */ db_object_name simple_db_object_name complex_db_object_name
+%type <union> /* <union> */ column_path prefixed_column_path column_path_with_star
+
+
+%type <union> /* <union> */ all_op qual_op operator_op
+
+
+%type <union> /* <union> */ opt_all_clause
+%type <union> /* <union> */ distinct_clause
+%type <union> /* <union> */ distinct_on_clause
+// Note that "no index" variants exist to disable custom ORDER BY <index> syntax
+// in some places like function calls.
+%type <union> /* <union> */ sort_clause sort_clause_no_index single_sort_clause opt_sort_clause opt_sort_clause_no_index
+%type <union> /* <union> */ sortby_list sortby_no_index_list
+%type <union> /* <union> */ name_list
+%type <union> /* <union> */ opt_array_bounds
+%type <union> /* <union> */ from_clause
+%type <union> /* <union> */ from_list rowsfrom_list
+%type <union> /* <union> */ db_object_name_list table_name_list opt_locked_rels
+%type <union> /* <union> */ expr_list opt_expr_list tuple1_ambiguous_values tuple1_unambiguous_values
+%type <union> /* <union> */ expr_tuple1_ambiguous expr_tuple_unambiguous
+%type <union> /* <union> */ target_list
+%type <union> /* <union> */ array_subscripts
+%type <union> /* <union> */ group_clause
+%type <union> /* <union> */ group_by_list
+%type <union> /* <union> */ group_by_item
+%type <union> /* <union> */ select_limit opt_select_limit
+
+
+
+%type <union> /* <union> */ all_or_distinct
+%type <union> /* <union> */ join_outer
+%type <union> /* <union> */ join_qual
+%type <str> join_type
+
+%type <union> /* <union> */ extract_list
+%type <union> /* <union> */ overlay_list
+%type <union> /* <union> */ position_list
+%type <union> /* <union> */ substr_list
+%type <union> /* <union> */ trim_list
+%type <union> /* <union> */ opt_interval_qualifier interval_qualifier interval_second
+%type <union> /* <union> */ overlay_placing
+
+
+%type <union> /* <union> */ limit_clause offset_clause
+%type <union> /* <union> */ select_fetch_first_value
+%type <union> /* <union> */ row_or_rows
+%type <union> /* <union> */ first_or_next
+
+%type <union> /* <union> */ opt_col_def_list col_def_list opt_col_def_list_no_types col_def_list_no_types
+%type <union> /* <union> */ col_def
+
+
+%type <union> /* <union> */ where_clause opt_where_clause
+%type <union> /* <union> */ array_subscript
+%type <union> /* <union> */ opt_slice_bound
+%type <union> /* <union> */ a_expr b_expr c_expr d_expr typed_literal
+%type <union> /* <union> */ substr_from substr_for
+%type <union> /* <union> */ in_expr
+%type <union> /* <union> */ having_clause
+%type <union> /* <union> */ array_expr
+%type <union> /* <union> */ interval_value
+%type <union> /* <union> */ type_list
+%type <union> /* <union> */ array_expr_list
+%type <union> /* <union> */ row labeled_row
+%type <union> /* <union> */ case_expr case_arg case_default
+%type <union> /* <union> */ when_clause
+%type <union> /* <union> */ when_clause_list
+%type <union> /* <union> */ sub_type
+%type <union> /* <union> */ alias_clause opt_alias_clause func_alias_clause opt_func_alias_clause
+%type <union> /* <union> */ opt_ordinality
+%type <union> /* <union> */ sortby sortby_index
+%type <union> /* <union> */ table_ref func_table
+%type <union> /* <union> */ rowsfrom_list
+%type <union> /* <union> */ rowsfrom_item
+%type <union> /* <union> */ joined_table
+%type <union> /* <union> */ relation_expr
+%type <union> /* <union> */ target_elem
+
+
+%type <union> /* <union> */ typename simple_typename cast_target
+%type <union> /* <union> */ const_typename
+%type <union> /* <union> */ opt_timezone
+%type <union> /* <union> */ numeric opt_numeric_modifiers
+%type <union> /* <union> */ opt_float
+%type <union> /* <union> */ character_with_length character_without_length
+%type <union> /* <union> */ const_datetime interval_type
+%type <union> /* <union> */ bit_with_length bit_without_length
+%type <union> /* <union> */ character_base
+%type <str> extract_arg
+%type <union> /* <union> */ opt_varying
+
+%type <union> /* <union> */ only_signed_iconst
+%type <union> /* <union> */ only_signed_fconst
+%type <union> /* <union> */ iconst32
+%type <str> unrestricted_name type_function_name type_function_name_no_extra
+
+%type <str> unreserved_keyword type_func_name_keyword type_func_name_no_extra_keyword type_func_name_extra_keyword
+%type <str> bare_label_keywords bare_col_label
+%type <str> col_name_keyword reserved_keyword extra_reserved_keyword
+
+%type <union> /* <union> */ complex_type_name
+%type <str> general_type_name
+
+
+%type <union> /* <union> */ func_application func_expr_common_subexpr special_function
+%type <union> /* <union> */ func_expr func_expr_windowless
+%type <union> /* <union> */ with_clause
+%type <union> /* <union> */ cte_list
+%type <union> /* <union> */ common_table_expr
+%type <union> /* <union> */ materialize_clause
+
+%type <union> /* <union> */ within_group_clause
+%type <union> /* <union> */ filter_clause
+%type <union> /* <union> */ opt_partition_clause
+%type <union> /* <union> */ window_clause window_definition_list
+%type <union> /* <union> */ window_definition over_clause window_specification
+%type <str> opt_existing_window_name
+%type <union> /* <union> */ opt_frame_clause
+%type <union> /* <union> */ frame_extent
+%type <union> /* <union> */ frame_bound
+%type <union> /* <union> */ opt_frame_exclusion
+
+
+
+
+
+
+
+
+
+
+// User defined function relevant components.
+
+
+
+// Precedence: lowest to highest
+%nonassoc  VALUES              // see value_clause
+%nonassoc  SET                 // see table_expr_opt_alias_idx
+%left      UNION EXCEPT
+%left      INTERSECT
+%left      OR
+%left      AND
+%right     NOT
+%nonassoc  IS ISNULL NOTNULL   // IS sets precedence for IS NULL, etc
+%nonassoc  '<' '>' '=' LESS_EQUALS GREATER_EQUALS NOT_EQUALS
+%nonassoc  '~' BETWEEN IN LIKE ILIKE SIMILAR NOT_REGMATCH REGIMATCH NOT_REGIMATCH NOT_LA
+%nonassoc  ESCAPE              // ESCAPE must be just above LIKE/ILIKE/SIMILAR
+%nonassoc  CONTAINS CONTAINED_BY '?' JSON_SOME_EXISTS JSON_ALL_EXISTS
+%nonassoc  OVERLAPS
+%left      POSTFIXOP           // dummy for postfix OP rules
+// To support target_elem without AS, we must give IDENT an explicit priority
+// between POSTFIXOP and OP. We can safely assign the same priority to various
+// unreserved keywords as needed to resolve ambiguities (this can't have any
+// bad effects since obviously the keywords will still behave the same as if
+// they weren't keywords). We need to do this for PARTITION, RANGE, ROWS,
+// GROUPS to support opt_existing_window_name; and for RANGE, ROWS, GROUPS so
+// that they can follow a_expr without creating postfix-operator problems; and
+// for NULL so that it can follow b_expr in col_qual_list without creating
+// postfix-operator problems.
+//
+// To support CUBE and ROLLUP in GROUP BY without reserving them, we give them
+// an explicit priority lower than '(', so that a rule with CUBE '(' will shift
+// rather than reducing a conflicting rule that takes CUBE as a function name.
+// Using the same precedence as IDENT seems right for the reasons given above.
+//
+// The frame_bound productions UNBOUNDED PRECEDING and UNBOUNDED FOLLOWING are
+// even messier: since UNBOUNDED is an unreserved keyword (per spec!), there is
+// no principled way to distinguish these from the productions a_expr
+// PRECEDING/FOLLOWING. We hack this up by giving UNBOUNDED slightly lower
+// precedence than PRECEDING and FOLLOWING. At present this doesn't appear to
+// cause UNBOUNDED to be treated differently from other unreserved keywords
+// anywhere else in the grammar, but it's definitely risky. We can blame any
+// funny behavior of UNBOUNDED on the SQL standard, though.
+%nonassoc  UNBOUNDED         // ideally should have same precedence as IDENT
+%nonassoc  IDENT NULL PARTITION RANGE ROWS GROUPS PRECEDING FOLLOWING CUBE ROLLUP
+%left      CONCAT FETCHVAL FETCHTEXT FETCHVAL_PATH FETCHTEXT_PATH REMOVE_PATH AT_AT  // multi-character ops
+%left      '|'
+%left      '#'
+%left      '&'
+%left      LSHIFT RSHIFT INET_CONTAINS_OR_EQUALS INET_CONTAINED_BY_OR_EQUALS AND_AND SQRT CBRT
+%left      OPERATOR // if changing the last token before OPERATOR, change all instances of %prec <last token>
+%left      '+' '-'
+%left      '*' '/' FLOORDIV '%'
+%left      '^'
+%left      INTERVAL_SIMPLE   // sets precedence for interval syntax
+%left      TO                // sets precedence for interval syntax
+// Unary Operators
+%left      AT                // sets precedence for AT TIME ZONE
+%left      COLLATE
+%right     UMINUS
+%left      '[' ']'
+%left      '(' ')'
+%left      TYPEANNOTATE
+%left      TYPECAST
+%left      '.'
+// These might seem to be low-precedence, but actually they are not part
+// of the arithmetic hierarchy at all in their use as JOIN operators.
+// We make them high-precedence to support their use as function names.
+// They wouldn't be given a precedence at all, were it not that we need
+// left-associativity among the JOIN rules themselves.
+%left      JOIN CROSS LEFT FULL RIGHT INNER NATURAL
+%right     HELPTOKEN
+
+%%
+
+stmt_block:
+  select_stmt
+  {
+    sqllex.(*lexer).SetStmt($1.slct())
+  }
+
+db_object_name_list:
+  db_object_name
+  {
+    name := $1.unresolvedObjectName().ToTableName()
+    $$.val = ast.TableNames{name}
+  }
+| db_object_name_list ',' db_object_name
+  {
+    name := $3.unresolvedObjectName().ToTableName()
+    $$.val = append($1.tableNames(), name)
+  }
+
+table_name_list:
+  db_object_name_list
+
+opt_asc_desc:
+  ASC
+  {
+    $$.val = ast.Ascending
+  }
+| DESC
+  {
+    $$.val = ast.Descending
+  }
+| {
+    $$.val = ast.DefaultDirection
+  }
+
+select_stmt:
+  select_no_parens %prec UMINUS
+| select_with_parens %prec UMINUS
+  {
+    $$.val = &ast.Select{Select: $1.selectStmt()}
+  }
+
+select_with_parens:
+  '(' select_no_parens ')'
+  {
+    $$.val = &ast.ParenSelect{Select: $2.slct()}
+  }
+| '(' select_with_parens ')'
+  {
+    $$.val = &ast.ParenSelect{Select: &ast.Select{Select: $2.selectStmt()}}
+  }
+
+select_no_parens:
+  simple_select
+  {
+    $$.val = &ast.Select{Select: $1.selectStmt()}
+  }
+| select_clause sort_clause
+  {
+    $$.val = &ast.Select{Select: $1.selectStmt(), OrderBy: $2.orderBy()}
+  }
+| select_clause opt_sort_clause for_locking_clause opt_select_limit
+  {
+    $$.val = &ast.Select{Select: $1.selectStmt(), OrderBy: $2.orderBy(), Limit: $4.limit(), Locking: $3.lockingClause()}
+  }
+| select_clause opt_sort_clause select_limit opt_for_locking_clause
+  {
+    $$.val = &ast.Select{Select: $1.selectStmt(), OrderBy: $2.orderBy(), Limit: $3.limit(), Locking: $4.lockingClause()}
+  }
+| with_clause select_clause
+  {
+    $$.val = &ast.Select{With: $1.with(), Select: $2.selectStmt()}
+  }
+| with_clause select_clause sort_clause
+  {
+    $$.val = &ast.Select{With: $1.with(), Select: $2.selectStmt(), OrderBy: $3.orderBy()}
+  }
+| with_clause select_clause opt_sort_clause for_locking_clause opt_select_limit
+  {
+    $$.val = &ast.Select{With: $1.with(), Select: $2.selectStmt(), OrderBy: $3.orderBy(), Limit: $5.limit(), Locking: $4.lockingClause()}
+  }
+| with_clause select_clause opt_sort_clause select_limit opt_for_locking_clause
+  {
+    $$.val = &ast.Select{With: $1.with(), Select: $2.selectStmt(), OrderBy: $3.orderBy(), Limit: $4.limit(), Locking: $5.lockingClause()}
+  }
+
+for_locking_clause:
+  for_locking_items { $$.val = $1.lockingClause() }
+| FOR READ ONLY     { $$.val = (ast.LockingClause)(nil) }
+
+opt_for_locking_clause:
+  for_locking_clause { $$.val = $1.lockingClause() }
+| { $$.val = (ast.LockingClause)(nil) }
+
+for_locking_items:
+  for_locking_item
+  {
+    $$.val = ast.LockingClause{$1.lockingItem()}
+  }
+| for_locking_items for_locking_item
+  {
+    $$.val = append($1.lockingClause(), $2.lockingItem())
+  }
+
+for_locking_item:
+  for_locking_strength opt_locked_rels opt_nowait_or_skip
+  {
+    $$.val = &ast.LockingItem{
+      Strength:   $1.lockingStrength(),
+      Targets:    $2.tableNames(),
+      WaitPolicy: $3.lockingWaitPolicy(),
+    }
+  }
+
+for_locking_strength:
+  FOR UPDATE        { $$.val = ast.ForUpdate }
+| FOR NO KEY UPDATE { $$.val = ast.ForNoKeyUpdate }
+| FOR SHARE         { $$.val = ast.ForShare }
+| FOR KEY SHARE     { $$.val = ast.ForKeyShare }
+
+opt_locked_rels:
+  { $$.val = ast.TableNames{} }
+| OF table_name_list { $$.val = $2.tableNames() }
+
+opt_nowait_or_skip:
+  { $$.val = ast.LockWaitBlock }
+| SKIP LOCKED { $$.val = ast.LockWaitSkipLocked }
+| NOWAIT      { $$.val = ast.LockWaitError }
+
+select_clause:
+  simple_select
+| select_with_parens
+
+simple_select:
+  simple_select_clause  %prec VALUES
+| values_clause         %prec VALUES
+| table_clause          %prec VALUES
+| set_operation
+
+simple_select_clause:
+  SELECT opt_all_clause target_list
+    from_clause opt_where_clause
+    group_clause having_clause window_clause opt_dialect_clauses
+  {
+    $$.val = &ast.SelectClause{
+      Exprs:   $3.selExprs(),
+      From:    $4.from(),
+      Where:   ast.NewWhere(ast.AstWhere, $5.expr()),
+      GroupBy: $6.groupBy(),
+      Having:  ast.NewWhere(ast.AstHaving, $7.expr()),
+      Window:  $8.window(),
+      Dialect: $9.dialectClauses(),
+    }
+  }
+| SELECT distinct_clause target_list
+    from_clause opt_where_clause
+    group_clause having_clause window_clause opt_dialect_clauses
+  {
+    $$.val = &ast.SelectClause{
+      Distinct: $2.bool(),
+      Exprs:    $3.selExprs(),
+      From:     $4.from(),
+      Where:    ast.NewWhere(ast.AstWhere, $5.expr()),
+      GroupBy:  $6.groupBy(),
+      Having:   ast.NewWhere(ast.AstHaving, $7.expr()),
+      Window:   $8.window(),
+      Dialect:  $9.dialectClauses(),
+    }
+  }
+| SELECT distinct_on_clause target_list
+    from_clause opt_where_clause
+    group_clause having_clause window_clause opt_dialect_clauses
+  {
+    $$.val = &ast.SelectClause{
+      Distinct:   true,
+      DistinctOn: $2.distinctOn(),
+      Exprs:      $3.selExprs(),
+      From:       $4.from(),
+      Where:      ast.NewWhere(ast.AstWhere, $5.expr()),
+      GroupBy:    $6.groupBy(),
+      Having:     ast.NewWhere(ast.AstHaving, $7.expr()),
+      Window:     $8.window(),
+      Dialect:    $9.dialectClauses(),
+    }
+  }
+
+opt_dialect_clauses:
+  /* EMPTY */
+  {
+    $$.val = []*ast.DialectClause(nil)
+  }
+| dialect_clauses
+
+dialect_clauses:
+  DIALECT_CLAUSE
+  {
+    $$.val = []*ast.DialectClause{$1.dialectClause()}
+  }
+| dialect_clauses DIALECT_CLAUSE
+  {
+    $$.val = append($1.dialectClauses(), $2.dialectClause())
+  }
+
+set_operation:
+  select_clause UNION all_or_distinct select_clause
+  {
+    $$.val = &ast.UnionClause{
+      Type:  ast.UnionOp,
+      Left:  &ast.Select{Select: $1.selectStmt()},
+      Right: &ast.Select{Select: $4.selectStmt()},
+      All:   $3.bool(),
+    }
+  }
+| select_clause INTERSECT all_or_distinct select_clause
+  {
+    $$.val = &ast.UnionClause{
+      Type:  ast.IntersectOp,
+      Left:  &ast.Select{Select: $1.selectStmt()},
+      Right: &ast.Select{Select: $4.selectStmt()},
+      All:   $3.bool(),
+    }
+  }
+| select_clause EXCEPT all_or_distinct select_clause
+  {
+    $$.val = &ast.UnionClause{
+      Type:  ast.ExceptOp,
+      Left:  &ast.Select{Select: $1.selectStmt()},
+      Right: &ast.Select{Select: $4.selectStmt()},
+      All:   $3.bool(),
+    }
+  }
+
+table_clause:
+  TABLE table_ref
+  {
+    $$.val = &ast.SelectClause{
+      Exprs:       ast.SelectExprs{ast.StarSelectExpr()},
+      From:        ast.From{Tables: ast.TableExprs{$2.tblExpr()}},
+      TableSelect: true,
+    }
+  }
+
+with_clause:
+  WITH cte_list
+  {
+    $$.val = &ast.With{CTEList: $2.ctes()}
+  }
+| WITH_LA cte_list
+  {
+    /* SKIP DOC */
+    $$.val = &ast.With{CTEList: $2.ctes()}
+  }
+| WITH RECURSIVE cte_list
+  {
+    $$.val = &ast.With{Recursive: true, CTEList: $3.ctes()}
+  }
+
+cte_list:
+  common_table_expr
+  {
+    $$.val = []*ast.CTE{$1.cte()}
+  }
+| cte_list ',' common_table_expr
+  {
+    $$.val = append($1.ctes(), $3.cte())
+  }
+
+materialize_clause:
+  MATERIALIZED
+  {
+    $$.val = ast.CTEMaterializeAlways
+  }
+| NOT MATERIALIZED
+  {
+    $$.val = ast.CTEMaterializeNever
+  }
+| {
+    $$.val = ast.CTEMaterializeDefault
+}
+
+common_table_expr:
+  table_alias_name opt_col_def_list_no_types AS materialize_clause '(' select_stmt ')'
+    {
+      $$.val = &ast.CTE{
+        Name: ast.AliasClause{Alias: ast.Name($1), Cols: $2.colDefList() },
+        Mtr: $4.cteMaterializeClause(),
+        Stmt: $6.stmt(),
+      }
+    }
+
+all_or_distinct:
+  ALL
+  {
+    $$.val = true
+  }
+| DISTINCT
+  {
+    $$.val = false
+  }
+| {
+    $$.val = false
+  }
+
+distinct_clause:
+  DISTINCT
+  {
+    $$.val = true
+  }
+
+distinct_on_clause:
+  DISTINCT ON '(' expr_list ')'
+  {
+    $$.val = ast.DistinctOn($4.exprs())
+  }
+
+opt_all_clause:
+  ALL {}
+| {}
+
+opt_sort_clause:
+  sort_clause
+  {
+    $$.val = $1.orderBy()
+  }
+| {
+    $$.val = ast.OrderBy(nil)
+  }
+
+opt_sort_clause_no_index:
+  sort_clause_no_index
+  {
+    $$.val = $1.orderBy()
+  }
+| {
+    $$.val = ast.OrderBy(nil)
+  }
+
+sort_clause:
+  ORDER BY sortby_list
+  {
+    $$.val = ast.OrderBy($3.orders())
+  }
+
+sort_clause_no_index:
+  ORDER BY sortby_no_index_list
+  {
+    $$.val = ast.OrderBy($3.orders())
+  }
+
+single_sort_clause:
+  ORDER BY sortby
+  {
+    $$.val = ast.OrderBy([]*ast.Order{$3.order()})
+  }
+| ORDER BY sortby_index
+  {
+    return unimplementedWithIssueDetail(sqllex, 109847, "order by index")
+  }
+| ORDER BY sortby ',' sortby_list
+  {
+    sqllex.Error("multiple ORDER BY clauses are not supported in this function")
+    return 1
+  }
+| ORDER BY sortby_index ',' sortby_list
+  {
+    sqllex.Error("multiple ORDER BY clauses are not supported in this function")
+    return 1
+  }
+
+sortby_list:
+  sortby
+  {
+    $$.val = []*ast.Order{$1.order()}
+  }
+| sortby_index
+  {
+    $$.val = []*ast.Order{$1.order()}
+  }
+| sortby_list ',' sortby
+  {
+    $$.val = append($1.orders(), $3.order())
+  }
+| sortby_list ',' sortby_index
+  {
+    $$.val = append($1.orders(), $3.order())
+  }
+
+sortby_no_index_list:
+  sortby
+  {
+    $$.val = []*ast.Order{$1.order()}
+  }
+| sortby_no_index_list ',' sortby
+  {
+    $$.val = append($1.orders(), $3.order())
+  }
+| sortby_no_index_list ',' sortby_index
+  {
+    $$.val = append($1.orders(), $3.order())
+  }
+
+sortby_index:
+  PRIMARY KEY table_name opt_asc_desc
+  {
+    name := $3.unresolvedObjectName().ToTableName()
+    $$.val = &ast.Order{OrderType: ast.OrderByIndex, Direction: $4.dir(), Table: name}
+  }
+
+sortby:
+  a_expr opt_asc_desc opt_nulls_order
+  {
+    /* FORCE DOC */
+    dir := $2.dir()
+    nullsOrder := $3.nullsOrder()
+    $$.val = &ast.Order{
+      OrderType:  ast.OrderByColumn,
+      Expr:       $1.expr(),
+      Direction:  dir,
+      NullsOrder: nullsOrder,
+    }
+  }
+
+opt_nulls_order:
+  NULLS_LA FIRST
+  {
+    $$.val = ast.NullsFirst
+  }
+| NULLS_LA LAST
+  {
+    $$.val = ast.NullsLast
+  }
+| {
+    $$.val = ast.DefaultNullsOrder
+  }
+
+select_limit:
+  limit_clause offset_clause
+  {
+    if $1.limit() == nil {
+      $$.val = $2.limit()
+    } else {
+      $$.val = $1.limit()
+      $$.val.(*ast.Limit).Offset = $2.limit().Offset
+    }
+  }
+| offset_clause limit_clause
+  {
+    $$.val = $1.limit()
+    if $2.limit() != nil {
+      $$.val.(*ast.Limit).Count = $2.limit().Count
+      $$.val.(*ast.Limit).LimitAll = $2.limit().LimitAll
+    }
+  }
+| limit_clause
+| offset_clause
+
+opt_select_limit:
+  select_limit { $$.val = $1.limit() }
+| { $$.val = (*ast.Limit)(nil) }
+
+limit_clause:
+  LIMIT ALL
+  {
+    $$.val = &ast.Limit{LimitAll: true}
+  }
+| LIMIT a_expr
+  {
+    if $2.expr() == nil {
+      $$.val = (*ast.Limit)(nil)
+    } else {
+      $$.val = &ast.Limit{Count: $2.expr()}
+    }
+  }
+| FETCH first_or_next select_fetch_first_value row_or_rows ONLY
+  {
+    $$.val = &ast.Limit{Count: $3.expr()}
+  }
+| FETCH first_or_next row_or_rows ONLY
+	{
+    $$.val = &ast.Limit{
+      Count: ast.NewNumVal("1", false /* negative */),
+    }
+  }
+
+offset_clause:
+  OFFSET a_expr
+  {
+    $$.val = &ast.Limit{Offset: $2.expr()}
+  }
+| OFFSET select_fetch_first_value row_or_rows
+  {
+    $$.val = &ast.Limit{Offset: $2.expr()}
+  }
+
+select_fetch_first_value:
+  c_expr
+| only_signed_iconst
+| only_signed_fconst
+
+row_or_rows:
+  ROW {}
+| ROWS {}
+
+first_or_next:
+  FIRST {}
+| NEXT {}
+
+group_clause:
+  GROUP BY group_by_list
+  {
+    $$.val = ast.GroupBy($3.exprs())
+  }
+| {
+    $$.val = ast.GroupBy(nil)
+  }
+
+group_by_list:
+  group_by_item { $$.val = ast.Exprs{$1.expr()} }
+| group_by_list ',' group_by_item { $$.val = append($1.exprs(), $3.expr()) }
+
+group_by_item:
+  a_expr { $$.val = $1.expr() }
+| ROLLUP '(' error { return unimplemented(sqllex, "rollup") }
+| CUBE '(' error { return unimplemented(sqllex, "cube") }
+| GROUPING SETS error { return unimplemented(sqllex, "grouping sets") }
+
+having_clause:
+  HAVING a_expr
+  {
+    $$.val = $2.expr()
+  }
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+values_clause:
+  VALUES '(' expr_list ')' %prec UMINUS
+  {
+    $$.val = &ast.ValuesClause{Rows: []ast.Exprs{$3.exprs()}}
+  }
+| values_clause ',' '(' expr_list ')'
+  {
+    valNode := $1.selectStmt().(*ast.ValuesClause)
+    valNode.Rows = append(valNode.Rows, $4.exprs())
+    $$.val = valNode
+  }
+
+from_clause:
+  FROM from_list
+  {
+    $$.val = ast.From{Tables: $2.tblExprs()}
+  }
+| {
+    $$.val = ast.From{}
+  }
+
+from_list:
+  table_ref
+  {
+    $$.val = ast.TableExprs{$1.tblExpr()}
+  }
+| from_list ',' table_ref
+  {
+    $$.val = append($1.tblExprs(), $3.tblExpr())
+  }
+
+table_ref:
+  relation_expr opt_ordinality opt_alias_clause
+  {
+    name := $1.unresolvedObjectName().ToTableName()
+    $$.val = &ast.AliasedTableExpr{
+      Expr:       &name,
+      Ordinality: $2.bool(),
+      As:         $3.aliasClause(),
+    }
+  }
+| select_with_parens opt_ordinality opt_alias_clause
+  {
+    $$.val = &ast.AliasedTableExpr{
+      Expr:       &ast.Subquery{Select: $1.selectStmt()},
+      Ordinality: $2.bool(),
+      As:         $3.aliasClause(),
+    }
+  }
+| LATERAL select_with_parens opt_ordinality opt_alias_clause
+  {
+    $$.val = &ast.AliasedTableExpr{
+      Expr:       &ast.Subquery{Select: $2.selectStmt()},
+      Ordinality: $3.bool(),
+      Lateral:    true,
+      As:         $4.aliasClause(),
+    }
+  }
+| joined_table
+  {
+    $$.val = $1.tblExpr()
+  }
+| '(' joined_table ')' opt_ordinality alias_clause
+  {
+    $$.val = &ast.AliasedTableExpr{Expr: &ast.ParenTableExpr{Expr: $2.tblExpr()}, Ordinality: $4.bool(), As: $5.aliasClause()}
+  }
+| func_table opt_ordinality opt_func_alias_clause
+  {
+    f := $1.tblExpr()
+    $$.val = &ast.AliasedTableExpr{
+      Expr: f,
+      Ordinality: $2.bool(),
+      // Technically, LATERAL is always implied on an SRF, but including it
+      // here makes re-printing the AST slightly tricky.
+      As: $3.aliasClause(),
+    }
+  }
+| LATERAL func_table opt_ordinality opt_alias_clause
+  {
+    f := $2.tblExpr()
+    $$.val = &ast.AliasedTableExpr{
+      Expr: f,
+      Ordinality: $3.bool(),
+      Lateral: true,
+      As: $4.aliasClause(),
+    }
+  }
+
+func_table:
+  func_expr_windowless
+  {
+    $$.val = &ast.RowsFromExpr{Items: ast.Exprs{$1.expr()}}
+  }
+| ROWS FROM '(' rowsfrom_list ')'
+  {
+    $$.val = &ast.RowsFromExpr{Items: $4.exprs()}
+  }
+
+rowsfrom_list:
+  rowsfrom_item
+  { $$.val = ast.Exprs{$1.expr()} }
+| rowsfrom_list ',' rowsfrom_item
+  { $$.val = append($1.exprs(), $3.expr()) }
+
+rowsfrom_item:
+  func_expr_windowless opt_func_alias_clause
+  {
+    $$.val = $1.expr()
+  }
+
+opt_col_def_list_no_types:
+  '(' col_def_list_no_types ')'
+  {
+    $$.val = $2.colDefList()
+  }
+| {
+    $$.val = ast.ColumnDefList(nil)
+  }
+
+col_def_list_no_types:
+  name
+  {
+    $$.val = ast.ColumnDefList{ast.ColumnDef{Name: ast.Name($1)}}
+  }
+| col_def_list_no_types ',' name
+  {
+    $$.val = append($1.colDefList(), ast.ColumnDef{Name: ast.Name($3)})
+  }
+
+opt_col_def_list:
+  {
+    $$.val = ast.ColumnDefList(nil)
+  }
+| '(' col_def_list ')'
+  {
+    $$.val = $2.colDefList()
+  }
+
+col_def_list:
+  col_def
+  {
+    $$.val = ast.ColumnDefList{$1.colDef()}
+  }
+| col_def_list ',' col_def
+  {
+    $$.val = append($1.colDefList(), $3.colDef())
+  }
+
+col_def:
+  name
+  {
+    $$.val = ast.ColumnDef{Name: ast.Name($1)}
+  }
+| name typename
+  {
+    $$.val = ast.ColumnDef{Name: ast.Name($1), Type: $2.typeReference()}
+  }
+
+opt_ordinality:
+  WITH_LA ORDINALITY
+  {
+    $$.val = true
+  }
+| {
+    $$.val = false
+  }
+
+joined_table:
+  '(' joined_table ')'
+  {
+    $$.val = &ast.ParenTableExpr{Expr: $2.tblExpr()}
+  }
+| table_ref CROSS JOIN table_ref
+  {
+    $$.val = &ast.JoinTableExpr{JoinType: ast.AstCross, Left: $1.tblExpr(), Right: $4.tblExpr()}
+  }
+| table_ref join_type JOIN table_ref join_qual
+  {
+    $$.val = &ast.JoinTableExpr{JoinType: $2, Left: $1.tblExpr(), Right: $4.tblExpr(), Cond: $5.joinCond()}
+  }
+| table_ref JOIN table_ref join_qual
+  {
+    $$.val = &ast.JoinTableExpr{Left: $1.tblExpr(), Right: $3.tblExpr(), Cond: $4.joinCond()}
+  }
+| table_ref NATURAL join_type JOIN table_ref
+  {
+    $$.val = &ast.JoinTableExpr{JoinType: $3, Left: $1.tblExpr(), Right: $5.tblExpr(), Cond: ast.NaturalJoinCond{}}
+  }
+| table_ref NATURAL JOIN table_ref
+  {
+    $$.val = &ast.JoinTableExpr{Left: $1.tblExpr(), Right: $4.tblExpr(), Cond: ast.NaturalJoinCond{}}
+  }
+
+alias_clause:
+  AS table_alias_name opt_col_def_list_no_types
+  {
+    $$.val = ast.AliasClause{Alias: ast.Name($2), Cols: $3.colDefList()}
+  }
+| table_alias_name opt_col_def_list_no_types
+  {
+    $$.val = ast.AliasClause{Alias: ast.Name($1), Cols: $2.colDefList()}
+  }
+
+opt_alias_clause:
+  alias_clause
+| {
+    $$.val = ast.AliasClause{}
+  }
+
+func_alias_clause:
+  AS table_alias_name opt_col_def_list
+  {
+    $$.val = ast.AliasClause{Alias: ast.Name($2), Cols: $3.colDefList()}
+  }
+| table_alias_name opt_col_def_list
+  {
+    $$.val = ast.AliasClause{Alias: ast.Name($1), Cols: $2.colDefList()}
+  }
+
+opt_func_alias_clause:
+  func_alias_clause
+| {
+    $$.val = ast.AliasClause{}
+  }
+
+join_type:
+  FULL join_outer
+  {
+    $$ = ast.AstFull
+  }
+| LEFT join_outer
+  {
+    $$ = ast.AstLeft
+  }
+| RIGHT join_outer
+  {
+    $$ = ast.AstRight
+  }
+| INNER
+  {
+    $$ = ast.AstInner
+  }
+
+join_outer:
+  OUTER {}
+| {}
+
+join_qual:
+  USING '(' name_list ')'
+  {
+    $$.val = &ast.UsingJoinCond{Cols: $3.nameList()}
+  }
+| ON a_expr
+  {
+    $$.val = &ast.OnJoinCond{Expr: $2.expr()}
+  }
+
+relation_expr:
+  table_name              { $$.val = $1.unresolvedObjectName() }
+| table_name '*'          { $$.val = $1.unresolvedObjectName() }
+| ONLY table_name         { $$.val = $2.unresolvedObjectName() }
+| ONLY '(' table_name ')' { $$.val = $3.unresolvedObjectName() }
+
+where_clause:
+  WHERE a_expr
+  {
+    $$.val = $2.expr()
+  }
+
+opt_where_clause:
+  where_clause
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+typename:
+  simple_typename opt_array_bounds
+  {
+    var ref ast.ResolvableTypeReference
+    if bounds := $2.int32s(); bounds != nil {
+      ref = arrayOf($1.typeReference())
+    } else {
+      ref = $1.typeReference()
+    }
+    $$.val = ast.WriteType(ref, sqllex.(*lexer).writtenText($<pos>1, sqlrcvr.char >= 0))
+  }
+| simple_typename ARRAY '[' ICONST ']' '[' error { return unimplemented(sqllex, "nested arrays") }
+| simple_typename ARRAY '[' ICONST ']' {
+    /* SKIP DOC */
+    $$.val = ast.WriteType(arrayOf($1.typeReference()), sqllex.(*lexer).writtenText($<pos>1, sqlrcvr.char >= 0))
+  }
+| simple_typename ARRAY {
+    $$.val = ast.WriteType(arrayOf($1.typeReference()), sqllex.(*lexer).writtenText($<pos>1, sqlrcvr.char >= 0))
+  }
+
+cast_target:
+  typename
+  {
+    $$.val = $1.typeReference()
+  }
+
+opt_array_bounds:
+  '[' ']' { $$.val = []int32{-1} }
+| '[' ICONST ']'
+  {
+    /* SKIP DOC */
+    bound, err := $2.numVal().AsInt32()
+    if err != nil {
+      return setErr(sqllex, err)
+    }
+    $$.val = []int32{bound}
+  }
+| { $$.val = []int32(nil) }
+| '[' ']' '[' error { return unimplemented(sqllex, "nested arrays") }
+| '[' ICONST ']' '[' error { return unimplemented(sqllex, "nested arrays") }
+
+general_type_name:
+  type_function_name_no_extra
+
+complex_type_name:
+  general_type_name '.' unrestricted_name
+  {
+    res, err := ast.NewUnresolvedObjectName(2, [3]string{$3, $1})
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = res
+  }
+| general_type_name '.' unrestricted_name '.' unrestricted_name
+  {
+    res, err := ast.NewUnresolvedObjectName(3, [3]string{$5, $3, $1})
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = res
+  }
+
+simple_typename:
+  general_type_name
+  {
+    /* FORCE DOC */
+    // See https://www.postgresql.org/docs/9.1/static/datatype-character.html
+    // Postgres supports a special character type named "char" (with the quotes)
+    // that is a single-character column type. It's used by system tables.
+    // Eventually this clause will be used to parse user-defined types as well,
+    // since their names can be quoted.
+    if $1 == "char" {
+      $$.val = ast.TypeQChar
+    } else if $1 == "serial" {
+        switch sqllex.(*lexer).nakedIntType.Width() {
+        case 32:
+          $$.val = ast.TypeInt4
+        default:
+          $$.val = ast.TypeInt
+        }
+    } else {
+      // Check the the type is one of our "non-keyword" type names.
+      // Otherwise, package it up as a type reference for later.
+      var ok bool
+      var err error
+      var unsupported bool
+      $$.val, ok, unsupported = ast.TypeForNonKeywordTypeName($1)
+      if !ok {
+        if unsupported {
+          return unimplemented(sqllex, "type name " + $1)
+        }
+        // This is not one of the known unsupported types, so make a type reference for it.
+        $$.val, err = ast.NewUnresolvedObjectName(1, [3]string{$1})
+        if err != nil { return setErr(sqllex, err) }
+      }
+    }
+  }
+| complex_type_name
+  {
+    $$.val = $1.typeReference()
+  }
+| const_typename
+| interval_type
+
+const_typename:
+  numeric
+| bit_without_length
+| bit_with_length
+| character_without_length
+| character_with_length
+| const_datetime
+
+opt_numeric_modifiers:
+  '(' iconst32 ')'
+  {
+    dec, err := newDecimal($2.int32(), 0)
+    if err != nil {
+      return setErr(sqllex, err)
+    }
+    $$.val = dec
+  }
+| '(' iconst32 ',' iconst32 ')'
+  {
+    dec, err := newDecimal($2.int32(), $4.int32())
+    if err != nil {
+      return setErr(sqllex, err)
+    }
+    $$.val = dec
+  }
+| {
+    $$.val = nil
+  }
+
+numeric:
+  INT
+  {
+    $$.val = sqllex.(*lexer).nakedIntType
+  }
+| INTEGER
+  {
+    $$.val = sqllex.(*lexer).nakedIntType
+  }
+| SMALLINT
+  {
+    $$.val = ast.TypeInt2
+  }
+| BIGINT
+  {
+    $$.val = ast.TypeInt
+  }
+| REAL
+  {
+    $$.val = ast.TypeFloat4
+  }
+| FLOAT opt_float
+  {
+    $$.val = $2.colType()
+  }
+| DOUBLE PRECISION
+  {
+    $$.val = ast.TypeFloat
+  }
+| DECIMAL opt_numeric_modifiers
+  {
+    typ := $2.colType()
+    if typ == nil {
+      typ = ast.TypeDecimal
+    }
+    $$.val = typ
+  }
+| DEC opt_numeric_modifiers
+  {
+    typ := $2.colType()
+    if typ == nil {
+      typ = ast.TypeDecimal
+    }
+    $$.val = typ
+  }
+| NUMERIC opt_numeric_modifiers
+  {
+    typ := $2.colType()
+    if typ == nil {
+      typ = ast.TypeDecimal
+    }
+    $$.val = typ
+  }
+| BOOLEAN
+  {
+    $$.val = ast.TypeBool
+  }
+
+opt_float:
+  '(' ICONST ')'
+  {
+    nv := $2.numVal()
+    prec, err := nv.AsInt64()
+    if err != nil {
+      return setErr(sqllex, err)
+    }
+    typ, err := newFloat(prec)
+    if err != nil {
+      return setErr(sqllex, err)
+    }
+    $$.val = typ
+  }
+| {
+    $$.val = ast.TypeFloat
+  }
+
+bit_with_length:
+  BIT opt_varying '(' iconst32 ')'
+  {
+    bit, err := newBitType($4.int32(), $2.bool())
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = bit
+  }
+| VARBIT '(' iconst32 ')'
+  {
+    bit, err := newBitType($3.int32(), true)
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = bit
+  }
+
+bit_without_length:
+  BIT
+  {
+    $$.val = ast.MakeTypeBit(1)
+  }
+| BIT VARYING
+  {
+    $$.val = ast.TypeVarBit
+  }
+| VARBIT
+  {
+    $$.val = ast.TypeVarBit
+  }
+
+character_with_length:
+  character_base '(' iconst32 ')'
+  {
+    colTyp := *$1.colType()
+    n := $3.int32()
+    if n == 0 {
+      sqllex.Error(fmt.Sprintf("length for type %s must be at least 1", colTyp.SQLString()))
+      return 1
+    }
+    $$.val = colTyp.WithWidth(n)
+  }
+
+character_without_length:
+  character_base
+  {
+    $$.val = $1.colType()
+  }
+
+character_base:
+  char_aliases
+  {
+    $$.val = ast.MakeTypeChar(1)
+  }
+| char_aliases VARYING
+  {
+    $$.val = ast.TypeVarChar
+  }
+| VARCHAR
+  {
+    $$.val = ast.TypeVarChar
+  }
+| STRING
+  {
+    $$.val = ast.TypeString
+  }
+
+char_aliases:
+  CHAR
+| CHARACTER
+
+opt_varying:
+  VARYING     { $$.val = true }
+| { $$.val = false }
+
+const_datetime:
+  DATE
+  {
+    $$.val = ast.TypeDate
+  }
+| TIME opt_timezone
+  {
+    if $2.bool() {
+      $$.val = ast.TypeTimeTZ
+    } else {
+      $$.val = ast.TypeTime
+    }
+  }
+| TIME '(' iconst32 ')' opt_timezone
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    if $5.bool() {
+      $$.val = ast.MakeTypeTimeTZ(prec)
+    } else {
+      $$.val = ast.MakeTypeTime(prec)
+    }
+  }
+| TIMETZ                             { $$.val = ast.TypeTimeTZ }
+| TIMETZ '(' iconst32 ')'
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    $$.val = ast.MakeTypeTimeTZ(prec)
+  }
+| TIMESTAMP opt_timezone
+  {
+    if $2.bool() {
+      $$.val = ast.TypeTimestampTZ
+    } else {
+      $$.val = ast.TypeTimestamp
+    }
+  }
+| TIMESTAMP '(' iconst32 ')' opt_timezone
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    if $5.bool() {
+      $$.val = ast.MakeTypeTimestampTZ(prec)
+    } else {
+      $$.val = ast.MakeTypeTimestamp(prec)
+    }
+  }
+| TIMESTAMPTZ
+  {
+    $$.val = ast.TypeTimestampTZ
+  }
+| TIMESTAMPTZ '(' iconst32 ')'
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    $$.val = ast.MakeTypeTimestampTZ(prec)
+  }
+
+opt_timezone:
+  WITH_LA TIME ZONE { $$.val = true; }
+| WITHOUT TIME ZONE { $$.val = false; }
+| { $$.val = false; }
+
+interval_type:
+  INTERVAL
+  {
+    $$.val = ast.TypeInterval
+  }
+| INTERVAL interval_qualifier
+  {
+    $$.val = ast.MakeTypeInterval($2.intervalTypeMetadata())
+  }
+| INTERVAL '(' iconst32 ')'
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    $$.val = ast.MakeTypeInterval(ast.IntervalTypeMetadata{Precision: prec, PrecisionIsSet: true})
+  }
+
+interval_qualifier:
+  YEAR %prec INTERVAL_SIMPLE
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationYear,
+      },
+    }
+  }
+| MONTH %prec INTERVAL_SIMPLE
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationMonth,
+      },
+    }
+  }
+| DAY %prec INTERVAL_SIMPLE
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationDay,
+      },
+    }
+  }
+| HOUR %prec INTERVAL_SIMPLE
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationHour,
+      },
+    }
+  }
+| MINUTE %prec INTERVAL_SIMPLE
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationMinute,
+      },
+    }
+  }
+| interval_second
+  {
+    $$.val = $1.intervalTypeMetadata()
+  }
+| YEAR TO MONTH %prec TO
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        FromDurationType: ast.IntervalDurationYear,
+        DurationType: ast.IntervalDurationMonth,
+      },
+    }
+  }
+| DAY TO HOUR %prec TO
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        FromDurationType: ast.IntervalDurationDay,
+        DurationType: ast.IntervalDurationHour,
+      },
+    }
+  }
+| DAY TO MINUTE %prec TO
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        FromDurationType: ast.IntervalDurationDay,
+        DurationType: ast.IntervalDurationMinute,
+      },
+    }
+  }
+| DAY TO interval_second %prec TO
+  {
+    ret := $3.intervalTypeMetadata()
+    ret.DurationField.FromDurationType = ast.IntervalDurationDay
+    $$.val = ret
+  }
+| HOUR TO MINUTE %prec TO
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        FromDurationType: ast.IntervalDurationHour,
+        DurationType: ast.IntervalDurationMinute,
+      },
+    }
+  }
+| HOUR TO interval_second %prec TO
+  {
+    ret := $3.intervalTypeMetadata()
+    ret.DurationField.FromDurationType = ast.IntervalDurationHour
+    $$.val = ret
+  }
+| MINUTE TO interval_second %prec TO
+  {
+    $$.val = $3.intervalTypeMetadata()
+    ret := $3.intervalTypeMetadata()
+    ret.DurationField.FromDurationType = ast.IntervalDurationMinute
+    $$.val = ret
+  }
+
+opt_interval_qualifier:
+  interval_qualifier
+| {
+    $$.val = nil
+  }
+
+interval_second:
+  SECOND
+  {
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationSecond,
+      },
+    }
+  }
+| SECOND '(' iconst32 ')'
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    $$.val = ast.IntervalTypeMetadata{
+      DurationField: ast.IntervalDurationField{
+        DurationType: ast.IntervalDurationSecond,
+      },
+      PrecisionIsSet: true,
+      Precision: prec,
+    }
+  }
+
+a_expr:
+  c_expr
+| a_expr TYPECAST cast_target
+  {
+    $$.val = &ast.CastExpr{Expr: $1.expr(), Type: $3.typeReference(), SyntaxMode: ast.CastShort}
+  }
+| a_expr TYPEANNOTATE typename
+  {
+    $$.val = &ast.AnnotateTypeExpr{Expr: $1.expr(), Type: $3.typeReference(), SyntaxMode: ast.AnnotateShort}
+  }
+| a_expr COLLATE collation_name
+  {
+    $$.val = &ast.CollateExpr{Expr: $1.expr(), Locale: $3}
+  }
+| a_expr AT TIME ZONE a_expr %prec AT
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("timezone"), Exprs: ast.Exprs{$5.expr(), $1.expr()}}
+  }
+| '+' a_expr %prec UMINUS
+  {
+    // Unary plus is a no-op. Desugar immediately.
+    $$.val = $2.expr()
+  }
+| '-' a_expr %prec UMINUS
+  {
+    $$.val = unaryNegation($2.expr())
+  }
+| '~' a_expr %prec UMINUS
+  {
+    $$.val = &ast.UnaryExpr{Operator: ast.MakeUnaryOperator(ast.UnaryComplement), Expr: $2.expr()}
+  }
+| SQRT a_expr
+  {
+    $$.val = &ast.UnaryExpr{Operator: ast.MakeUnaryOperator(ast.UnarySqrt), Expr: $2.expr()}
+  }
+| CBRT a_expr
+  {
+    $$.val = &ast.UnaryExpr{Operator: ast.MakeUnaryOperator(ast.UnaryCbrt), Expr: $2.expr()}
+  }
+| a_expr '+' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Plus), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '-' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Minus), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '*' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Mult), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '/' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Div), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr FLOORDIV a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.FloorDiv), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '%' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Mod), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '^' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Pow), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '#' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitxor), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '&' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitand), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '|' a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitor), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '<' a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.LT), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '>' a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.GT), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '?' a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.JSONExists), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr JSON_SOME_EXISTS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.JSONSomeExists), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr JSON_ALL_EXISTS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.JSONAllExists), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr CONTAINS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.Contains), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr CONTAINED_BY a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.ContainedBy), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr '=' a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.EQ), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr CONCAT a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Concat), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr LSHIFT a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.LShift), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr RSHIFT a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.RShift), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr FETCHVAL a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.JSONFetchVal), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr FETCHTEXT a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.JSONFetchText), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr FETCHVAL_PATH a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.JSONFetchValPath), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr FETCHTEXT_PATH a_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.JSONFetchTextPath), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr REMOVE_PATH a_expr
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("json_remove_path"), Exprs: ast.Exprs{$1.expr(), $3.expr()}}
+  }
+| a_expr INET_CONTAINED_BY_OR_EQUALS a_expr
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("inet_contained_by_or_equals"), Exprs: ast.Exprs{$1.expr(), $3.expr()}}
+  }
+| a_expr AND_AND a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.Overlaps), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr AT_AT a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.TSMatches), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr INET_CONTAINS_OR_EQUALS a_expr
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("inet_contains_or_equals"), Exprs: ast.Exprs{$1.expr(), $3.expr()}}
+  }
+| a_expr LESS_EQUALS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.LE), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr GREATER_EQUALS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.GE), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr NOT_EQUALS a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NE), Left: $1.expr(), Right: $3.expr()}
+  }
+| qual_op a_expr %prec CBRT
+  {
+    var retCode int
+    $$.val, retCode = processUnaryQualOp(sqllex, $1.op(), $2.expr())
+    if retCode != 0 {
+      return retCode
+    }
+  }
+| a_expr qual_op a_expr %prec CBRT
+  {
+    {
+      var retCode int
+      $$.val, retCode = processBinaryQualOp(sqllex, $2.op(), $1.expr(), $3.expr())
+      if retCode != 0 {
+        return retCode
+      }
+    }
+  }
+| a_expr AND a_expr
+  {
+    $$.val = &ast.AndExpr{Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr OR a_expr
+  {
+    $$.val = &ast.OrExpr{Left: $1.expr(), Right: $3.expr()}
+  }
+| NOT a_expr
+  {
+    $$.val = &ast.NotExpr{Expr: $2.expr()}
+  }
+| NOT_LA a_expr %prec NOT
+  {
+    $$.val = &ast.NotExpr{Expr: $2.expr()}
+  }
+| a_expr LIKE a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.Like), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr LIKE a_expr ESCAPE a_expr %prec ESCAPE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("like_escape"), Exprs: ast.Exprs{$1.expr(), $3.expr(), $5.expr()}}
+  }
+| a_expr NOT_LA LIKE a_expr %prec NOT_LA
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotLike), Left: $1.expr(), Right: $4.expr()}
+  }
+| a_expr NOT_LA LIKE a_expr ESCAPE a_expr %prec ESCAPE
+ {
+   $$.val = &ast.FuncExpr{Func: ast.WrapFunction("not_like_escape"), Exprs: ast.Exprs{$1.expr(), $4.expr(), $6.expr()}}
+ }
+| a_expr ILIKE a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.ILike), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr ILIKE a_expr ESCAPE a_expr %prec ESCAPE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("ilike_escape"), Exprs: ast.Exprs{$1.expr(), $3.expr(), $5.expr()}}
+  }
+| a_expr NOT_LA ILIKE a_expr %prec NOT_LA
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotILike), Left: $1.expr(), Right: $4.expr()}
+  }
+| a_expr NOT_LA ILIKE a_expr ESCAPE a_expr %prec ESCAPE
+ {
+   $$.val = &ast.FuncExpr{Func: ast.WrapFunction("not_ilike_escape"), Exprs: ast.Exprs{$1.expr(), $4.expr(), $6.expr()}}
+ }
+| a_expr SIMILAR TO a_expr %prec SIMILAR
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.SimilarTo), Left: $1.expr(), Right: $4.expr()}
+  }
+| a_expr SIMILAR TO a_expr ESCAPE a_expr %prec ESCAPE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("similar_to_escape"), Exprs: ast.Exprs{$1.expr(), $4.expr(), $6.expr()}}
+  }
+| a_expr NOT_LA SIMILAR TO a_expr %prec NOT_LA
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotSimilarTo), Left: $1.expr(), Right: $5.expr()}
+  }
+| a_expr NOT_LA SIMILAR TO a_expr ESCAPE a_expr %prec ESCAPE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("not_similar_to_escape"), Exprs: ast.Exprs{$1.expr(), $5.expr(), $7.expr()}}
+  }
+| a_expr '~' a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.RegMatch), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr NOT_REGMATCH a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotRegMatch), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr REGIMATCH a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.RegIMatch), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr NOT_REGIMATCH a_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotRegIMatch), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr IS NAN %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{
+      Operator: ast.MakeComparisonOperator(ast.EQ),
+      Left: $1.expr(),
+      Right: ast.NewNumVal("NaN", false /*negative*/),
+    }
+  }
+| a_expr IS NOT NAN %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{
+      Operator: ast.MakeComparisonOperator(ast.NE),
+      Left: $1.expr(),
+      Right: ast.NewNumVal("NaN", false /*negative*/),
+    }
+  }
+| a_expr IS NULL %prec IS
+  {
+    $$.val = &ast.IsNullExpr{Expr: $1.expr()}
+  }
+| a_expr ISNULL %prec IS
+  {
+    $$.val = &ast.IsNullExpr{Expr: $1.expr()}
+  }
+| a_expr IS NOT NULL %prec IS
+  {
+    $$.val = &ast.IsNotNullExpr{Expr: $1.expr()}
+  }
+| a_expr NOTNULL %prec IS
+  {
+    $$.val = &ast.IsNotNullExpr{Expr: $1.expr()}
+  }
+| row OVERLAPS row
+  {
+   t1, t2 := $1.tuple(), $3.tuple()
+   if len(t1.Exprs) != 2 {
+     sqllex.Error("wrong number of parameters on left side of OVERLAPS expression")
+     return 1
+   }
+   if len(t2.Exprs) != 2 {
+     sqllex.Error("wrong number of parameters on right side of OVERLAPS expression")
+     return 1
+   }
+   $$.val = &ast.FuncExpr{Func: ast.WrapFunction("overlaps"), Exprs: ast.Exprs{t1.Exprs[0], t1.Exprs[1], t2.Exprs[0], t2.Exprs[1]}}
+  }
+| a_expr IS TRUE %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsNotDistinctFrom), Left: $1.expr(), Right: ast.MakeBool(true)}
+  }
+| a_expr IS NOT TRUE %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsDistinctFrom), Left: $1.expr(), Right: ast.MakeBool(true)}
+  }
+| a_expr IS FALSE %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsNotDistinctFrom), Left: $1.expr(), Right: ast.MakeBool(false)}
+  }
+| a_expr IS NOT FALSE %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsDistinctFrom), Left: $1.expr(), Right: ast.MakeBool(false)}
+  }
+| a_expr IS UNKNOWN %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsNotDistinctFrom), Left: $1.expr(), Right: ast.Null}
+  }
+| a_expr IS NOT UNKNOWN %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsDistinctFrom), Left: $1.expr(), Right: ast.Null}
+  }
+| a_expr IS DISTINCT FROM a_expr %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsDistinctFrom), Left: $1.expr(), Right: $5.expr()}
+  }
+| a_expr IS NOT DISTINCT FROM a_expr %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsNotDistinctFrom), Left: $1.expr(), Right: $6.expr()}
+  }
+| a_expr IS OF '(' type_list ')' %prec IS
+  {
+    $$.val = &ast.IsOfTypeExpr{Expr: $1.expr(), Types: $5.typeReferences()}
+  }
+| a_expr IS NOT OF '(' type_list ')' %prec IS
+  {
+    $$.val = &ast.IsOfTypeExpr{Not: true, Expr: $1.expr(), Types: $6.typeReferences()}
+  }
+| a_expr BETWEEN opt_asymmetric b_expr AND a_expr %prec BETWEEN
+  {
+    $$.val = &ast.RangeCond{Left: $1.expr(), From: $4.expr(), To: $6.expr()}
+  }
+| a_expr NOT_LA BETWEEN opt_asymmetric b_expr AND a_expr %prec NOT_LA
+  {
+    $$.val = &ast.RangeCond{Not: true, Left: $1.expr(), From: $5.expr(), To: $7.expr()}
+  }
+| a_expr BETWEEN SYMMETRIC b_expr AND a_expr %prec BETWEEN
+  {
+    $$.val = &ast.RangeCond{Symmetric: true, Left: $1.expr(), From: $4.expr(), To: $6.expr()}
+  }
+| a_expr NOT_LA BETWEEN SYMMETRIC b_expr AND a_expr %prec NOT_LA
+  {
+    $$.val = &ast.RangeCond{Not: true, Symmetric: true, Left: $1.expr(), From: $5.expr(), To: $7.expr()}
+  }
+| a_expr IN in_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.In), Left: $1.expr(), Right: $3.expr()}
+  }
+| a_expr NOT_LA IN in_expr %prec NOT_LA
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NotIn), Left: $1.expr(), Right: $4.expr()}
+  }
+| a_expr subquery_op sub_type a_expr %prec CONCAT
+  {
+    op := $3.cmpOp()
+    subOp := $2.op()
+    subOpCmp, ok := subOp.(ast.ComparisonOperator)
+    if !ok {
+      // It is possible that we found `~` operator which was incorrectly typed
+      // as "unary complement" math operator. Check whether that's the case and
+      // override it to the correct "reg match" comparison operator.
+      if ast.IsUnaryComplement(subOp) {
+        subOpCmp = ast.MakeComparisonOperator(ast.RegMatch)
+      } else {
+        sqllex.Error(fmt.Sprintf("%s %s <array> is invalid because %q is not a boolean operator",
+          subOp, op, subOp))
+        return 1
+      }
+    }
+    $$.val = &ast.ComparisonExpr{
+      Operator: op,
+      SubOperator: subOpCmp,
+      Left: $1.expr(),
+      Right: $4.expr(),
+    }
+  }
+| DEFAULT
+  {
+    $$.val = ast.DefaultVal{}
+  }
+| UNIQUE '(' error { return unimplemented(sqllex, "UNIQUE predicate") }
+
+b_expr:
+  c_expr
+| b_expr TYPECAST cast_target
+  {
+    $$.val = &ast.CastExpr{Expr: $1.expr(), Type: $3.typeReference(), SyntaxMode: ast.CastShort}
+  }
+| b_expr TYPEANNOTATE typename
+  {
+    $$.val = &ast.AnnotateTypeExpr{Expr: $1.expr(), Type: $3.typeReference(), SyntaxMode: ast.AnnotateShort}
+  }
+| '+' b_expr %prec UMINUS
+  {
+    $$.val = $2.expr()
+  }
+| '-' b_expr %prec UMINUS
+  {
+    $$.val = unaryNegation($2.expr())
+  }
+| '~' b_expr %prec UMINUS
+  {
+    $$.val = &ast.UnaryExpr{Operator: ast.MakeUnaryOperator(ast.UnaryComplement), Expr: $2.expr()}
+  }
+| b_expr '+' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Plus), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '-' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Minus), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '*' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Mult), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '/' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Div), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr FLOORDIV b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.FloorDiv), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '%' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Mod), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '^' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Pow), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '#' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitxor), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '&' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitand), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '|' b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Bitor), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '<' b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.LT), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '>' b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.GT), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr '=' b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.EQ), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr CONCAT b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.Concat), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr LSHIFT b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.LShift), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr RSHIFT b_expr
+  {
+    $$.val = &ast.BinaryExpr{Operator: ast.MakeBinaryOperator(ast.RShift), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr LESS_EQUALS b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.LE), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr GREATER_EQUALS b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.GE), Left: $1.expr(), Right: $3.expr()}
+  }
+| b_expr NOT_EQUALS b_expr
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.NE), Left: $1.expr(), Right: $3.expr()}
+  }
+| qual_op b_expr %prec CBRT
+  {
+    var retCode int
+    $$.val, retCode = processUnaryQualOp(sqllex, $1.op(), $2.expr())
+    if retCode != 0 {
+      return retCode
+    }
+  }
+| b_expr qual_op b_expr %prec CBRT
+  {
+    {
+      var retCode int
+      $$.val, retCode = processBinaryQualOp(sqllex, $2.op(), $1.expr(), $3.expr())
+      if retCode != 0 {
+        return retCode
+      }
+    }
+  }
+| b_expr IS DISTINCT FROM b_expr %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsDistinctFrom), Left: $1.expr(), Right: $5.expr()}
+  }
+| b_expr IS NOT DISTINCT FROM b_expr %prec IS
+  {
+    $$.val = &ast.ComparisonExpr{Operator: ast.MakeComparisonOperator(ast.IsNotDistinctFrom), Left: $1.expr(), Right: $6.expr()}
+  }
+| b_expr IS OF '(' type_list ')' %prec IS
+  {
+    $$.val = &ast.IsOfTypeExpr{Expr: $1.expr(), Types: $5.typeReferences()}
+  }
+| b_expr IS NOT OF '(' type_list ')' %prec IS
+  {
+    $$.val = &ast.IsOfTypeExpr{Not: true, Expr: $1.expr(), Types: $6.typeReferences()}
+  }
+
+c_expr:
+  d_expr
+| d_expr array_subscripts
+  {
+    $$.val = &ast.IndirectionExpr{
+      Expr: $1.expr(),
+      Indirection: $2.arraySubscripts(),
+    }
+  }
+| case_expr
+| EXISTS select_with_parens
+  {
+    $$.val = &ast.Subquery{Select: $2.selectStmt(), Exists: true}
+  }
+
+d_expr:
+  ICONST
+  {
+    $$.val = $1.numVal()
+  }
+| FCONST
+  {
+    $$.val = $1.numVal()
+  }
+| SCONST
+  {
+    $$.val = ast.NewStrVal($1)
+  }
+| DCONST
+  {
+    $$.val = &ast.DurationVal{Text: $1}
+  }
+| BCONST
+  {
+    $$.val = ast.NewBytesStrValWritten($1, sqllex.(*lexer).tokenText($<pos>1, $<end>1))
+  }
+| BITCONST
+  {
+    d, err := ast.NewBitVal($1)
+    if err != nil { return setErr(sqllex, err) }
+    d.Written = sqllex.(*lexer).tokenText($<pos>1, $<end>1)
+    $$.val = d
+  }
+| func_application_name '(' expr_list opt_sort_clause_no_index ')' SCONST { return unimplemented(sqllex, $1.resolvableFuncRef().String() + "(...) SCONST") }
+| typed_literal
+  {
+    $$.val = $1.expr()
+  }
+| interval_value
+  {
+    $$.val = $1.expr()
+  }
+| TRUE
+  {
+    $$.val = ast.MakeBool(true)
+  }
+| FALSE
+  {
+    $$.val = ast.MakeBool(false)
+  }
+| NULL
+  {
+    $$.val = ast.Null
+  }
+| column_path_with_star
+  {
+    $$.val = ast.Expr($1.unresolvedName())
+  }
+| PLACEHOLDER
+  {
+    p := $1.placeholder()
+    $$.val = p
+  }
+| '(' a_expr ')' '.' '*'
+  {
+    $$.val = &ast.TupleStar{Expr: $2.expr()}
+  }
+| '(' a_expr ')' '.' unrestricted_name
+  {
+    $$.val = &ast.ColumnAccessExpr{Expr: $2.expr(), ColName: ast.Name($5) }
+  }
+| '(' a_expr ')'
+  {
+    $$.val = &ast.ParenExpr{Expr: $2.expr()}
+  }
+| func_expr
+| select_with_parens %prec UMINUS
+  {
+    $$.val = &ast.Subquery{Select: $1.selectStmt()}
+  }
+| labeled_row
+  {
+    $$.val = $1.tuple()
+  }
+| ARRAY select_with_parens %prec UMINUS
+  {
+    $$.val = &ast.ArrayFlatten{Subquery: &ast.Subquery{Select: $2.selectStmt()}}
+  }
+| ARRAY row
+  {
+    $$.val = &ast.Array{Exprs: $2.tuple().Exprs}
+  }
+| ARRAY array_expr
+  {
+    $$.val = $2.expr()
+  }
+| GROUPING '(' expr_list ')' { return unimplemented(sqllex, "d_expr grouping") }
+
+func_application:
+  func_application_name '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: $1.resolvableFuncRef()}
+  }
+| func_application_name '(' expr_list opt_sort_clause_no_index ')'
+  {
+    $$.val = &ast.FuncExpr{Func: $1.resolvableFuncRef(), Exprs: $3.exprs(), OrderBy: $4.orderBy(), AggType: ast.GeneralAgg}
+  }
+| func_application_name '(' VARIADIC a_expr opt_sort_clause_no_index ')' { return unimplemented(sqllex, "variadic") }
+| func_application_name '(' expr_list ',' VARIADIC a_expr opt_sort_clause_no_index ')' { return unimplemented(sqllex, "variadic") }
+| func_application_name '(' ALL expr_list opt_sort_clause_no_index ')'
+  {
+    $$.val = &ast.FuncExpr{Func: $1.resolvableFuncRef(), Type: ast.AllFuncType, Exprs: $4.exprs(), OrderBy: $5.orderBy(), AggType: ast.GeneralAgg}
+  }
+| func_application_name '(' DISTINCT expr_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: $1.resolvableFuncRef(), Type: ast.DistinctFuncType, Exprs: $4.exprs()}
+  }
+| func_application_name '(' '*' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: $1.resolvableFuncRef(), Exprs: ast.Exprs{ast.StarExpr()}}
+  }
+
+func_application_name:
+  func_name
+  {
+    $$.val = $1.resolvableFuncRefFromName()
+  }
+
+typed_literal:
+  func_name_no_extra SCONST
+  {
+    name := $1.unresolvedName()
+    if name.NumParts == 1 {
+      typName := name.Parts[0]
+      /* FORCE DOC */
+      // See https://www.postgresql.org/docs/9.1/static/datatype-character.html
+      // Postgres supports a special character type named "char" (with the quotes)
+      // that is a single-character column type. It's used by system tables.
+      // Eventually this clause will be used to parse user-defined types as well,
+      // since their names can be quoted.
+      if typName == "char" {
+        $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType(ast.TypeQChar, sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+      } else if typName == "serial" {
+        switch sqllex.(*lexer).nakedIntType.Width() {
+        case 32:
+          $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType(ast.TypeInt4, sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+        default:
+          $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType(ast.TypeInt, sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+        }
+      } else {
+        // Check the the type is one of our "non-keyword" type names.
+        // Otherwise, package it up as a type reference for later.
+        // However, if the type name is one of our known unsupported
+        // types, return an unimplemented error message.
+        var typ ast.ResolvableTypeReference
+        var ok bool
+        var unsupported bool
+        typ, ok, unsupported = ast.TypeForNonKeywordTypeName(typName)
+        if !ok {
+          if unsupported {
+            return unimplemented(sqllex, "type name " + typName)
+          }
+          // This is not one of the known unsupported types, so make a type reference for it.
+          un, err := name.ToUnresolvedObjectName()
+          if err != nil { return setErr(sqllex, err) }
+          typ = &un
+        }
+      $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType(typ, sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+      }
+    } else {
+      res, err := name.ToUnresolvedObjectName()
+      if err != nil { return setErr(sqllex, err) }
+      $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType(&res, sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+    }
+  }
+| const_typename SCONST
+  {
+    $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: ast.WriteType($1.colType(), sqllex.(*lexer).textBefore($<pos>1, $<pos>2)), SyntaxMode: ast.CastPrepend}
+  }
+
+func_expr:
+  func_application within_group_clause filter_clause over_clause
+  {
+    f := $1.expr().(*ast.FuncExpr)
+    w := $2.expr().(*ast.FuncExpr)
+    if w.AggType != 0 {
+      f.AggType = w.AggType
+      f.OrderBy = w.OrderBy
+    }
+    f.Filter = $3.expr()
+    f.WindowDef = $4.windowDef()
+    $$.val = f
+  }
+| func_application DIALECT_SUFFIX
+  {
+    f := $1.expr().(*ast.FuncExpr)
+    f.Suffix = $2.dialectClause()
+    $$.val = f
+  }
+| func_expr_common_subexpr
+  {
+    $$.val = $1.expr()
+  }
+
+func_expr_windowless:
+  func_application { $$.val = $1.expr() }
+| func_expr_common_subexpr { $$.val = $1.expr() }
+
+func_expr_common_subexpr:
+  COLLATION FOR '(' a_expr ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("pg_collation_for"), Exprs: ast.Exprs{$4.expr()}}
+  }
+| CURRENT_DATE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_SCHEMA
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_CATALOG
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_TIMESTAMP
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_TIME
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| LOCALTIMESTAMP
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| LOCALTIME
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_USER
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CURRENT_ROLE
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| SESSION_USER
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| USER
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction(strings.ToLower($1)), Bare: true}
+  }
+| CAST '(' a_expr AS cast_target ')'
+  {
+    $$.val = &ast.CastExpr{Expr: $3.expr(), Type: $5.typeReference(), SyntaxMode: ast.CastExplicit}
+  }
+| ANNOTATE_TYPE '(' a_expr ',' typename ')'
+  {
+    $$.val = &ast.AnnotateTypeExpr{Expr: $3.expr(), Type: $5.typeReference(), SyntaxMode: ast.AnnotateExplicit}
+  }
+| IF '(' a_expr ',' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.IfExpr{Cond: $3.expr(), True: $5.expr(), Else: $7.expr()}
+  }
+| IFERROR '(' a_expr ',' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.IfErrExpr{Cond: $3.expr(), Else: $5.expr(), ErrCode: $7.expr()}
+  }
+| IFERROR '(' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.IfErrExpr{Cond: $3.expr(), Else: $5.expr()}
+  }
+| ISERROR '(' a_expr ')'
+  {
+    $$.val = &ast.IfErrExpr{Cond: $3.expr()}
+  }
+| ISERROR '(' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.IfErrExpr{Cond: $3.expr(), ErrCode: $5.expr()}
+  }
+| NULLIF '(' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.NullIfExpr{Expr1: $3.expr(), Expr2: $5.expr()}
+  }
+| IFNULL '(' a_expr ',' a_expr ')'
+  {
+    $$.val = &ast.CoalesceExpr{Name: "IFNULL", Exprs: ast.Exprs{$3.expr(), $5.expr()}}
+  }
+| COALESCE '(' expr_list ')'
+  {
+    $$.val = &ast.CoalesceExpr{Name: "COALESCE", Exprs: $3.exprs()}
+  }
+| special_function
+
+special_function:
+  CURRENT_DATE '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| CURRENT_SCHEMA '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| CURRENT_TIMESTAMP '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| CURRENT_TIMESTAMP '(' a_expr ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: ast.Exprs{$3.expr()}}
+  }
+| CURRENT_TIME '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| CURRENT_TIME '(' a_expr ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: ast.Exprs{$3.expr()}}
+  }
+| LOCALTIMESTAMP '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| LOCALTIMESTAMP '(' a_expr ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: ast.Exprs{$3.expr()}}
+  }
+| LOCALTIME '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| LOCALTIME '(' a_expr ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: ast.Exprs{$3.expr()}}
+  }
+| CURRENT_USER '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| SESSION_USER '(' ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1)}
+  }
+| EXTRACT '(' extract_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+| EXTRACT_DURATION '(' extract_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+| OVERLAY '(' overlay_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+| POSITION '(' position_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("strpos"), Exprs: $3.exprs()}
+  }
+| SUBSTRING '(' substr_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+| TREAT '(' a_expr AS typename ')' { return unimplemented(sqllex, "treat") }
+| TRIM '(' BOTH trim_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("btrim"), Exprs: $4.exprs()}
+  }
+| TRIM '(' LEADING trim_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("ltrim"), Exprs: $4.exprs()}
+  }
+| TRIM '(' TRAILING trim_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("rtrim"), Exprs: $4.exprs()}
+  }
+| TRIM '(' trim_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction("btrim"), Exprs: $3.exprs()}
+  }
+| GREATEST '(' expr_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+| LEAST '(' expr_list ')'
+  {
+    $$.val = &ast.FuncExpr{Func: ast.WrapFunction($1), Exprs: $3.exprs()}
+  }
+
+within_group_clause:
+  WITHIN GROUP '(' single_sort_clause ')'
+  {
+    $$.val = &ast.FuncExpr{OrderBy: $4.orderBy(), AggType: ast.OrderedSetAgg}
+  }
+| {
+    $$.val = &ast.FuncExpr{}
+  }
+
+filter_clause:
+  FILTER '(' WHERE a_expr ')'
+  {
+    $$.val = $4.expr()
+  }
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+window_clause:
+  WINDOW window_definition_list
+  {
+    $$.val = $2.window()
+  }
+| {
+    $$.val = ast.Window(nil)
+  }
+
+window_definition_list:
+  window_definition
+  {
+    $$.val = ast.Window{$1.windowDef()}
+  }
+| window_definition_list ',' window_definition
+  {
+    $$.val = append($1.window(), $3.windowDef())
+  }
+
+window_definition:
+  window_name AS window_specification
+  {
+    n := $3.windowDef()
+    n.Name = ast.Name($1)
+    $$.val = n
+  }
+
+over_clause:
+  OVER window_specification
+  {
+    $$.val = $2.windowDef()
+  }
+| OVER window_name
+  {
+    $$.val = &ast.WindowDef{Name: ast.Name($2)}
+  }
+| {
+    $$.val = (*ast.WindowDef)(nil)
+  }
+
+window_specification:
+  '(' opt_existing_window_name opt_partition_clause
+    opt_sort_clause_no_index opt_frame_clause ')'
+  {
+    $$.val = &ast.WindowDef{
+      RefName: ast.Name($2),
+      Partitions: $3.exprs(),
+      OrderBy: $4.orderBy(),
+      Frame: $5.windowFrame(),
+    }
+  }
+
+opt_existing_window_name:
+  name
+| %prec CONCAT
+  {
+    $$ = ""
+  }
+
+opt_partition_clause:
+  PARTITION BY expr_list
+  {
+    $$.val = $3.exprs()
+  }
+| {
+    $$.val = ast.Exprs(nil)
+  }
+
+opt_frame_clause:
+  RANGE frame_extent opt_frame_exclusion
+  {
+    $$.val = &ast.WindowFrame{
+      Mode: ast.RANGE,
+      Bounds: $2.windowFrameBounds(),
+      Exclusion: $3.windowFrameExclusion(),
+    }
+  }
+| ROWS frame_extent opt_frame_exclusion
+  {
+    $$.val = &ast.WindowFrame{
+      Mode: ast.ROWS,
+      Bounds: $2.windowFrameBounds(),
+      Exclusion: $3.windowFrameExclusion(),
+    }
+  }
+| GROUPS frame_extent opt_frame_exclusion
+  {
+    $$.val = &ast.WindowFrame{
+      Mode: ast.GROUPS,
+      Bounds: $2.windowFrameBounds(),
+      Exclusion: $3.windowFrameExclusion(),
+    }
+  }
+| {
+    $$.val = (*ast.WindowFrame)(nil)
+  }
+
+frame_extent:
+  frame_bound
+  {
+    startBound := $1.windowFrameBound()
+    switch {
+    case startBound.BoundType == ast.UnboundedFollowing:
+      sqllex.Error("frame start cannot be UNBOUNDED FOLLOWING")
+      return 1
+    case startBound.BoundType == ast.OffsetFollowing:
+      sqllex.Error("frame starting from following row cannot end with current row")
+      return 1
+    }
+    $$.val = ast.WindowFrameBounds{StartBound: startBound}
+  }
+| BETWEEN frame_bound AND frame_bound
+  {
+    startBound := $2.windowFrameBound()
+    endBound := $4.windowFrameBound()
+    switch {
+    case startBound.BoundType == ast.UnboundedFollowing:
+      sqllex.Error("frame start cannot be UNBOUNDED FOLLOWING")
+      return 1
+    case endBound.BoundType == ast.UnboundedPreceding:
+      sqllex.Error("frame end cannot be UNBOUNDED PRECEDING")
+      return 1
+    case startBound.BoundType == ast.CurrentRow && endBound.BoundType == ast.OffsetPreceding:
+      sqllex.Error("frame starting from current row cannot have preceding rows")
+      return 1
+    case startBound.BoundType == ast.OffsetFollowing && endBound.BoundType == ast.OffsetPreceding:
+      sqllex.Error("frame starting from following row cannot have preceding rows")
+      return 1
+    case startBound.BoundType == ast.OffsetFollowing && endBound.BoundType == ast.CurrentRow:
+      sqllex.Error("frame starting from following row cannot have preceding rows")
+      return 1
+    }
+    $$.val = ast.WindowFrameBounds{StartBound: startBound, EndBound: endBound}
+  }
+
+frame_bound:
+  UNBOUNDED PRECEDING
+  {
+    $$.val = &ast.WindowFrameBound{BoundType: ast.UnboundedPreceding}
+  }
+| UNBOUNDED FOLLOWING
+  {
+    $$.val = &ast.WindowFrameBound{BoundType: ast.UnboundedFollowing}
+  }
+| CURRENT ROW
+  {
+    $$.val = &ast.WindowFrameBound{BoundType: ast.CurrentRow}
+  }
+| a_expr PRECEDING
+  {
+    $$.val = &ast.WindowFrameBound{
+      OffsetExpr: $1.expr(),
+      BoundType: ast.OffsetPreceding,
+    }
+  }
+| a_expr FOLLOWING
+  {
+    $$.val = &ast.WindowFrameBound{
+      OffsetExpr: $1.expr(),
+      BoundType: ast.OffsetFollowing,
+    }
+  }
+
+opt_frame_exclusion:
+  EXCLUDE CURRENT ROW
+  {
+    $$.val = ast.ExcludeCurrentRow
+  }
+| EXCLUDE GROUP
+  {
+    $$.val = ast.ExcludeGroup
+  }
+| EXCLUDE TIES
+  {
+    $$.val = ast.ExcludeTies
+  }
+| EXCLUDE NO OTHERS
+  {
+    // EXCLUDE NO OTHERS is equivalent to omitting the frame exclusion clause.
+    $$.val = ast.NoExclusion
+  }
+| {
+    $$.val = ast.NoExclusion
+  }
+
+row:
+  ROW '(' opt_expr_list ')'
+  {
+    $$.val = &ast.Tuple{Exprs: $3.exprs(), Row: true}
+  }
+| expr_tuple_unambiguous
+  {
+    $$.val = $1.tuple()
+  }
+
+labeled_row:
+  row
+| '(' row AS name_list ')'
+  {
+    t := $2.tuple()
+    labels := $4.nameList()
+    t.Labels = make([]string, len(labels))
+    for i, l := range labels {
+      t.Labels[i] = string(l)
+    }
+    $$.val = t
+  }
+
+sub_type:
+  ANY
+  {
+    $$.val = ast.MakeComparisonOperator(ast.Any)
+  }
+| SOME
+  {
+    $$.val = ast.MakeComparisonOperator(ast.Some)
+  }
+| ALL
+  {
+    $$.val = ast.MakeComparisonOperator(ast.All)
+  }
+
+all_op:
+  '+' { $$.val = ast.MakeBinaryOperator(ast.Plus)  }
+| '-' { $$.val = ast.MakeBinaryOperator(ast.Minus) }
+| '*' { $$.val = ast.MakeBinaryOperator(ast.Mult)  }
+| '/' { $$.val = ast.MakeBinaryOperator(ast.Div)   }
+| '%' { $$.val = ast.MakeBinaryOperator(ast.Mod)   }
+| '^' { $$.val = ast.MakeBinaryOperator(ast.Pow) }
+| '<' { $$.val = ast.MakeComparisonOperator(ast.LT) }
+| '>' { $$.val = ast.MakeComparisonOperator(ast.GT) }
+| '=' { $$.val = ast.MakeComparisonOperator(ast.EQ) }
+| LESS_EQUALS    { $$.val = ast.MakeComparisonOperator(ast.LE) }
+| GREATER_EQUALS { $$.val = ast.MakeComparisonOperator(ast.GE) }
+| NOT_EQUALS     { $$.val = ast.MakeComparisonOperator(ast.NE) }
+| '?' { $$.val = ast.MakeComparisonOperator(ast.JSONExists) }
+| '&' { $$.val = ast.MakeBinaryOperator(ast.Bitand) }
+| '|' { $$.val = ast.MakeBinaryOperator(ast.Bitor)  }
+| '#' { $$.val = ast.MakeBinaryOperator(ast.Bitxor) }
+| FLOORDIV { $$.val = ast.MakeBinaryOperator(ast.FloorDiv) }
+| CONTAINS { $$.val = ast.MakeComparisonOperator(ast.Contains) }
+| CONTAINED_BY { $$.val = ast.MakeComparisonOperator(ast.ContainedBy) }
+| LSHIFT { $$.val = ast.MakeBinaryOperator(ast.LShift) }
+| RSHIFT { $$.val = ast.MakeBinaryOperator(ast.RShift) }
+| CONCAT { $$.val = ast.MakeBinaryOperator(ast.Concat) }
+| FETCHVAL { $$.val = ast.MakeBinaryOperator(ast.JSONFetchVal) }
+| FETCHTEXT { $$.val = ast.MakeBinaryOperator(ast.JSONFetchText) }
+| FETCHVAL_PATH { $$.val = ast.MakeBinaryOperator(ast.JSONFetchValPath) }
+| FETCHTEXT_PATH { $$.val = ast.MakeBinaryOperator(ast.JSONFetchTextPath) }
+| JSON_SOME_EXISTS { $$.val = ast.MakeComparisonOperator(ast.JSONSomeExists) }
+| JSON_ALL_EXISTS { $$.val = ast.MakeComparisonOperator(ast.JSONAllExists) }
+| NOT_REGMATCH { $$.val = ast.MakeComparisonOperator(ast.NotRegMatch) }
+| REGIMATCH { $$.val = ast.MakeComparisonOperator(ast.RegIMatch) }
+| NOT_REGIMATCH { $$.val = ast.MakeComparisonOperator(ast.NotRegIMatch) }
+| AND_AND { $$.val = ast.MakeComparisonOperator(ast.Overlaps) }
+| AT_AT { $$.val = ast.MakeComparisonOperator(ast.TSMatches) }
+| '~' { $$.val = ast.MakeUnaryOperator(ast.UnaryComplement) }
+| SQRT { $$.val = ast.MakeUnaryOperator(ast.UnarySqrt) }
+| CBRT { $$.val = ast.MakeUnaryOperator(ast.UnaryCbrt) }
+
+operator_op:
+  all_op
+| name '.' all_op
+  {
+    // Only support operators on pg_catalog.
+    if $1 != "pg_catalog" {
+      return unimplementedWithIssue(sqllex, 65017)
+    }
+    $$ = $3
+  }
+
+qual_op:
+  OPERATOR '(' operator_op ')'
+  {
+    $$ = $3
+  }
+
+subquery_op:
+  all_op
+| qual_op
+| LIKE         { $$.val = ast.MakeComparisonOperator(ast.Like)     }
+| NOT_LA LIKE  { $$.val = ast.MakeComparisonOperator(ast.NotLike)  }
+| ILIKE        { $$.val = ast.MakeComparisonOperator(ast.ILike)    }
+| NOT_LA ILIKE { $$.val = ast.MakeComparisonOperator(ast.NotILike) }
+
+expr_tuple1_ambiguous:
+  '(' ')'
+  {
+    $$.val = &ast.Tuple{}
+  }
+| '(' tuple1_ambiguous_values ')'
+  {
+    $$.val = &ast.Tuple{Exprs: $2.exprs()}
+  }
+
+tuple1_ambiguous_values:
+  a_expr
+  {
+    $$.val = ast.Exprs{$1.expr()}
+  }
+| a_expr ','
+  {
+    $$.val = ast.Exprs{$1.expr()}
+  }
+| a_expr ',' expr_list
+  {
+     $$.val = append(ast.Exprs{$1.expr()}, $3.exprs()...)
+  }
+
+expr_tuple_unambiguous:
+  '(' ')'
+  {
+    $$.val = &ast.Tuple{}
+  }
+| '(' tuple1_unambiguous_values ')'
+  {
+    $$.val = &ast.Tuple{Exprs: $2.exprs()}
+  }
+
+tuple1_unambiguous_values:
+  a_expr ','
+  {
+    $$.val = ast.Exprs{$1.expr()}
+  }
+| a_expr ',' expr_list
+  {
+     $$.val = append(ast.Exprs{$1.expr()}, $3.exprs()...)
+  }
+
+opt_expr_list:
+  expr_list
+| {
+    $$.val = ast.Exprs(nil)
+  }
+
+expr_list:
+  a_expr
+  {
+    $$.val = ast.Exprs{$1.expr()}
+  }
+| expr_list ',' a_expr
+  {
+    $$.val = append($1.exprs(), $3.expr())
+  }
+
+type_list:
+  typename
+  {
+    $$.val = []ast.ResolvableTypeReference{$1.typeReference()}
+  }
+| type_list ',' typename
+  {
+    $$.val = append($1.typeReferences(), $3.typeReference())
+  }
+
+array_expr:
+  '[' opt_expr_list ']'
+  {
+    $$.val = &ast.Array{Exprs: $2.exprs()}
+  }
+| '[' array_expr_list ']'
+  {
+    $$.val = &ast.Array{Exprs: $2.exprs()}
+  }
+
+array_expr_list:
+  array_expr
+  {
+    $$.val = ast.Exprs{$1.expr()}
+  }
+| array_expr_list ',' array_expr
+  {
+    $$.val = append($1.exprs(), $3.expr())
+  }
+
+extract_list:
+  extract_arg FROM a_expr
+  {
+    $$.val = ast.Exprs{ast.NewFieldStrVal(strings.ToLower($1)), $3.expr()}
+  }
+| expr_list
+  {
+    $$.val = $1.exprs()
+  }
+
+extract_arg:
+  IDENT
+| YEAR
+| MONTH
+| DAY
+| HOUR
+| MINUTE
+| SECOND
+| SCONST
+
+overlay_list:
+  a_expr overlay_placing substr_from substr_for
+  {
+    $$.val = ast.Exprs{$1.expr(), $2.expr(), $3.expr(), $4.expr()}
+  }
+| a_expr overlay_placing substr_from
+  {
+    $$.val = ast.Exprs{$1.expr(), $2.expr(), $3.expr()}
+  }
+| expr_list
+  {
+    $$.val = $1.exprs()
+  }
+
+overlay_placing:
+  PLACING a_expr
+  {
+    $$.val = $2.expr()
+  }
+
+position_list:
+  b_expr IN b_expr
+  {
+    $$.val = ast.Exprs{$3.expr(), $1.expr()}
+  }
+| {
+    $$.val = ast.Exprs(nil)
+  }
+
+substr_list:
+  a_expr substr_from substr_for
+  {
+    $$.val = ast.Exprs{$1.expr(), $2.expr(), $3.expr()}
+  }
+| a_expr substr_for substr_from
+  {
+    $$.val = ast.Exprs{$1.expr(), $3.expr(), $2.expr()}
+  }
+| a_expr substr_from
+  {
+    $$.val = ast.Exprs{$1.expr(), $2.expr()}
+  }
+| a_expr substr_for
+  {
+    $$.val = ast.Exprs{$1.expr(), ast.NewNumVal("1", false /* negative */), $2.expr()}
+  }
+| opt_expr_list
+  {
+    $$.val = $1.exprs()
+  }
+
+substr_from:
+  FROM a_expr
+  {
+    $$.val = $2.expr()
+  }
+
+substr_for:
+  FOR a_expr
+  {
+    $$.val = $2.expr()
+  }
+
+trim_list:
+  a_expr FROM expr_list
+  {
+    $$.val = append($3.exprs(), $1.expr())
+  }
+| FROM expr_list
+  {
+    $$.val = $2.exprs()
+  }
+| expr_list
+  {
+    $$.val = $1.exprs()
+  }
+
+in_expr:
+  select_with_parens
+  {
+    $$.val = &ast.Subquery{Select: $1.selectStmt()}
+  }
+| expr_tuple1_ambiguous
+
+case_expr:
+  CASE case_arg when_clause_list case_default END
+  {
+    $$.val = &ast.CaseExpr{Expr: $2.expr(), Whens: $3.whens(), Else: $4.expr()}
+  }
+
+when_clause_list:
+  when_clause
+  {
+    $$.val = []*ast.When{$1.when()}
+  }
+| when_clause_list when_clause
+  {
+    $$.val = append($1.whens(), $2.when())
+  }
+
+when_clause:
+  WHEN a_expr THEN a_expr
+  {
+    $$.val = &ast.When{Cond: $2.expr(), Val: $4.expr()}
+  }
+
+case_default:
+  ELSE a_expr
+  {
+    $$.val = $2.expr()
+  }
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+case_arg:
+  a_expr
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+array_subscript:
+  '[' a_expr ']'
+  {
+    $$.val = &ast.ArraySubscript{Begin: $2.expr()}
+  }
+| '[' opt_slice_bound ':' opt_slice_bound ']'
+  {
+    $$.val = &ast.ArraySubscript{Begin: $2.expr(), End: $4.expr(), Slice: true}
+  }
+
+opt_slice_bound:
+  a_expr
+| {
+    $$.val = ast.Expr(nil)
+  }
+
+array_subscripts:
+  array_subscript
+  {
+    $$.val = ast.ArraySubscripts{$1.arraySubscript()}
+  }
+| array_subscripts array_subscript
+  {
+    $$.val = append($1.arraySubscripts(), $2.arraySubscript())
+  }
+
+opt_asymmetric:
+  ASYMMETRIC {}
+| {}
+
+target_list:
+  target_elem
+  {
+    $$.val = ast.SelectExprs{$1.selExpr()}
+  }
+| target_list ',' target_elem
+  {
+    $$.val = append($1.selExprs(), $3.selExpr())
+  }
+
+target_elem:
+  a_expr AS target_name
+  {
+    $$.val = ast.SelectExpr{Expr: $1.expr(), As: ast.UnrestrictedName($3)}
+  }
+| a_expr bare_col_label
+  {
+    $$.val = ast.SelectExpr{Expr: $1.expr(), As: ast.UnrestrictedName($2)}
+  }
+| a_expr
+  {
+    $$.val = ast.SelectExpr{Expr: $1.expr()}
+  }
+| '*'
+  {
+    $$.val = ast.StarSelectExpr()
+  }
+
+bare_col_label:
+  IDENT
+| bare_label_keywords
+
+name_list:
+  name
+  {
+    $$.val = ast.NameList{ast.Name($1)}
+  }
+| name_list ',' name
+  {
+    $$.val = append($1.nameList(), ast.Name($3))
+  }
+
+only_signed_iconst:
+  '+' ICONST
+  {
+    $$.val = $2.numVal()
+  }
+| '-' ICONST
+  {
+    n := $2.numVal()
+    n.SetNegative()
+    $$.val = n
+  }
+
+only_signed_fconst:
+  '+' FCONST
+  {
+    $$.val = $2.numVal()
+  }
+| '-' FCONST
+  {
+    n := $2.numVal()
+    n.SetNegative()
+    $$.val = n
+  }
+
+iconst32:
+  ICONST
+  {
+    val, err := $1.numVal().AsInt32()
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = val
+  }
+
+interval_value:
+  INTERVAL SCONST opt_interval_qualifier
+  {
+    var t *ast.T
+    if $3.val == nil {
+      t = ast.TypeInterval
+    } else {
+      t = ast.MakeTypeInterval($3.intervalTypeMetadata())
+    }
+    $$.val = &ast.CastExpr{Expr: ast.NewStrVal($2), Type: t, SyntaxMode: ast.CastInterval}
+  }
+| INTERVAL '(' iconst32 ')' SCONST
+  {
+    prec := $3.int32()
+    if prec < 0 || prec > 6 {
+      sqllex.Error(fmt.Sprintf("precision %d out of range", prec))
+      return 1
+    }
+    $$.val = &ast.CastExpr{
+      Expr: ast.NewStrVal($5),
+      Type: ast.MakeTypeInterval(
+        ast.IntervalTypeMetadata{Precision: prec, PrecisionIsSet: true},
+      ),
+      SyntaxMode: ast.CastPrepend,
+    }
+  }
+
+collation_name:
+  unrestricted_name
+
+target_name:
+  unrestricted_name
+
+table_alias_name:
+  name
+
+window_name:
+  name
+
+table_name:
+  db_object_name
+
+column_path:
+  name
+  {
+      $$.val = &ast.UnresolvedName{NumParts:1, Parts: ast.NameParts{$1}}
+  }
+| prefixed_column_path
+
+prefixed_column_path:
+  db_object_name_component '.' unrestricted_name
+  {
+      $$.val = &ast.UnresolvedName{NumParts:2, Parts: ast.NameParts{$3,$1}}
+  }
+| db_object_name_component '.' unrestricted_name '.' unrestricted_name
+  {
+      $$.val = &ast.UnresolvedName{NumParts:3, Parts: ast.NameParts{$5,$3,$1}}
+  }
+| db_object_name_component '.' unrestricted_name '.' unrestricted_name '.' unrestricted_name
+  {
+      $$.val = &ast.UnresolvedName{NumParts:4, Parts: ast.NameParts{$7,$5,$3,$1}}
+  }
+
+column_path_with_star:
+  column_path
+| db_object_name_component '.' unrestricted_name '.' unrestricted_name '.' '*'
+  {
+    $$.val = &ast.UnresolvedName{Star:true, NumParts:4, Parts: ast.NameParts{"",$5,$3,$1}}
+  }
+| db_object_name_component '.' unrestricted_name '.' '*'
+  {
+    $$.val = &ast.UnresolvedName{Star:true, NumParts:3, Parts: ast.NameParts{"",$3,$1}}
+  }
+| db_object_name_component '.' '*'
+  {
+    $$.val = &ast.UnresolvedName{Star:true, NumParts:2, Parts: ast.NameParts{"",$1}}
+  }
+
+func_name:
+  type_function_name
+  {
+    $$.val = &ast.UnresolvedName{NumParts:1, Parts: ast.NameParts{$1}}
+  }
+| prefixed_column_path
+| INDEX_BEFORE_PAREN
+  {
+    $$.val = &ast.UnresolvedName{NumParts:1, Parts: ast.NameParts{$1}}
+  }
+
+func_name_no_extra:
+  type_function_name_no_extra
+  {
+    $$.val = &ast.UnresolvedName{NumParts:1, Parts: ast.NameParts{$1}}
+  }
+| prefixed_column_path
+
+db_object_name:
+  simple_db_object_name
+| complex_db_object_name
+
+simple_db_object_name:
+  db_object_name_component
+  {
+    res, err := ast.NewUnresolvedObjectName(1, [3]string{$1})
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = res
+  }
+
+complex_db_object_name:
+  db_object_name_component '.' unrestricted_name
+  {
+    res, err := ast.NewUnresolvedObjectName(2, [3]string{$3, $1})
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = res
+  }
+| db_object_name_component '.' unrestricted_name '.' unrestricted_name
+  {
+    res, err := ast.NewUnresolvedObjectName(3, [3]string{$5, $3, $1})
+    if err != nil { return setErr(sqllex, err) }
+    $$.val = res
+  }
+
+db_object_name_component:
+  name
+| type_func_name_extra_keyword
+| extra_reserved_keyword
+
+name:
+  IDENT
+| unreserved_keyword
+| col_name_keyword
+
+type_function_name:
+  IDENT
+| unreserved_keyword
+| type_func_name_keyword
+
+type_function_name_no_extra:
+  IDENT
+| unreserved_keyword
+| type_func_name_no_extra_keyword
+
+unrestricted_name:
+  IDENT
+| unreserved_keyword
+| col_name_keyword
+| type_func_name_keyword
+| reserved_keyword
+
+unreserved_keyword:
+  AT
+| BY
+| CUBE
+| CURRENT
+| DAY
+| DOUBLE
+| ESCAPE
+| EXCLUDE
+| FILTER
+| FIRST
+| FOLLOWING
+| GROUPS
+| HOUR
+| KEY
+| LAST
+| LOCKED
+| MATERIALIZED
+| MINUTE
+| MONTH
+| NAN
+| NEXT
+| NO
+| NOWAIT
+| NULLS
+| OF
+| OPERATOR
+| ORDINALITY
+| OTHERS
+| OVER
+| PARTITION
+| PRECEDING
+| RANGE
+| READ
+| RECURSIVE
+| ROLLUP
+| ROWS
+| SECOND
+| SETS
+| SHARE
+| SKIP
+| TIES
+| UNBOUNDED
+| UNKNOWN
+| UPDATE
+| VARYING
+| WITHIN
+| WITHOUT
+| YEAR
+| ZONE
+
+bare_label_keywords:
+  ALL
+| AND
+| ANNOTATE_TYPE
+| ANY
+| ASC
+| ASYMMETRIC
+| AT
+| BETWEEN
+| BIGINT
+| BIT
+| BOOLEAN
+| BOTH
+| BY
+| CASE
+| CAST
+| COALESCE
+| COLLATION
+| CROSS
+| CUBE
+| CURRENT
+| CURRENT_CATALOG
+| CURRENT_DATE
+| CURRENT_ROLE
+| CURRENT_SCHEMA
+| CURRENT_TIME
+| CURRENT_TIMESTAMP
+| CURRENT_USER
+| DEC
+| DECIMAL
+| DEFAULT
+| DESC
+| DISTINCT
+| DOUBLE
+| ELSE
+| END
+| ESCAPE
+| EXCLUDE
+| EXISTS
+| EXTRACT
+| EXTRACT_DURATION
+| FALSE
+| FIRST
+| FLOAT
+| FOLLOWING
+| FULL
+| GREATEST
+| GROUPING
+| GROUPS
+| IF
+| IFERROR
+| IFNULL
+| ILIKE
+| IN
+| INDEX_BEFORE_PAREN
+| INNER
+| INT
+| INTEGER
+| INTERVAL
+| IS
+| ISERROR
+| JOIN
+| KEY
+| LAST
+| LATERAL
+| LEADING
+| LEAST
+| LEFT
+| LIKE
+| LOCALTIME
+| LOCALTIMESTAMP
+| LOCKED
+| MATERIALIZED
+| NAN
+| NATURAL
+| NEXT
+| NO
+| NOT
+| NOWAIT
+| NULL
+| NULLIF
+| NULLS
+| NUMERIC
+| OF
+| ONLY
+| OPERATOR
+| OR
+| ORDINALITY
+| OTHERS
+| OUTER
+| OVERLAY
+| PARTITION
+| PLACING
+| POSITION
+| PRECEDING
+| PRIMARY
+| RANGE
+| READ
+| REAL
+| RECURSIVE
+| RIGHT
+| ROLLUP
+| ROW
+| ROWS
+| SELECT
+| SESSION_USER
+| SETS
+| SHARE
+| SIMILAR
+| SKIP
+| SMALLINT
+| SOME
+| STRING
+| SUBSTRING
+| SYMMETRIC
+| TABLE
+| THEN
+| TIES
+| TIME
+| TIMESTAMP
+| TIMESTAMPTZ
+| TIMETZ
+| TRAILING
+| TREAT
+| TRIM
+| TRUE
+| UNBOUNDED
+| UNKNOWN
+| UPDATE
+| USER
+| USING
+| VALUES
+| VARBIT
+| VARCHAR
+| VARIADIC
+| WHEN
+| ZONE
+
+col_name_keyword:
+  ANNOTATE_TYPE
+| BETWEEN
+| BIGINT
+| BIT
+| BOOLEAN
+| BOX2D
+| CHAR
+| CHARACTER
+| CHARACTERISTICS
+| COALESCE
+| DEC
+| DECIMAL
+| EXISTS
+| EXTRACT
+| EXTRACT_DURATION
+| FLOAT
+| GEOGRAPHY
+| GEOMETRY
+| GREATEST
+| GROUPING
+| IF
+| IFERROR
+| IFNULL
+| INOUT
+| INT
+| INTEGER
+| INTERVAL
+| ISERROR
+| LEAST
+| NULLIF
+| NUMERIC
+| OUT
+| OVERLAY
+| POINT
+| POLYGON
+| POSITION
+| PRECISION
+| REAL
+| ROW
+| SETOF
+| SMALLINT
+| STRING
+| SUBSTRING
+| TIME
+| TIMETZ
+| TIMESTAMP
+| TIMESTAMPTZ
+| TREAT
+| TRIM
+| VALUES
+| VARBIT
+| VARCHAR
+| VIRTUAL
+| WORK
+
+type_func_name_keyword:
+  type_func_name_no_extra_keyword
+| type_func_name_extra_keyword
+
+type_func_name_no_extra_keyword:
+  AUTHORIZATION
+| COLLATION
+| CROSS
+| FULL
+| INNER
+| ILIKE
+| IS
+| ISNULL
+| JOIN
+| LEFT
+| LIKE
+| NATURAL
+| NONE
+| NOTNULL
+| OUTER
+| OVERLAPS
+| RIGHT
+| SIMILAR
+
+type_func_name_extra_keyword:
+  FAMILY
+
+reserved_keyword:
+  ALL
+| ANALYSE
+| ANALYZE
+| AND
+| ANY
+| ARRAY
+| AS
+| ASC
+| ASYMMETRIC
+| BOTH
+| CASE
+| CAST
+| CHECK
+| COLLATE
+| COLUMN
+| CONCURRENTLY
+| CONSTRAINT
+| CREATE
+| CURRENT_CATALOG
+| CURRENT_DATE
+| CURRENT_ROLE
+| CURRENT_SCHEMA
+| CURRENT_TIME
+| CURRENT_TIMESTAMP
+| CURRENT_USER
+| DEFAULT
+| DEFERRABLE
+| DESC
+| DISTINCT
+| DO
+| ELSE
+| END
+| EXCEPT
+| FALSE
+| FETCH
+| FOR
+| FOREIGN
+| FROM
+| GRANT
+| GROUP
+| HAVING
+| IN
+| INITIALLY
+| INTERSECT
+| INTO
+| LATERAL
+| LEADING
+| LIMIT
+| LOCALTIME
+| LOCALTIMESTAMP
+| NOT
+| NULL
+| OFFSET
+| ON
+| ONLY
+| OR
+| ORDER
+| PLACING
+| PRIMARY
+| REFERENCES
+| RETURNING
+| SELECT
+| SESSION_USER
+| SOME
+| SYMMETRIC
+| TABLE
+| THEN
+| TO
+| TRAILING
+| TRUE
+| UNION
+| UNIQUE
+| USER
+| USING
+| VARIADIC
+| WHEN
+| WHERE
+| WINDOW
+| WITH
+| extra_reserved_keyword
+
+extra_reserved_keyword:
+  INDEX_BEFORE_NAME_THEN_PAREN
+| INDEX_BEFORE_PAREN
+| INDEX_AFTER_ORDER_BY_BEFORE_AT
+| NOTHING_AFTER_RETURNING
+
+%%

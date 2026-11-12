@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -67,8 +67,8 @@ func TestBuildWindowParity(t *testing.T) {
 	past := time.Unix(base, 0).Add(30 * 24 * time.Hour)
 	rfc := func(v int64) string { return time.Unix(v, 0).UTC().Format(time.RFC3339) }
 	mysql := vitess.MustNewAnalyzer()
-	datafusion := cockroach.NewAnalyzer(cockroach.Options{
-		BucketMatchers: cockroach.DataFusionBucketMatchers(),
+	datafusion := pgfamily.NewAnalyzer(pgfamily.Options{
+		BucketMatchers: pgfamily.DataFusionBucketMatchers(),
 	})
 	var compared int
 	check := func(a sqlanalyzer.DialectAnalyzer, query string, requireUpper bool) {

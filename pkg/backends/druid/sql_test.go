@@ -350,30 +350,19 @@ func TestDruidMillisBucketCastFailsClosed(t *testing.T) {
 	}
 }
 
-// TestDruidSQLRenderable covers the constructs the shared parser reformats
-// into spellings Druid's planner rejects. Each rejected case was confirmed
-// against a live Druid: the original parses and the reformatted form does not.
+// TestDruidSQLRenderable covers PostgreSQL cast syntax, which Druid's planner rejects, and the
+// constructs the formatter keeps as written.
 func TestDruidSQLRenderable(t *testing.T) {
-	unrenderable := map[string]string{
-		"bigint cast":  `SELECT CAST(x AS INT8) FROM trips`,
-		"float cast":   `SELECT CAST(x AS FLOAT8) FROM trips`,
-		"boolean cast": `SELECT CAST(x AS BOOL) FROM trips`,
-		"extract":      `SELECT extract('hour', __time) FROM trips`,
-		"pg cast":      `SELECT '1'::INTERVAL HOUR FROM trips`,
+	if druidSQLRenderable(`SELECT '1'::INTERVAL HOUR FROM trips`) {
+		t.Error("PostgreSQL cast syntax reported renderable")
 	}
-	for name, canonical := range unrenderable {
-		t.Run(name, func(t *testing.T) {
-			if druidSQLRenderable(canonical) {
-				t.Errorf("statement reported renderable: %s", canonical)
-			}
-		})
-	}
-
 	renderable := map[string]string{
+		"bigint cast":    `SELECT CAST(x AS BIGINT) FROM trips`,
 		"double cast":    `SELECT CAST(x AS double) FROM trips`,
 		"varchar cast":   `SELECT CAST(x AS VARCHAR) FROM trips`,
 		"decimal cast":   `SELECT CAST(x AS DECIMAL) FROM trips`,
 		"timestamp cast": `SELECT CAST(x AS TIMESTAMP) FROM trips`,
+		"extract":        `SELECT extract(hour FROM __time) FROM trips`,
 		"count distinct": `SELECT count(DISTINCT x) FROM trips`,
 		"time_floor":     `SELECT time_floor(__time, 'PT5M') FROM trips`,
 		"millis bucket":  `SELECT millis_to_timestamp(floor(timestamp_to_millis(__time) / 60000) * 60000) FROM trips`,
@@ -389,10 +378,8 @@ func TestDruidSQLRenderable(t *testing.T) {
 	}
 }
 
-// TestDruidUnrenderableCastFailsClosed verifies a cast the parser would rewrite
-// into a type name Druid rejects sends the query to the object cache rather
-// than to the origin as SQL it refuses.
-func TestDruidUnrenderableCastFailsClosed(t *testing.T) {
+// TestDruidCastRendersAsWritten verifies a cast reaches Druid with the type name the client wrote.
+func TestDruidCastRendersAsWritten(t *testing.T) {
 	now := time.Now().UTC()
 	statement := `SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, ` +
 		`CAST(COUNT(*) AS BIGINT) AS trips FROM "trips" ` +
@@ -400,11 +387,11 @@ func TestDruidUnrenderableCastFailsClosed(t *testing.T) {
 		`AND __time < MILLIS_TO_TIMESTAMP(1789086400000) GROUP BY 1 ORDER BY 1`
 	analysis := druidSQLAnalyzer.Analyze(normalizeDruidSQL(statement), now)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
-		t.Fatalf("Analyze() = %s/%s, want delta before the render guard",
+		t.Fatalf("Analyze() = %s/%s, want delta",
 			analysis.Mode, analysis.Reason)
 	}
-	if druidSQLRenderable(analysis.Plan.CanonicalSQL) {
-		t.Errorf("canonical statement passed the guard: %s", analysis.Plan.CanonicalSQL)
+	if !druidSQLRenderable(analysis.Plan.CanonicalSQL) || !strings.Contains(analysis.Plan.CanonicalSQL, "AS BIGINT") {
+		t.Errorf("canonical statement: %s", analysis.Plan.CanonicalSQL)
 	}
 }
 

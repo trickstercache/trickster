@@ -16,7 +16,7 @@
 
 // Package sql implements InfluxDB 3 native SQL (Apache DataFusion) support for
 // the `/api/v3/query_sql` endpoint. Statement analysis is delegated to the
-// shared CockroachDB-parser adapter in pkg/parsing/sqlanalyzer/cockroach,
+// shared PostgreSQL-family adapter in pkg/parsing/sqlanalyzer/pgfamily,
 // configured with DataFusion's time-bucketing functions.
 package sql
 
@@ -33,7 +33,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -77,10 +77,10 @@ const DefaultTimestampField = "time"
 // statements identically.
 func Analyzer() sqlanalyzer.DialectAnalyzer { return dialectAnalyzer }
 
-// dialectAnalyzer analyzes DataFusion SQL via the shared CockroachDB-parser
+// dialectAnalyzer analyzes DataFusion SQL via the shared PostgreSQL-family
 // adapter. It is stateless and safe for concurrent use.
-var dialectAnalyzer sqlanalyzer.DialectAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: cockroach.DataFusionBucketMatchers(),
+var dialectAnalyzer sqlanalyzer.DialectAnalyzer = pgfamily.NewAnalyzer(pgfamily.Options{
+	BucketMatchers: pgfamily.DataFusionBucketMatchers(),
 	// DataFusion rejects Timestamp-to-Int64 comparisons, so epoch-integer
 	// bounds must be rendered back to the origin as RFC3339 literals.
 	RenderNumericBoundsAsRFC3339: true,

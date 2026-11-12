@@ -60,7 +60,8 @@ var guardedWords = map[string]wordClass{
 	"current_timestamp": wordBareClock, "current_date": wordBareClock, "current_time": wordBareClock,
 	"localtimestamp": wordBareClock, "localtime": wordBareClock,
 
-	"only": wordUnfaithful, "json": wordUnfaithful,
+	// ONLY is not kept by the formatter, and system_user reads as a column but PostgreSQL calls it bare
+	"only": wordUnfaithful, "system_user": wordUnfaithful,
 
 	fnTimeBucketGapfill: wordGapfill,
 	"locf":              wordCarry, "interpolate": wordCarry,

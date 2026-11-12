@@ -10,3 +10,5 @@ keep-alives
 fo
 trun
 optin
+inout
+notin

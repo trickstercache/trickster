@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
 
@@ -28,6 +28,7 @@ var (
 	errVolatile     = errors.New("statement calls a volatile function")
 	errGapfill      = errors.New("gapfill result depends on the whole requested range")
 	errSetReturning = errors.New("statement calls a set-returning function")
+	errUnrenderable = errors.New("statement has no faithful PostgreSQL re-spelling")
 )
 
 const timestampPrecision = time.Microsecond
@@ -36,18 +37,17 @@ var analyzer = &sessionAnalyzer{utc: newDialectAnalyzer(true), zoned: newDialect
 
 func newDialectAnalyzer(utc bool) *dialectAnalyzer {
 	matchers := bucketMatchers{utc: utc}
-	buckets := []cockroach.BucketMatcher{matchers.timeBucket, matchers.dateBin}
+	buckets := []pgfamily.BucketMatcher{matchers.timeBucket, matchers.dateBin}
 	if utc {
 		buckets = append(buckets, dateTrunc)
 	}
-	return &dialectAnalyzer{inner: cockroach.NewAnalyzer(cockroach.Options{
+	return &dialectAnalyzer{inner: pgfamily.NewAnalyzer(pgfamily.Options{
 		BucketMatchers:     buckets,
-		ExprBucketMatchers: []cockroach.ExprBucketMatcher{epochFloor},
+		ExprBucketMatchers: []pgfamily.ExprBucketMatcher{epochFloor},
 		NakedIntIsInt4:     true,
 		// timestamps hold microseconds; a finer literal is rounded, up into the next bucket
 		BoundPrecision:       timestampPrecision,
 		RejectZonelessBounds: !utc,
-		PostRender:           postRender,
 	})}
 }
 
@@ -74,7 +74,7 @@ func (a *sessionAnalyzer) ForSession(view pgwire.SessionView) sqlanalyzer.Dialec
 }
 
 type dialectAnalyzer struct {
-	inner *cockroach.Analyzer
+	inner *pgfamily.Analyzer
 }
 
 func (a *dialectAnalyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
@@ -85,7 +85,7 @@ func (a *dialectAnalyzer) Analyze(statement string, now time.Time) sqlanalyzer.A
 	facts := scanFacts(statement)
 	if analysis.Mode == sqlanalyzer.CacheModeDelta && facts.clock && !facts.volatile {
 		// a clock read that was a time bound is already resolved out of the canonical statement
-		facts.clock = scanFacts(cockroach.MaskPlaceholders(analysis.Plan.CanonicalSQL)).clock
+		facts.clock = scanFacts(pgfamily.MaskPlaceholders(analysis.Plan.CanonicalSQL)).clock
 	}
 	switch {
 	case facts.volatile || facts.clock:

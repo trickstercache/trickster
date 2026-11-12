@@ -5,14 +5,16 @@ For another database using PostgreSQL's wire protocol, also follow
 transport, session and time-axis hooks, multi-protocol providers and the
 compatibility-corpus runner.
 
-Trickster accelerates SQL-based time series backends (currently ClickHouse and
-MySQL) by
-parsing each query into a dialect-native abstract syntax tree, analyzing it
-for delta-cache eligibility, and rendering cache-miss origin requests from an
-immutable query plan. This document describes the architecture and the
-requirements a new SQL dialect adapter must satisfy. The ClickHouse and MySQL
-implementations in `pkg/backends/clickhouse` and `pkg/backends/mysql` are the
-references for HTTP and native-protocol backends, respectively.
+Trickster accelerates SQL-based time series backends (ClickHouse, MySQL, and
+the PostgreSQL family: PostgreSQL and TimescaleDB, GreptimeDB, QuestDB, Druid
+SQL and InfluxDB 3 SQL) by parsing each query into an abstract syntax tree,
+analyzing it for delta-cache eligibility, and rendering cache-miss origin
+requests from an immutable query plan. This document describes the
+architecture and the requirements a new SQL dialect adapter must satisfy. The
+ClickHouse and MySQL implementations in `pkg/backends/clickhouse` and
+`pkg/backends/mysql` are the references for HTTP and native-protocol backends,
+respectively; `pkg/backends/questdb` is the reference for a PostgreSQL-family
+dialect with syntax of its own.
 
 The initial MySQL compatibility and safety boundaries are normative in
 [`mysql-release-contract.md`](mysql-release-contract.md). Changes that broaden
@@ -31,9 +33,12 @@ Dialect SQL -> dialect AST parser -> dialect adapter (analysis)
                               ExtentRenderer -> origin cache-miss SQL
 ```
 
-1. **Parse.** The adapter parses the complete statement using a mature,
-   dialect-specific AST parser. Trickster does not maintain a universal SQL
-   grammar; each dialect owns its parser dependency.
+1. **Parse.** The adapter parses the complete statement into a typed AST.
+   ClickHouse and MySQL use maintained dialect-native parsers. PostgreSQL-family
+   dialects share Trickster's own query parser, `pkg/parsing/pgparser`, and
+   its analyzer, `pkg/parsing/sqlanalyzer/pgfamily`; a new one extends them
+   with options and matchers instead of bringing a parser (see
+   [Extending the PostgreSQL-family parser](#extending-the-postgresql-family-parser)).
 2. **Analyze.** The adapter implements `sqlanalyzer.DialectAnalyzer`,
    inspecting the AST to determine cache eligibility, bucket cadence and
    phase, timestamp columns and units, time bounds, and grouping tags. The
@@ -99,7 +104,7 @@ Fail-closed rules that apply to every dialect:
   ranges by rounding the lower bound up and the upper bound down to the query
   cadence when the client consumes only complete buckets, or by proving
   equivalent partial-edge handling. When no complete bucket remains, the
-  aftership and cockroach adapters fall back to the object cache, and vitess
+  aftership and pgfamily adapters fall back to the object cache, and vitess
   renders an empty window.
 - Predicates on the **bucket output** are discrete and may be aligned
   from any comparator to the first and last included buckets.
@@ -155,7 +160,55 @@ Rewrite failures must be observable: increment
 and never silently send an un-rewritten (original-range) query to the
 origin on a cache miss.
 
+## Extending the PostgreSQL-Family Parser
+
+A dialect that reads like PostgreSQL configures `pgfamily.Options` and adds no
+parser. In order of preference:
+
+- **New functions need no parser change.** Calls are generic in the grammar,
+  so a new aggregate or bucketing function needs at most a `BucketMatcher`
+  (it sees the lowercase name and the arguments) or an `ExprBucketMatcher`
+  (it sees the whole select-list expression).
+- **Dialect syntax is an option.** `Options.Syntax` is a
+  `pgparser.DialectSpec`:
+  - `Clauses` names the phrases, such as `SAMPLE BY` or `ALIGN`, that open a
+    clause after the query's `WINDOW` clause. The clause runs to the next
+    `WHERE`, `GROUP`, `HAVING`, `WINDOW`, `ORDER`, `LIMIT`, `OFFSET`, `FETCH`,
+    `FOR`, set operator or dialect clause outside parentheses, or to the end
+    of its query. It parses into an `ast.DialectClause` (`Keyword`, `Body`,
+    `Text`) that prints exactly as written, so the canonical SQL and every
+    extent query keep it in place.
+  - `FunctionSuffixes` and `SuffixOptions` read a keyword, a string constant
+    and option-value pairs after a function call, as in GreptimeDB's
+    `avg(v) RANGE '5m' FILL PREV`, into `FuncExpr.Suffix`.
+  - `DurationLiterals` scans an integer followed directly by letters, such as
+    `5m`, as one literal (`ast.DurationVal`), instead of a syntax error.
+  - `BacktickIdentifiers` reads backtick-quoted identifiers, and renders
+    identifiers that need quoting with backticks.
+- **Claiming a clause.** Each `ClauseMatcher` returns a `*pgfamily.Clause` for
+  a clause it owns, nil for one it does not, and an error for one it owns but
+  cannot delta cache. A claimed clause can define the time bucket (`Bucket`,
+  with `InferTimeColumn` when the dialect applies it to the designated
+  timestamp), group by every plain selected column (`ImplicitGrouping`), or
+  carry a `Payload` for `ClauseBucketMatchers`, which bucket by a function
+  whose cadence the clause sets. A clause no matcher claims, and any function
+  suffix, sends the statement to the object cache with
+  `ReasonUnsupportedFormat`; GreptimeDB's range queries take that path today.
+- **The base grammar wins an ambiguity.** When a statement does not parse
+  with its dialect clauses, it is parsed again without them, so a column named
+  like an opening word (`align`) keeps its PostgreSQL meaning. At the clause
+  position itself, a bare alias written without `AS` reads as the clause.
+
+Grammar changes are the last resort, for syntax that fits none of these. The
+grammar is `pkg/parsing/pgparser/sql.y`; `make generate-pgparser` regenerates
+the parser and its keyword tables. Keep it query-only, rerun the parser and
+backend goldens with `-update`, and review every changed record. The parser may
+import only the standard library and `golang.org/x/text/unicode/norm`, which
+a `depguard` rule enforces.
+
 ## Parser Selection and Pinning Requirements
+
+These apply to a dialect outside the PostgreSQL family.
 
 - Choose a maintained, dialect-native AST parser with typed nodes,
   traversal, mutation, and SQL rendering. Do not extend a generic
@@ -206,6 +259,10 @@ Every adapter must emit, without logging query text by default:
 - Debug-level structured logs using the same reason codes.
 
 ## Licensing and Dependency-Review Requirements
+
+`pkg/parsing/pgparser` derives from the CockroachDB and Vitess parsers. Its
+files keep their upstream notices and its `licenses` directory holds the texts
+those notices name; keep both when editing it.
 
 Before adopting or upgrading a parser dependency:
 

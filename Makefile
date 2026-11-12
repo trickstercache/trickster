@@ -85,6 +85,11 @@ third-party-licenses:
 		echo "copied license notice for $$m"; \
 	done
 	@test -s "$(THIRD_PARTY_LICENSES_DIR)/vitess.io/vitess/go/LICENSE"
+	@mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/$(PGPARSER_DIR)"
+	@cp $(PGPARSER_DIR)/licenses/BSD-vitess.txt $(PGPARSER_DIR)/licenses/PostgreSQL.txt \
+		"$(THIRD_PARTY_LICENSES_DIR)/$(PGPARSER_DIR)/"
+	@test -s "$(THIRD_PARTY_LICENSES_DIR)/$(PGPARSER_DIR)/BSD-vitess.txt"
+	@test -s "$(THIRD_PARTY_LICENSES_DIR)/$(PGPARSER_DIR)/PostgreSQL.txt"
 
 .PHONY: check-third-party-licenses
 check-third-party-licenses: third-party-licenses
@@ -349,7 +354,16 @@ clean:
 	rm -rf ./trickster ./$(BUILD_SUBDIR)
 
 .PHONY: generate
-generate: perform-generate insert-license-headers kube-configmap
+generate: perform-generate generate-pgparser insert-license-headers kube-configmap
+
+# the SQL parser is generated from its grammar; its keyword tables come from the grammar's keyword lists
+PGPARSER_DIR := pkg/parsing/pgparser
+.PHONY: generate-pgparser
+generate-pgparser:
+	cd $(PGPARSER_DIR) && $(GO) tool goyacc -l -p sql -o sql_gen.go -v /dev/null sql.y
+	gofmt -w $(PGPARSER_DIR)/sql_gen.go
+	$(GO) run ./hack/pgparser-keywordgen $(PGPARSER_DIR)/sql.y \
+		$(PGPARSER_DIR)/keywords_gen.go $(PGPARSER_DIR)/lex/keywords_gen.go
 
 .PHONY: perform-generate
 perform-generate:
@@ -358,7 +372,7 @@ perform-generate:
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go' -not -path './$(PGPARSER_DIR)/*') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \

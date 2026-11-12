@@ -20,15 +20,17 @@ import (
 	"errors"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlguard"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
 
 var (
-	errVolatile  = errors.New("statement reads changing state")
-	compactUnits = map[string]time.Duration{
+	errUnrenderable = errors.New("statement has no faithful GreptimeDB re-spelling")
+	errVolatile     = errors.New("statement reads changing state")
+	compactUnits    = map[string]time.Duration{
 		"ns": time.Nanosecond, "us": time.Microsecond, "ms": time.Millisecond,
 		"s": time.Second, "m": time.Minute, "h": time.Hour, "d": 24 * time.Hour, "w": 7 * 24 * time.Hour,
 	}
@@ -60,18 +62,22 @@ func (a *sessionAnalyzer) ForSession(view pgwire.SessionView) sqlanalyzer.Dialec
 	return a.zoned
 }
 
-type dialectAnalyzer struct{ inner *cockroach.Analyzer }
+type dialectAnalyzer struct{ inner *pgfamily.Analyzer }
 
 func newAnalyzer(utc bool) *dialectAnalyzer {
-	matchers := []cockroach.BucketMatcher{cockroach.DateBinMatcher, cockroach.CompactDateBinMatcher(compactUnits)}
+	matchers := []pgfamily.BucketMatcher{pgfamily.DateBinMatcher, pgfamily.CompactDateBinMatcher(compactUnits)}
 	if utc {
-		matchers = append(matchers, cockroach.DateTruncMatcher)
+		matchers = append(matchers, pgfamily.DateTruncMatcher)
 	}
-	return &dialectAnalyzer{inner: cockroach.NewAnalyzer(cockroach.Options{
-		BucketMatchers: matchers, ExprBucketMatchers: []cockroach.ExprBucketMatcher{cockroach.EpochFloorMatcher},
+	return &dialectAnalyzer{inner: pgfamily.NewAnalyzer(pgfamily.Options{
+		BucketMatchers: matchers, ExprBucketMatchers: []pgfamily.ExprBucketMatcher{pgfamily.EpochFloorMatcher},
 		NakedIntIsInt4: true,
+		// Range queries parse so they are classified; with no matcher claiming ALIGN, they are cached as whole objects.
+		Syntax: pgparser.DialectSpec{
+			Clauses: []string{"ALIGN"}, FunctionSuffixes: []string{"RANGE"}, SuffixOptions: []string{"FILL"},
+		},
 		// DataFusion truncates finer bounds instead of rounding up as PostgreSQL does.
-		BoundPrecision: time.Nanosecond, RejectZonelessBounds: !utc, PostRender: postRender,
+		BoundPrecision: time.Nanosecond, RejectZonelessBounds: !utc,
 	})}
 }
 
@@ -79,7 +85,7 @@ func (a *dialectAnalyzer) Analyze(statement string, now time.Time) sqlanalyzer.A
 	analysis := a.inner.Analyze(statement, now)
 	facts := sqlguard.Scan(statement, guardedWords)
 	if analysis.Mode == sqlanalyzer.CacheModeDelta && facts.Clock && !facts.Volatile {
-		facts.Clock = sqlguard.Scan(cockroach.MaskPlaceholders(analysis.Plan.CanonicalSQL), guardedWords).Clock
+		facts.Clock = sqlguard.Scan(pgfamily.MaskPlaceholders(analysis.Plan.CanonicalSQL), guardedWords).Clock
 	}
 	switch {
 	case facts.Volatile || facts.Clock:

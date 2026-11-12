@@ -62,6 +62,40 @@ func TestQueryPlanRenderRange(t *testing.T) {
 	}
 }
 
+var errRenderTest = errors.New("render failed")
+
+type appendRenderer struct{ extentOnlyRenderer }
+
+func (appendRenderer) AppendExtent(dst []byte, _ timeseries.Extent) ([]byte, error) {
+	return append(dst, "appended"...), nil
+}
+
+type failingRenderer struct{}
+
+func (failingRenderer) RenderExtent(timeseries.Extent) (string, error) { return "", errRenderTest }
+
+type stringRenderer struct{}
+
+func (stringRenderer) RenderExtent(timeseries.Extent) (string, error) { return "rendered", nil }
+
+func TestQueryPlanAppendExtent(t *testing.T) {
+	const prefix = "q="
+	var nilPlan *QueryPlan
+	if _, err := nilPlan.AppendExtent(nil, timeseries.Extent{}); !errors.Is(err, ErrMissingRenderer) {
+		t.Errorf("nil plan error = %v, want %v", err, ErrMissingRenderer)
+	}
+	for renderer, want := range map[ExtentRenderer]string{appendRenderer{}: "q=appended", stringRenderer{}: "q=rendered"} {
+		got, err := (&QueryPlan{Renderer: renderer}).AppendExtent([]byte(prefix), timeseries.Extent{})
+		if err != nil || string(got) != want {
+			t.Errorf("%T: AppendExtent() = %q, %v", renderer, got, err)
+		}
+	}
+	got, err := (&QueryPlan{Renderer: failingRenderer{}}).AppendExtent([]byte(prefix), timeseries.Extent{})
+	if !errors.Is(err, errRenderTest) || string(got) != prefix {
+		t.Errorf("a failed render: %q, %v", got, err)
+	}
+}
+
 func TestCacheModeString(t *testing.T) {
 	tests := []struct {
 		mode CacheMode

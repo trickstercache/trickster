@@ -368,7 +368,7 @@
       "expanded_sql": "SELECT sum(fare_amount) RANGE '5m' FROM trips ALIGN '5m'",
       "expected": {
         "cache_mode": "object",
-        "analysis_reason": "invalid_sql",
+        "analysis_reason": "unsupported_format",
         "canonical_policy": "none",
         "extent_rendering": false
       },
@@ -394,7 +394,7 @@
       "expanded_sql": "TQL EVAL (0, 1, '1s') up",
       "expected": {
         "cache_mode": "none",
-        "analysis_reason": "invalid_sql",
+        "analysis_reason": "unsupported_statement",
         "canonical_policy": "none",
         "extent_rendering": false
       },

@@ -20,10 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
-
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 )
 
 var questDBVolatileFunctions = map[string]struct{}{
@@ -31,13 +31,15 @@ var questDBVolatileFunctions = map[string]struct{}{
 	"today": {}, "tomorrow": {}, "yesterday": {}, "timestamp_shuffle": {},
 }
 
-var analyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: []cockroach.BucketMatcher{timestampFloorMatcher},
-	ExprBucketMatchers: []cockroach.ExprBucketMatcher{
-		cockroach.EpochFloorMatcher,
+var analyzer = pgfamily.NewAnalyzer(pgfamily.Options{
+	BucketMatchers: []pgfamily.BucketMatcher{timestampFloorMatcher},
+	ExprBucketMatchers: []pgfamily.ExprBucketMatcher{
+		pgfamily.EpochFloorMatcher,
 	},
-	ClauseRewriters: []cockroach.ClauseRewriter{sampleByRewriter{}},
-	NakedIntIsInt4:  true,
+	// SAMPLE BY steps are duration literals such as 1h, which the base grammar cannot scan
+	Syntax:         pgparser.DialectSpec{Clauses: []string{"SAMPLE BY"}, DurationLiterals: true},
+	ClauseMatchers: []pgfamily.ClauseMatcher{sampleByMatcher},
+	NakedIntIsInt4: true,
 	IsVolatileFunction: func(name string) bool {
 		_, ok := questDBVolatileFunctions[name]
 		return ok || strings.HasPrefix(name, "rnd_")
@@ -50,23 +52,23 @@ var analyzer = cockroach.NewAnalyzer(cockroach.Options{
 
 var _ sqlanalyzer.DialectAnalyzer = analyzer
 
-func timestampFloorMatcher(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func timestampFloorMatcher(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	if name != "timestamp_floor" || len(args) != 2 {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	literal, ok := args[0].(*tree.StrVal)
+	literal, ok := args[0].(*ast.StrVal)
 	if !ok {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
 	step, ok := parseSampleInterval(literal.RawString())
 	if !ok {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	column, ok := cockroach.ColumnName(args[1])
+	column, ok := pgfamily.ColumnName(args[1])
 	if !ok {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	return cockroach.BucketMatch{
+	return pgfamily.BucketMatch{
 		TimeColumn:   column,
 		Step:         step,
 		OutputColumn: "timestamp_floor",
