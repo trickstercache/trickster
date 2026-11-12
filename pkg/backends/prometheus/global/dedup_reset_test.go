@@ -35,7 +35,6 @@ const (
 	resetMetric    = "requests"
 	resetStepMs    = 15_000
 	resetSamples   = 21
-	resetEndMs     = 300_000
 	resetSeconds   = 300
 	resetEvalStep  = 15 * time.Second
 	transportInt   = "int chunks"

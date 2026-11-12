@@ -49,7 +49,7 @@ func main() {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != root && entry.Name() == ".git" {
+			if (path != root && entry.Name() == ".git") || path == filepath.Join(root, "trickster-data") {
 				return filepath.SkipDir
 			}
 			return nil

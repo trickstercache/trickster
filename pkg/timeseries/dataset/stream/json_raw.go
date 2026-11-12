@@ -128,14 +128,11 @@ func next(raw []byte, end int) int {
 	return i
 }
 
+// skipSpace returns the index of the first byte at or after i that isn't whitespace; outside a string,
+// valid JSON holds no byte <= ' ' but whitespace, so one compare finds it
 func skipSpace(raw []byte, i int) int {
-	for i < len(raw) {
-		switch raw[i] {
-		case ' ', '\t', '\n', '\r':
-			i++
-		default:
-			return i
-		}
+	for i < len(raw) && raw[i] <= ' ' {
+		i++
 	}
 	return i
 }

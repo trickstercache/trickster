@@ -396,6 +396,16 @@ func newSegmentWriter(rows, cols int, sources ...Segments) *segmentWriter {
 	return w
 }
 
+func fillKinds(s []Kind, k Kind) {
+	if k == KindNull {
+		clear(s)
+		return
+	}
+	for i := range s {
+		s[i] = k
+	}
+}
+
 // noteKind records that n values of kind k are about to be appended
 func (cw *columnWriter) noteKind(k Kind, n int) {
 	if n == 0 {
@@ -406,14 +416,12 @@ func (cw *columnWriter) noteKind(k Kind, n int) {
 		cw.first = k
 	case cw.kinds == nil && k != cw.first:
 		cw.kinds = make([]Kind, len(cw.vals), cap(cw.vals))
-		for i := range cw.kinds {
-			cw.kinds[i] = cw.first
-		}
+		fillKinds(cw.kinds, cw.first)
 	}
 	if cw.kinds != nil {
-		for range n {
-			cw.kinds = append(cw.kinds, k)
-		}
+		at := len(cw.kinds)
+		cw.kinds = slices.Grow(cw.kinds, n)[:at+n]
+		fillKinds(cw.kinds[at:], k)
 	}
 	cw.kt.add(k)
 }
@@ -474,9 +482,7 @@ func (w *segmentWriter) copyRun(src *Segment, from, to int) {
 		cw := &w.cols[c]
 		if c >= len(src.cols) {
 			cw.noteKind(KindNull, n)
-			for range n {
-				cw.vals = append(cw.vals, 0)
-			}
+			cw.vals = append(cw.vals, make([]uint64, n)...)
 			continue
 		}
 		col := src.Col(c)

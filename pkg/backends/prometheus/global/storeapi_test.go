@@ -61,9 +61,10 @@ func decodeTestSeriesRequest(t *testing.T, b []byte) storeRequest {
 		case seriesRequestMatchers:
 			var m [3]string
 			require.NoError(t, forEachField(v, func(num protowire.Number, v []byte) error {
-				if num == matcherName {
+				switch num {
+				case matcherName:
 					m[1] = string(v)
-				} else if num == matcherValue {
+				case matcherValue:
 					m[2] = string(v)
 				}
 				return nil

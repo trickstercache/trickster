@@ -166,7 +166,7 @@ func NewRawCache(c cache.Cache, opts RawCacheOptions) *RawCache {
 	if observe := opts.ObserveCacheFailure; observe != nil {
 		failed = func(reason string) { observe(rawCacheProtocol + "_" + reason) }
 	}
-	rc.engine = nativedelta.New[*rawBlock](nativedelta.Config{
+	rc.engine = nativedelta.New(nativedelta.Config{
 		Protocol:            rawCacheProtocol,
 		BackendName:         opts.Name,
 		CacheClient:         func() cache.Cache { return c },

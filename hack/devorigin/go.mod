@@ -1,6 +1,6 @@
 module github.com/trickstercache/trickster/v2/hack/devorigin
 
-go 1.27.3
+go 1.27.4
 
 require github.com/trickstercache/trickster/v2 v2.0.0
 
