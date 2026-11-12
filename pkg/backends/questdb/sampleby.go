@@ -18,76 +18,34 @@ package questdb
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlscan"
 )
 
 var errUnsupportedSampleBy = errors.New("unsupported QuestDB SAMPLE BY clause")
 
-type sampleByClause struct {
-	sql string
-}
+const sampleByKeyword = "sample by"
 
-type sampleByRewriter struct{}
-
-var _ cockroach.ClauseRewriter = sampleByRewriter{}
-
-func (sampleByRewriter) Lift(statement string) (string, *cockroach.LiftedClause, error) {
-	start, byEnd, ok := cockroach.FindKeywords(statement, "SAMPLE", "BY")
-	if !ok {
-		return statement, nil, nil
+func sampleByMatcher(clause *ast.DialectClause) (*pgfamily.Clause, error) {
+	if clause.Keyword != sampleByKeyword {
+		return nil, nil
 	}
-	clauseEnd := sampleByEnd(statement, byEnd)
-	if clauseEnd <= byEnd {
-		return "", nil, errUnsupportedSampleBy
-	}
-	body := statement[byEnd:clauseEnd]
-	step, err := parseSampleByBody(body)
+	step, err := parseSampleByBody(clause.Body)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	rewritten := statement[:start] + statement[clauseEnd:]
-	if _, _, duplicate := cockroach.FindKeywords(rewritten, "SAMPLE", "BY"); duplicate {
-		return "", nil, fmt.Errorf("%w: multiple SAMPLE BY clauses", errUnsupportedSampleBy)
-	}
-	return rewritten, &cockroach.LiftedClause{
-		Payload: sampleByClause{sql: strings.TrimSpace(statement[start:clauseEnd])},
-		Bucket:  &cockroach.BucketMatch{Step: step},
+	return &pgfamily.Clause{
+		Bucket: &pgfamily.BucketMatch{Step: step},
 		// QuestDB applies SAMPLE BY to the designated timestamp, which is
 		// the first plain column in the select list. The shared analyzer
 		// rejects any other shape instead of guessing.
 		InferTimeColumn:  true,
 		ImplicitGrouping: true,
 	}, nil
-}
-
-func (sampleByRewriter) Restore(rendered string, lifted *cockroach.LiftedClause) (string, error) {
-	clause, ok := lifted.Payload.(sampleByClause)
-	if !ok || clause.sql == "" {
-		return "", errUnsupportedSampleBy
-	}
-	return cockroach.InsertClause(rendered, clause.sql, "ORDER BY", "LIMIT", "OFFSET", "FETCH"), nil
-}
-
-func sampleByEnd(statement string, offset int) int {
-	scanner := sqlscan.New(statement[offset:], sqlscan.Options{})
-	for {
-		token, ok := scanner.Next()
-		if !ok {
-			return len(statement)
-		}
-		if token.Depth != 0 || token.Kind != sqlscan.Word {
-			continue
-		}
-		switch strings.ToLower(scanner.Text(token)) {
-		case "order", "limit", "offset", "fetch":
-			return offset + token.Start
-		}
-	}
 }
 
 func parseSampleByBody(body string) (time.Duration, error) {

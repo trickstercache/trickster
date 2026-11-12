@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -126,17 +127,33 @@ func published(t *testing.T, c *session.Session, name string) *session.Request {
 
 func sendGroup(t *testing.T, req *session.Request, group uint64, os ...pubObj) {
 	t.Helper()
+	if err := writeGroup(req, group, os...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeGroup(req *session.Request, group uint64, os ...pubObj) error {
 	out, err := req.OpenSubgroup(context.Background(), message.SubgroupHeader{Group: group, Priority: 1, EndOfGroup: true},
 		3, false)
 	if err != nil {
-		t.Fatal(err)
+		return err
 	}
 	for _, ob := range os {
 		if err = writeObject(out, ob); err != nil {
-			t.Fatal(err)
+			return err
 		}
 	}
 	_ = out.Close()
+	return nil
+}
+
+func held(t *testing.T, h *harness, group uint64) {
+	t.Helper()
+	// the relay reads a sent group's stream on a goroutine of its own, so a test relying on the relay holding the
+	// group in full waits for the stream's end to be read
+	eventually(t, "group "+strconv.FormatUint(group, 10)+" held", func() bool {
+		return relay.GroupEnded(h.relay, h.scope, track("video"), group)
+	})
 }
 
 func payloads(gs []got) []string {
@@ -469,8 +486,13 @@ func TestMalformedPublisherTrack(t *testing.T) {
 	subscribed(t, sreq)
 	sendGroup(t, first, 0, objs("a")...)
 	eventually(t, "an object", func() bool { return srec.count() == 1 })
-	// §7.1: the same object with another payload makes the track malformed
-	sendGroup(t, second, 0, objs("not-a")...)
+	// §7.1: the same object with another payload makes the track malformed; the relay may cancel the stream for
+	// that before its payload is written
+	if err := writeGroup(second, 0, objs("not-a")...); err != nil {
+		if se, ok := errors.AsType[*session.StreamError](err); !ok || se.Code != uint64(message.ResetMalformedTrack) {
+			t.Fatal(err)
+		}
+	}
 	for {
 		m := recv(t, srec.messages, "PUBLISH_DONE")
 		if pd, ok := m.(*message.PublishDone); ok {

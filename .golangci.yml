@@ -118,6 +118,17 @@ linters:
           deny:
             - pkg: github.com/trickstercache/trickster/v2/pkg/util/weak/compat
               desc: tests and tooling use pkg/util/weak/weaktest
+        # The SQL parser is self-contained: the standard library and Unicode normalization only.
+        pgparser-dependencies:
+          list-mode: strict
+          files:
+            - "**/pkg/parsing/pgparser/**"
+            - "!$test"
+          allow:
+            - $gostd
+            - github.com/trickstercache/trickster/v2/pkg/parsing/pgparser
+            - golang.org/x/text/unicode/norm
+
     goheader:
       values:
         regexp:
@@ -308,8 +319,9 @@ linters:
       - linters:
           - godox
         source: (support comparison of other values via 'where'|set this at some point|Revisit when LRU is re-implemented)
-      # The license header check covers the project's own packages and commands.
-      - path: ^(hack|examples)/|^pkg/backends/influxdb/promremote/prompb/
+      # The license header check covers the project's own packages and commands; the SQL parser
+      # keeps the notices of the code it derives from.
+      - path: ^(hack|examples)/|^pkg/backends/influxdb/promremote/prompb/|^pkg/parsing/pgparser/
         linters:
           - goheader
       # Developer tools and example programs print for the person running them.

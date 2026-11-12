@@ -142,6 +142,12 @@ type ExtentRenderer interface {
 	RenderExtent(extent timeseries.Extent) (string, error)
 }
 
+// ExtentAppender is an ExtentRenderer that also appends the query for an extent to a caller's buffer,
+// for senders that build the origin request in place
+type ExtentAppender interface {
+	AppendExtent(dst []byte, extent timeseries.Extent) ([]byte, error)
+}
+
 // RangeRenderer is an ExtentRenderer that also renders a raw time range, such as a partial
 // bucket's, which needn't sit on the bucket grid, with the statement's own comparators
 type RangeRenderer interface {
@@ -217,6 +223,22 @@ func (p *QueryPlan) RenderExtent(extent timeseries.Extent) (string, error) {
 		return "", ErrMissingRenderer
 	}
 	return p.Renderer.RenderExtent(extent)
+}
+
+// AppendExtent appends the query for an origin cache-miss extent to dst, without an intermediate
+// string when the renderer is an ExtentAppender
+func (p *QueryPlan) AppendExtent(dst []byte, extent timeseries.Extent) ([]byte, error) {
+	if p == nil || p.Renderer == nil {
+		return dst, ErrMissingRenderer
+	}
+	if appender, ok := p.Renderer.(ExtentAppender); ok {
+		return appender.AppendExtent(dst, extent)
+	}
+	statement, err := p.Renderer.RenderExtent(extent)
+	if err != nil {
+		return dst, err
+	}
+	return append(dst, statement...), nil
 }
 
 // RenderRange renders the query for a partial bucket's raw range, whose zero Upper means the range

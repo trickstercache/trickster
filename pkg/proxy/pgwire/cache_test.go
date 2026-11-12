@@ -36,7 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -258,7 +258,7 @@ func TestObjectCacheServesRepeatedStatements(t *testing.T) {
 func TestObjectFallbackVolatileReadsReachOrigin(t *testing.T) {
 	upstream := newFakeUpstream(t, nil)
 	config := cachedConfig(t, upstream)
-	config.Analyzer = cockroach.NewAnalyzer(cockroach.Options{
+	config.Analyzer = pgfamily.NewAnalyzer(pgfamily.Options{
 		IsVolatileFunction: func(name string) bool { return name == "engine_clock" },
 	})
 	_, address := startServer(t, config)

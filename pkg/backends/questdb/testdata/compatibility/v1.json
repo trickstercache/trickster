@@ -129,7 +129,7 @@
         "canonical_contains": [
           "<$TS1$>",
           "<$TS2$>",
-          "extract('epoch'"
+          "extract(epoch FROM pickup_datetime)"
         ]
       },
       "rationale": "The shared epoch-floor matcher is retained for clients that express QuestDB-compatible buckets in PostgreSQL-style SQL."

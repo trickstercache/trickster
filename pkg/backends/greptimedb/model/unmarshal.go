@@ -406,7 +406,7 @@ func fieldDefinitions(columns []column, plan *sqlanalyzer.QueryPlan) (timeseries
 	values := 0
 	for i, col := range columns {
 		role, ok := roles[col.Name]
-		// The Cockroach adapter currently names only timestamp/group fields.
+		// The PostgreSQL-family adapter currently names only timestamp/group fields.
 		// Remaining columns are typed values supplied by the origin schema.
 		if !ok && len(plan.ValueColumns) == 0 {
 			role, ok = timeseries.RoleValue, true

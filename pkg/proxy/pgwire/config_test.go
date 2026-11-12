@@ -32,7 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -70,8 +70,8 @@ func (e testEngine) Defaults() EngineDefaults               { return EngineDefau
 func (testEngine) TimeAxis(oid uint32) (TimeAxisKind, bool) { return StandardTimeAxis(oid) }
 func (testEngine) TimeSemantics() TimeSemantics             { return TimeSemantics{} }
 
-var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher},
+var testAnalyzer = pgfamily.NewAnalyzer(pgfamily.Options{
+	BucketMatchers: []pgfamily.BucketMatcher{pgfamily.DateBinMatcher},
 })
 
 func configTestOptions() *bo.Options {

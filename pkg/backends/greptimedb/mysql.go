@@ -24,7 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/mysql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -181,7 +181,7 @@ func mysqlTimestampBucket(expr sqlparser.Expr) (*sqlparser.ColName, time.Duratio
 		if !ok || zero.Type != sqlparser.IntVal || zero.Val != "0" {
 			return nil, 0, 0, false
 		}
-		step, _ = cockroach.ParseCompactDuration(width.Val, compactUnits)
+		step, _ = pgfamily.ParseCompactDuration(width.Val, compactUnits)
 	} else {
 		step = map[string]time.Duration{"second": time.Second, "minute": time.Minute, "hour": time.Hour, "day": 24 * time.Hour}[strings.ToLower(width.Val)]
 	}

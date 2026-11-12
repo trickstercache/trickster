@@ -63,13 +63,15 @@ for its MySQL nanosecond text or HTTP timestamp representation.
 ## Analyzer And Renderer
 
 Follow [SQL dialect adapters](sql-dialect-adapters.md). Keep parser AST types
-out of the shared plan. Reuse Cockroach adapter bucket matchers, compact-duration
-parsing and narrowly scoped post-render hooks when applicable. The exported
-compact parser rejects signs, fractions, whitespace, zero components and
-overflow; supply immutable dialect-specific fixed-duration units.
+out of the shared plan. Reuse pgfamily adapter bucket matchers and
+compact-duration parsing when applicable. The exported compact parser rejects
+signs, fractions, whitespace, zero components and overflow; supply immutable
+dialect-specific fixed-duration units.
 
-Use clause rewriters only when the complete clause semantics are proved.
-Unsupported `RANGE`, `ALIGN` and TQL shapes need no speculative delta plan.
+Declare the engine's own syntax in `pgfamily.Options.Syntax` and claim its
+clauses with `ClauseMatchers` only when the complete clause semantics are
+proved. Unsupported `RANGE`, `ALIGN` and TQL shapes need no speculative delta
+plan.
 Do not silently round HTTP partial buckets away merely because a dashboard's
 pgwire mode intentionally consumes complete buckets. Preserve all non-time
 predicates and result ordering. Rendering must be immutable and reentrant.

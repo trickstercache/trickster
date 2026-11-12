@@ -27,16 +27,15 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid/model"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/pgparser/ast"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
-
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 )
 
 const druidSQLPath = "/druid/v2/sql"
@@ -48,8 +47,8 @@ var (
 	// arithmetic a dynamic interval produces. The shared analyzer still owns
 	// all predicate, grouping, ordering, canonicalization, and extent-rendering
 	// rules.
-	druidSQLAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-		BucketMatchers: []cockroach.BucketMatcher{
+	druidSQLAnalyzer = pgfamily.NewAnalyzer(pgfamily.Options{
+		BucketMatchers: []pgfamily.BucketMatcher{
 			druidTimeFloorMatcher, druidMillisBucketMatcher,
 		},
 		// Druid stores __time as a timestamp and accepts RFC3339 literals. This
@@ -71,7 +70,7 @@ func isDruidSQLRequest(r *http.Request) bool {
 }
 
 // parseSQLTimeRangeQuery adapts Druid's JSON SQL request envelope to the
-// shared CockroachDB SQL analyzer. Object responses and array responses with a
+// shared PostgreSQL-family SQL analyzer. Object responses and array responses with a
 // column-name header are admitted to the delta tier; other valid read queries
 // remain safe OPC fallbacks.
 func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
@@ -214,21 +213,17 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 // computed calls are left untouched and therefore fail closed to the object
 // cache in the shared analyzer.
 func normalizeDruidSQL(statement string) string {
-	parsed, err := parser.ParseOne(statement)
+	selectStmt, err := pgfamily.ParseOne(statement)
 	if err != nil {
 		return statement
 	}
-	selectStmt, ok := parsed.AST.(*tree.Select)
-	if !ok {
-		return statement
-	}
-	clause, ok := selectStmt.Select.(*tree.SelectClause)
+	clause, ok := selectStmt.Select.(*ast.SelectClause)
 	if !ok {
 		return statement
 	}
 	changed := false
 	if clause.Where != nil {
-		expr, rewritten := tree.WalkExpr(&druidMillisBoundVisitor{}, clause.Where.Expr)
+		expr, rewritten := ast.WalkExpr(&druidMillisBoundVisitor{}, clause.Where.Expr)
 		if rewritten {
 			clause.Where.Expr = expr
 			changed = true
@@ -245,7 +240,7 @@ func normalizeDruidSQL(statement string) string {
 	if !changed {
 		return statement
 	}
-	return tree.AsString(selectStmt)
+	return ast.AsString(selectStmt)
 }
 
 // stripDruidMillisBucketCast drops the integer cast a dashboard wraps around a
@@ -253,13 +248,13 @@ func normalizeDruidSQL(statement string) string {
 // keeping it would render the canonical statement with the shared parser's own
 // type name, which Druid rejects. Only an operand this backend recognizes as a
 // bucket is unwrapped, so no other expression changes value.
-func stripDruidMillisBucketCast(expr tree.Expr) (tree.Expr, bool) {
-	function, ok := expr.(*tree.FuncExpr)
+func stripDruidMillisBucketCast(expr ast.Expr) (ast.Expr, bool) {
+	function, ok := expr.(*ast.FuncExpr)
 	if !ok || len(function.Exprs) != 1 ||
-		!strings.EqualFold(function.Func.String(), "millis_to_timestamp") {
+		!strings.EqualFold(function.Func.Name(), "millis_to_timestamp") {
 		return nil, false
 	}
-	cast, ok := function.Exprs[0].(*tree.CastExpr)
+	cast, ok := function.Exprs[0].(*ast.CastExpr)
 	if !ok {
 		return nil, false
 	}
@@ -267,18 +262,18 @@ func stripDruidMillisBucketCast(expr tree.Expr) (tree.Expr, bool) {
 		return nil, false
 	}
 	replacement := *function
-	replacement.Exprs = tree.Exprs{cast.Expr}
+	replacement.Exprs = ast.Exprs{cast.Expr}
 	return &replacement, true
 }
 
 type druidMillisBoundVisitor struct{}
 
-func (*druidMillisBoundVisitor) VisitPre(expr tree.Expr) (bool, tree.Expr) {
-	function, ok := expr.(*tree.FuncExpr)
+func (*druidMillisBoundVisitor) VisitPre(expr ast.Expr) (bool, ast.Expr) {
+	function, ok := expr.(*ast.FuncExpr)
 	if !ok {
 		return true, expr
 	}
-	name, ok := function.Func.FunctionReference.(*tree.UnresolvedName)
+	name, ok := function.Func.FunctionReference.(*ast.UnresolvedName)
 	if !ok || name.NumParts != 1 || name.Star ||
 		!strings.EqualFold(name.Parts[0], "MILLIS_TO_TIMESTAMP") ||
 		len(function.Exprs) != 1 || function.Filter != nil ||
@@ -293,32 +288,32 @@ func (*druidMillisBoundVisitor) VisitPre(expr tree.Expr) (bool, tree.Expr) {
 	if timestamp.Year() < 1 || timestamp.Year() > 9999 {
 		return false, expr
 	}
-	replacement, err := parser.ParseExpr("TIMESTAMP '" +
-		timestamp.Format("2006-01-02 15:04:05.000") + "'")
+	replacement, err := pgparser.ParseExpr("TIMESTAMP '"+
+		timestamp.Format("2006-01-02 15:04:05.000")+"'", pgparser.Options{})
 	if err != nil {
 		return false, expr
 	}
 	return false, replacement
 }
 
-func (*druidMillisBoundVisitor) VisitPost(expr tree.Expr) tree.Expr { return expr }
+func (*druidMillisBoundVisitor) VisitPost(expr ast.Expr) ast.Expr { return expr }
 
-func druidSQLIntegerLiteral(expr tree.Expr) (int64, bool) {
+func druidSQLIntegerLiteral(expr ast.Expr) (int64, bool) {
 	switch value := expr.(type) {
-	case *tree.NumVal:
+	case *ast.NumVal:
 		integer, err := value.AsInt64()
 		return integer, err == nil
-	case *tree.ParenExpr:
+	case *ast.ParenExpr:
 		return druidSQLIntegerLiteral(value.Expr)
-	case *tree.UnaryExpr:
+	case *ast.UnaryExpr:
 		integer, ok := druidSQLIntegerLiteral(value.Expr)
 		if !ok {
 			return 0, false
 		}
 		switch value.Operator.Symbol {
-		case tree.UnaryPlus:
+		case ast.UnaryPlus:
 			return integer, true
-		case tree.UnaryMinus:
+		case ast.UnaryMinus:
 			if integer == -1<<63 {
 				return 0, false
 			}
@@ -364,15 +359,11 @@ func druidSQLOutputColumns(statement string, plan *sqlanalyzer.QueryPlan) (
 	if plan == nil {
 		return nil, nil, false
 	}
-	parsed, err := parser.ParseOne(statement)
+	selectStmt, err := pgfamily.ParseOne(statement)
 	if err != nil {
 		return nil, nil, false
 	}
-	selectStmt, ok := parsed.AST.(*tree.Select)
-	if !ok {
-		return nil, nil, false
-	}
-	clause, ok := selectStmt.Select.(*tree.SelectClause)
+	clause, ok := selectStmt.Select.(*ast.SelectClause)
 	if !ok {
 		return nil, nil, false
 	}
@@ -381,7 +372,7 @@ func druidSQLOutputColumns(statement string, plan *sqlanalyzer.QueryPlan) (
 	for _, item := range clause.Exprs {
 		name := string(item.As)
 		if name == "" {
-			name, ok = cockroach.ColumnName(item.Expr)
+			name, ok = pgfamily.ColumnName(item.Expr)
 		}
 		name = strings.TrimSpace(name)
 		key := strings.ToLower(name)
@@ -504,7 +495,7 @@ func druidSQLPlanSupported(plan *sqlanalyzer.QueryPlan) bool {
 		!strings.EqualFold(plan.TimeColumn, "__time") {
 		return false
 	}
-	// Without an alias Cockroach's canonical output name is the complete
+	// Without an alias the parser's canonical output name is the complete
 	// TIME_FLOOR expression, while Druid's generated response name is version
 	// dependent. Requiring a simple/explicit output name keeps the wire model
 	// deterministic and fails closed for ambiguous SQL.
@@ -515,34 +506,34 @@ func druidSQLPlanSupported(plan *sqlanalyzer.QueryPlan) bool {
 // druidTimeFloorMatcher recognizes TIME_FLOOR(__time, fixed-period[, origin,
 // timezone]). Calendar periods and non-UTC zones are rejected because their
 // bucket boundaries cannot be represented by a single fixed Step/Phase pair.
-func druidTimeFloorMatcher(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func druidTimeFloorMatcher(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	if name != "time_floor" || len(args) < 2 || len(args) > 4 {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	column, ok := cockroach.ColumnName(args[0])
+	column, ok := pgfamily.ColumnName(args[0])
 	if !ok || !strings.EqualFold(column, "__time") {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	period, ok := args[1].(*tree.StrVal)
+	period, ok := args[1].(*ast.StrVal)
 	if !ok {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
 	step, defaultOrigin, calendar, ok := fixedPeriod(strings.ToUpper(period.RawString()))
 	if !ok || calendar || step <= 0 {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
 	origin := defaultOrigin
 	if len(args) >= 3 {
 		var originOK bool
 		origin, originOK = druidSQLTimestampLiteral(args[2])
 		if !originOK || !unixNanoRepresentable(origin) {
-			return cockroach.BucketMatch{}, false
+			return pgfamily.BucketMatch{}, false
 		}
 	}
 	if len(args) == 4 {
-		tz, ok := args[3].(*tree.StrVal)
+		tz, ok := args[3].(*ast.StrVal)
 		if !ok || !isUTCZone(tz.RawString()) {
-			return cockroach.BucketMatch{}, false
+			return pgfamily.BucketMatch{}, false
 		}
 	}
 	var phase time.Duration
@@ -552,15 +543,12 @@ func druidTimeFloorMatcher(name string, args []tree.Expr) (cockroach.BucketMatch
 			phase += step
 		}
 	}
-	return cockroach.BucketMatch{TimeColumn: column, Step: step, Phase: phase}, true
+	return pgfamily.BucketMatch{TimeColumn: column, Step: step, Phase: phase}, true
 }
 
-// druidUnrenderableSQL matches the constructs the shared parser reformats into
-// spellings Druid's planner rejects: its own integer, float, and boolean type
-// names, the function form of EXTRACT, and PostgreSQL cast syntax. Every other
-// construct in the audited corpus round-trips unchanged.
-var druidUnrenderableSQL = regexp.MustCompile(
-	`(?i)\bINT8\b|\bFLOAT8\b|\bBOOL\b|::|\bextract\s*\(`)
+// druidUnrenderableSQL matches PostgreSQL cast syntax, which Druid's planner rejects and the shared
+// formatter writes for a cast it cannot keep in its written form
+var druidUnrenderableSQL = regexp.MustCompile(`::`)
 
 // druidSQLRenderable reports whether a canonical statement can be sent to the
 // origin. The canonical form is produced by re-formatting the parsed statement,
@@ -577,25 +565,24 @@ func druidSQLRenderable(canonical string) bool {
 // MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / N) * N AS BIGINT)).
 // The FLOOR and the CAST are both optional, and the multiplier may be written
 // on either side of the product.
-func druidMillisBucketMatcher(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+func druidMillisBucketMatcher(name string, args []ast.Expr) (pgfamily.BucketMatch, bool) {
 	if name != "millis_to_timestamp" || len(args) != 1 {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
 	column, step, ok := druidMillisBucketOperands(args[0])
 	if !ok {
-		return cockroach.BucketMatch{}, false
+		return pgfamily.BucketMatch{}, false
 	}
-	return cockroach.BucketMatch{TimeColumn: column, Step: step}, true
+	return pgfamily.BucketMatch{TimeColumn: column, Step: step}, true
 }
 
 // druidMillisBucketOperands validates the FLOOR(TIMESTAMP_TO_MILLIS(col)/N)*N
 // arithmetic and reports its column and cadence. A CAST anywhere in the
-// expression is rejected rather than unwrapped: the canonical statement is
-// re-rendered by the shared parser, which writes casts with its own type
-// names, and Druid rejects those. normalizeDruidSQL removes the one redundant
-// cast a dashboard emits; anything left fails closed to the object cache.
-func druidMillisBucketOperands(expr tree.Expr) (string, time.Duration, bool) {
-	product, ok := unwrapDruidParens(expr).(*tree.BinaryExpr)
+// expression is rejected rather than unwrapped. normalizeDruidSQL removes the
+// one redundant cast a dashboard emits; anything left fails closed to the
+// object cache.
+func druidMillisBucketOperands(expr ast.Expr) (string, time.Duration, bool) {
+	product, ok := unwrapDruidParens(expr).(*ast.BinaryExpr)
 	if !ok || product.Operator.String() != "*" {
 		return "", 0, false
 	}
@@ -617,9 +604,9 @@ func druidMillisBucketOperands(expr tree.Expr) (string, time.Duration, bool) {
 
 // unwrapDruidParens removes the parens that wrap millisecond arithmetic
 // without changing its value.
-func unwrapDruidParens(expr tree.Expr) tree.Expr {
+func unwrapDruidParens(expr ast.Expr) ast.Expr {
 	for {
-		value, ok := expr.(*tree.ParenExpr)
+		value, ok := expr.(*ast.ParenExpr)
 		if !ok {
 			return expr
 		}
@@ -629,7 +616,7 @@ func unwrapDruidParens(expr tree.Expr) tree.Expr {
 
 // druidMillisProduct splits a product into its non-literal operand and the
 // integer multiplier, which the statement may write on either side.
-func druidMillisProduct(product *tree.BinaryExpr) (tree.Expr, int64, bool) {
+func druidMillisProduct(product *ast.BinaryExpr) (ast.Expr, int64, bool) {
 	if multiplier, ok := druidSQLIntegerLiteral(unwrapDruidParens(product.Right)); ok {
 		return product.Left, multiplier, true
 	}
@@ -641,13 +628,13 @@ func druidMillisProduct(product *tree.BinaryExpr) (tree.Expr, int64, bool) {
 
 // druidMillisQuotient matches TIMESTAMP_TO_MILLIS(__time) / N, with or without
 // the FLOOR that is redundant over Druid's integer division.
-func druidMillisQuotient(expr tree.Expr) (string, int64, bool) {
+func druidMillisQuotient(expr ast.Expr) (string, int64, bool) {
 	expr = unwrapDruidParens(expr)
-	if function, ok := expr.(*tree.FuncExpr); ok &&
-		strings.EqualFold(function.Func.String(), "floor") && len(function.Exprs) == 1 {
+	if function, ok := expr.(*ast.FuncExpr); ok &&
+		strings.EqualFold(function.Func.Name(), "floor") && len(function.Exprs) == 1 {
 		expr = unwrapDruidParens(function.Exprs[0])
 	}
-	division, ok := expr.(*tree.BinaryExpr)
+	division, ok := expr.(*ast.BinaryExpr)
 	if !ok || division.Operator.String() != "/" {
 		return "", 0, false
 	}
@@ -655,25 +642,25 @@ func druidMillisQuotient(expr tree.Expr) (string, int64, bool) {
 	if !ok {
 		return "", 0, false
 	}
-	millis, ok := unwrapDruidParens(division.Left).(*tree.FuncExpr)
-	if !ok || !strings.EqualFold(millis.Func.String(), "timestamp_to_millis") ||
+	millis, ok := unwrapDruidParens(division.Left).(*ast.FuncExpr)
+	if !ok || !strings.EqualFold(millis.Func.Name(), "timestamp_to_millis") ||
 		len(millis.Exprs) != 1 {
 		return "", 0, false
 	}
-	column, ok := cockroach.ColumnName(unwrapDruidParens(millis.Exprs[0]))
+	column, ok := pgfamily.ColumnName(unwrapDruidParens(millis.Exprs[0]))
 	if !ok || !strings.EqualFold(column, "__time") {
 		return "", 0, false
 	}
 	return column, divisor, true
 }
 
-func druidSQLTimestampLiteral(expr tree.Expr) (time.Time, bool) {
+func druidSQLTimestampLiteral(expr ast.Expr) (time.Time, bool) {
 	switch value := expr.(type) {
-	case *tree.StrVal:
+	case *ast.StrVal:
 		parsed, err := parseDruidTime(value.RawString())
 		return parsed, err == nil
-	case *tree.CastExpr:
-		literal, ok := value.Expr.(*tree.StrVal)
+	case *ast.CastExpr:
+		literal, ok := value.Expr.(*ast.StrVal)
 		if !ok {
 			return time.Time{}, false
 		}

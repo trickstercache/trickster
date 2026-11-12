@@ -39,7 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/pgfamily"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -355,7 +355,7 @@ func TestEveryNativeAnalyzerReadsDirectivesFromCommentsOnly(t *testing.T) {
 			sqlDashes,
 		},
 		{
-			"Flight SQL", cockroach.NewAnalyzer(cockroach.Options{BucketMatchers: cockroach.DataFusionBucketMatchers()}),
+			"Flight SQL", pgfamily.NewAnalyzer(pgfamily.Options{BucketMatchers: pgfamily.DataFusionBucketMatchers()}),
 			"SELECT date_bin(INTERVAL '1 minute', time) AS time, host, avg(v) AS v FROM m WHERE note = '%s' AND " +
 				"time >= 0 AND time < 600 GROUP BY 1, host",
 			sqlBlock,

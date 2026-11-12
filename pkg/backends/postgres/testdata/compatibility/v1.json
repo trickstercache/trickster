@@ -1045,7 +1045,7 @@
      "<$TS2$>",
      "extract(dow FROM pickup_datetime)",
      "cab_type::text",
-     "passenger_count::INT4",
+     "passenger_count::int",
      "!= current_user)",
      "max(\"binary\")"
     ],
@@ -1058,7 +1058,7 @@
     "upper_bound": "2026-09-19T03:00:00Z",
     "upper_inclusive": false
    },
-   "rationale": "Constructs the parser's formatter writes in a way PostgreSQL rejects or changes are re-spelled."
+   "rationale": "Constructs reach PostgreSQL as the client spelled them, where the parser's own spellings would be rejected or change the meaning."
   },
   {
    "name": "filter_and_ordered_set",
@@ -1282,12 +1282,30 @@
    "session_time_zone": "UTC",
    "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, max(payload::json ->> 'a') FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
    "expected": {
-    "cache_mode": "object",
-    "analysis_reason": "unsupported_format",
-    "canonical_policy": "none",
-    "extent_rendering": false
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>",
+     "payload::json"
+    ],
+    "canonical_excludes": [
+     "JSONB"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
    },
-   "rationale": "The parser re-spells json as jsonb, another type."
+   "rationale": "json reaches PostgreSQL as written, not as jsonb, another type."
   },
   {
    "name": "unicode_escape_string",

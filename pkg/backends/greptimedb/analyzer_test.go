@@ -58,21 +58,21 @@ func TestAnalyzerFailsClosed(t *testing.T) {
 		mode   sqlanalyzer.CacheMode
 		reason sqlanalyzer.AnalysisReason
 	}{
-		"scalar":                       {"SELECT 1", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
-		"limited":                      {"SELECT * FROM trips LIMIT 10", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedLimit},
-		"insert":                       {"INSERT INTO trips VALUES (1)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
-		"ddl":                          {"CREATE TABLE a (b int)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
-		"tql":                          {"TQL EVAL (0, 1, '1s') up", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonInvalidSQL},
-		"admin":                        {"ADMIN FLUSH_TABLE('trips')", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonInvalidSQL},
-		"range select":                 {"SELECT sum(fare_amount) RANGE '5m' FROM trips ALIGN '5m'", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonInvalidSQL},
-		"volatile despite limit":       {"SELECT random() FROM trips LIMIT 10", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
-		"volatile in cte":              {"WITH x AS (SELECT random()) SELECT * FROM x", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
-		"volatile in unparsed dialect": {"SELECT random() RANGE '5m' FROM trips ALIGN '5m'", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
-		"clock output":                 {"SELECT current_timestamp", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
-		"side effect":                  {"SELECT flush_flow('f')", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
-		"calendar bucket":              {"SELECT date_trunc('month', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
-		"fractional compact width":     {"SELECT date_bin('0.5s', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
-		"submicrosecond output":        {"SELECT date_bin('5ns', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
+		"scalar":                   {"SELECT 1", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		"limited":                  {"SELECT * FROM trips LIMIT 10", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedLimit},
+		"insert":                   {"INSERT INTO trips VALUES (1)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
+		"ddl":                      {"CREATE TABLE a (b int)", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
+		"tql":                      {"TQL EVAL (0, 1, '1s') up", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
+		"admin":                    {"ADMIN FLUSH_TABLE('trips')", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
+		"range select":             {"SELECT sum(fare_amount) RANGE '5m' FROM trips ALIGN '5m'", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat},
+		"volatile despite limit":   {"SELECT random() FROM trips LIMIT 10", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		"volatile in cte":          {"WITH x AS (SELECT random()) SELECT * FROM x", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		"volatile in range query":  {"SELECT random() RANGE '5m' FROM trips ALIGN '5m'", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		"clock output":             {"SELECT current_timestamp", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		"side effect":              {"SELECT flush_flow('f')", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
+		"calendar bucket":          {"SELECT date_trunc('month', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
+		"fractional compact width": {"SELECT date_bin('0.5s', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
+		"submicrosecond output":    {"SELECT date_bin('5ns', pickup_datetime) AS time, count(*)" + testRange, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := analyzer.ForSession(pgwire.SessionView{UTC: true}).Analyze(test.sql, time.Now())
@@ -114,22 +114,16 @@ func TestAnalyzerRender(t *testing.T) {
 	}
 }
 
-func TestPostRender(t *testing.T) {
-	for input, want := range map[string]string{
-		"SELECT extract('epoch', ts)":                        "SELECT extract(epoch FROM ts)",
-		"SELECT bucket::STRING, 'bucket STRING', col::BYTES": "SELECT \"bucket\"::TEXT, 'bucket STRING', col::BYTEA",
-		"SELECT 'extract(''epoch'', ts)'":                    "SELECT 'extract(''epoch'', ts)'",
-		"SELECT extract(epoch FROM ts)":                      "SELECT extract(epoch FROM ts)",
-		"SELECT extract":                                     "SELECT extract",
-	} {
-		got, err := postRender(input)
-		if err != nil || got != want {
-			t.Fatalf("%s: got %s, %v; want %s", input, got, err, want)
-		}
+func TestRenderKeepsSpellings(t *testing.T) {
+	sql := `SELECT date_bin('5m', pickup_datetime) AS bucket, max(extract(epoch FROM pickup_datetime)) AS e, ` +
+		`max(fare::bytea) AS f` + testRange
+	a := analyzer.ForSession(pgwire.SessionView{UTC: true}).Analyze(sql, time.Now())
+	if a.Plan == nil {
+		t.Fatalf("not delta cacheable: %+v", a)
 	}
-	for _, input := range []string{"SELECT extract('', ts)", "SELECT extract('bad-field', ts)", "SELECT extract('a''b', ts)"} {
-		if _, err := postRender(input); err == nil {
-			t.Fatalf("accepted invalid extract field: %s", input)
+	for _, want := range []string{`AS "bucket"`, "extract(epoch FROM pickup_datetime)", "fare::bytea"} {
+		if !strings.Contains(a.Plan.CanonicalSQL, want) {
+			t.Errorf("canonical SQL %q lacks %q", a.Plan.CanonicalSQL, want)
 		}
 	}
 }

@@ -267,20 +267,12 @@ func TestAnalyzerFailsClosed(t *testing.T) {
 			testBucket + "count(*) FROM ONLY trips WHERE ts >= '2026-09-18T08:00:00Z' AND ts < '2026-09-18T11:00:00Z'" + testGrouped,
 			sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat,
 		},
-		"json becomes jsonb": {
-			testBucket + "max(doc::json ->> 'a')" + testRange + testGrouped,
-			sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat,
-		},
 		"unicode escape string": {
 			testBucket + "count(*)" + testRange + ` AND host = u&'\0041'` + testGrouped,
 			sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat,
 		},
 		"system_user renders like a column": {
 			testBucket + "count(*) FILTER (WHERE usr = system_user)" + testRange + testGrouped,
-			sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat,
-		},
-		"extract with a quoted odd field": {
-			testBucket + `max(extract('time zone' from ts))` + testRange + testGrouped,
 			sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedFormat,
 		},
 		"set-returning function": {
@@ -375,6 +367,11 @@ func TestAnalyzerRendersPostgreSQL(t *testing.T) {
 			`SELECT floor((c)/600)*600 AS "time", avg(v) FROM m WHERE c >= 1788998400 AND c <= 1789002000` + testGrouped,
 			[]string{"(c >= 1789725600)", "(c <= 1789729799)"},
 		},
+		"json stays json": {testBucket + "max(doc::json ->> 'a')" + testRange + testGrouped, []string{"doc::json"}},
+		"extract with a quoted odd field keeps it quoted": {
+			testBucket + `max(extract('time zone' from ts))` + testRange + testGrouped,
+			[]string{"max(extract('time zone' FROM ts))"},
+		},
 		"extract keeps its keyword form": {
 			testBucket + "max(extract(dow FROM ts)), floor(max(EXTRACT(EPOCH FROM ts)))" + testRange + testGrouped,
 			[]string{"max(extract(dow FROM ts))", "max(extract(epoch FROM ts))"},
@@ -382,12 +379,12 @@ func TestAnalyzerRendersPostgreSQL(t *testing.T) {
 		"type names": {
 			testBucket + "max(host::text), max(CAST(b AS bytea)), max(tags::text[]), max(v::int), max(n::integer[]), max(j::jsonb)" +
 				testRange + testGrouped,
-			[]string{"host::text", "CAST(b AS bytea)", "tags::text[]", "v::INT4)", "n::INT4[]", "j::JSONB"},
+			[]string{"host::text", "CAST(b AS bytea)", "tags::text[]", "v::int)", "n::integer[]", "j::jsonb"},
 		},
 		"bare SQL-value functions": {
 			testBucket + "count(*) FILTER (WHERE usr = current_user OR usr = session_user OR usr = user OR d = current_role)" +
 				testRange + testGrouped,
-			[]string{"usr = current_user)", "usr = session_user)", "d = current_user)"},
+			[]string{"usr = current_user)", "usr = session_user)", "usr = user)", "d = current_role)"},
 		},
 		"identifiers PostgreSQL reserves": {
 			testBucket + `max("binary"), max("freeze"), max(t."verbose"), max("tablesample"), max("user"), max("Binary")` +
@@ -447,19 +444,21 @@ func TestParseInterval(t *testing.T) {
 	}
 }
 
-func TestPostRender(t *testing.T) {
-	const untouched = "SELECT time_bucket('5m', ts) AS time FROM trips WHERE ts >= <$TRICKSTER_TS1_0$>"
-	if got, err := postRender(untouched); err != nil || got != untouched {
-		t.Fatalf("got %q %v", got, err)
+func TestRenderKeepsSpellings(t *testing.T) {
+	sql := testBucket + "max(extract(epoch FROM ts)::text) AS e, max(n::int) AS n, max(b::bytea) AS b" +
+		strings.Replace(testRange, "FROM trips", "FROM verbose", 1) + testGrouped
+	analysis := testAnalyze(true, sql)
+	if analysis.Plan == nil {
+		t.Fatalf("not delta cacheable: %+v", analysis)
 	}
-	got, err := postRender("SELECT extract('epoch', ts)::STRING, localtime() FROM verbose WHERE ts < <$TRICKSTER_TS2_1$>")
-	if want := `SELECT extract(epoch FROM ts)::text, localtime FROM "verbose" WHERE ts < <$TRICKSTER_TS2_1$>`; err != nil || got != want {
-		t.Fatalf("got %q %v", got, err)
-	}
-	for _, sql := range []string{"SELECT system_user", "SELECT extract(e'epoch', ts)", "SELECT extract('', ts)"} {
-		if _, err := postRender(sql); err == nil {
-			t.Fatalf("%q must not render", sql)
+	for _, want := range []string{"extract(epoch FROM ts)::text", "n::int", "b::bytea", `FROM "verbose"`} {
+		if !strings.Contains(analysis.Plan.CanonicalSQL, want) {
+			t.Errorf("canonical SQL %q lacks %q", analysis.Plan.CanonicalSQL, want)
 		}
+	}
+	// the formatter cannot tell a column from the bare SQL-value function of this name
+	if a := testAnalyze(true, testSelect5m+", max(system_user)"+testRange+testGrouped); a.Mode == sqlanalyzer.CacheModeDelta {
+		t.Fatalf("system_user was delta cached: %+v", a)
 	}
 }
 
@@ -475,12 +474,6 @@ func FuzzLexicalPasses(f *testing.F) {
 			t.Fatalf("%q parsed to %v", text, width)
 		}
 		scanFacts(text)
-		if rendered, err := postRender(text); err == nil {
-			// a second pass finds nothing left to re-spell
-			if again, err := postRender(rendered); err != nil || again != rendered {
-				t.Fatalf("%q rendered to %q and then %q (%v)", text, rendered, again, err)
-			}
-		}
 		testAnalyze(true, text)
 	})
 }
