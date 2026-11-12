@@ -382,23 +382,34 @@ spec:
       protocol: UDP
       nodePort: 30089
     # the ports the conformance suite's Gateways declare, reached through the
-    # Service's externalIPs rather than NodePorts
+    # Service's externalIPs rather than NodePorts. Their NodePorts are pinned
+    # low in the range, where Kubernetes never assigns one at random, so this
+    # Service takes no random port that another manifest's fixed one (e.g.,
+    # 30090 in gateway-moq.yaml) would then collide with.
     - name: conformance-http
       port: 80
+      nodePort: 30070
     - name: conformance-https
       port: 443
+      nodePort: 30071
     - name: conformance-1111
       port: 1111
+      nodePort: 30072
     - name: conformance-6443
       port: 6443
+      nodePort: 30073
     - name: conformance-7443
       port: 7443
+      nodePort: 30074
     - name: conformance-8080
       port: 8080
+      nodePort: 30075
     - name: conformance-8090
       port: 8090
+      nodePort: 30076
     - name: conformance-8443
       port: 8443
+      nodePort: 30077
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

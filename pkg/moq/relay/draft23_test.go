@@ -76,6 +76,7 @@ func TestDraft23SubscribeTracksFill(t *testing.T) {
 	h := ingestHarness(t, relay.Access{Publish: true}, relay.Options{})
 	pub := published(t, h.client(), "video")
 	sendGroup(t, pub, 0, objs("old")...)
+	held(t, h, 0)
 	sink := &tracksSink{pubs: make(chan *session.Request, 4), rec: newRec()}
 	viewer := h.clientDraftWith(23, sink)
 	var fill message.Params
@@ -921,6 +922,7 @@ func TestResumeFilterFromFreshLargest(t *testing.T) {
 			a := &statusAnswer{largest: wire.Location{Group: 1}, asked: make(chan struct{}, 16)}
 			pub, prec := pausedPublisher(t, h, a)
 			sendGroup(t, pub, 1, objs("a")...)
+			held(t, h, 1)
 			var paused message.Params
 			paused.SetForward(false)
 			req, r := subscribe(t, h.clientDraft(23), "video", paused)
@@ -1001,6 +1003,7 @@ func TestOfferSnapshotThroughOpen(t *testing.T) {
 	a.refuse.Store(true)
 	pub, prec := pausedPublisher(t, h, a)
 	sendGroup(t, pub, 1, objs("a")...)
+	held(t, h, 1)
 	recordForward(pub, prec, wire.Location{Group: 4})
 	g := gatedOpen{opening: make(chan struct{}, 4), gate: make(chan struct{})}
 	var fill, p message.Params
