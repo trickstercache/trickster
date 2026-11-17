@@ -457,6 +457,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		Handler:   l.routeSwapper,
 		TLSConfig: tlsConfig,
 		Protocols: serverProtocols(),
+		ErrorLog:  logger.HTTPServerErrorLog(listenerName),
 	}
 	limits.apply(svr)
 	l.server = svr

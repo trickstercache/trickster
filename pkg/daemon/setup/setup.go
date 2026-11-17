@@ -604,6 +604,7 @@ func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
 
 func initLogger(c *config.Config) logging.Logger {
 	logger.SetLogger(logging.New(c))
+	logger.CaptureStdLog()
 	logger.InfoSynchronous("application loaded from configuration",
 		logging.Pairs{
 			"name":      appinfo.Name,
